@@ -86,6 +86,7 @@ type ScoreboardEntry struct {
 
 type ViewState struct {
 	ServerInfoList []ServerInfo      `json:"serverInfoList"`
+	ViewInfoList   []ServerInfo      `json:"viewInfoList"`
 	Game           *GameState        `json:"game,omitempty"`
 	ChartData      []map[string]any  `json:"chartData"`
 	Scoreboard     []ScoreboardEntry `json:"scoreboard"`
