@@ -1,0 +1,63 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: black;
+  color: white;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: serif;
+}
+
+.layout {
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.pane {
+  position: absolute;
+  overflow: hidden;
+  padding: .5rem;
+}
+
+.plain {
+  padding: 0;
+}
+
+.info { top: 0; left: 0; width: 25%; height: 25%; }
+.connection { top: 25%; left: 0; width: 25%; height: 25%; }
+.scoreboard-pane { top: 50%; left: 0; width: 25%; height: 50%; }
+.chart-pane { top: 75%; left: 0; width: 25%; height: 25%; font-size: .8rem; }
+.game-pane { top: 0; left: 50%; width: 50%; height: 100%; font-size: .8rem; }
+.schedule-pane { top: 0; left: 25%; width: 25%; height: 50%; font-size: .8rem; }
+.chat-pane { top: 50%; left: 25%; width: 25%; height: 50%; font-size: .8rem; }
+
+.score-title {
+  margin-bottom: .5em;
+}
+
+table {
+  width: 100%;
+  text-align: left;
+  line-height: .8rem;
+}
+
+canvas {
+  margin: auto;
+}
+
+.gamewrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}

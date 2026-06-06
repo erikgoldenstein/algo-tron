@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GPN Tron</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+  <script defer src="/static/app.js"></script>
+</head>
+<body hx-ext="ws" ws-connect="/ws">
+  <div class="layout">
+    <div class="pane plain info">
+      <h1>GPN Tron</h1>
+      Connect via TCP and join the fun :)<br>
+      You can also watch the current game via the viewer port.<br><br>
+      <b>Wanna share your bot code? Upload to Github with #gpn-tron</b>
+    </div>
+
+    <div class="pane plain connection">
+      <h3>Ports:</h3>
+      <ul id="ports"></ul>
+      <h3>Hostnames:</h3>
+      <ul id="hosts"></ul>
+    </div>
+
+    <div class="pane scoreboard-pane">
+      <h3 class="score-title">Scoreboard (Last 2 Hours)</h3>
+      <table>
+        <thead>
+          <tr><th></th><th>Name</th><th>WR</th><th>ELO</th><th>Wins</th><th>Losses</th></tr>
+        </thead>
+        <tbody id="scoreboard"><tr><td colspan="6">Nobody scored yet :(</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="pane chart-pane"><canvas id="chart"></canvas></div>
+
+    <div class="pane game-pane">
+      <div class="gamewrap"><canvas id="game"></canvas></div>
+    </div>
+
+    <div class="pane schedule-pane">
+      <h2>Current talks</h2><br>
+      <div id="currentTalks"></div><br>
+      <h2>Next talks</h2>
+      <div id="nextTalks"></div>
+    </div>
+
+    <div class="pane chat-pane">
+      <h2>Chat</h2>
+      <div id="chat"></div>
+    </div>
+  </div>
+</body>
+</html>

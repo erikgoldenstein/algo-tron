@@ -1,0 +1,67 @@
+package main
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"net"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+var (
+	validString = regexp.MustCompile(`^[a-zA-Z0-9 _\-\.!?,:#]+$`)
+	botName     = regexp.MustCompile(`^bot\d*$`)
+)
+
+func validateJoin(username, password, ip string) string {
+	if username == "" {
+		return "ERROR_USERNAME_TOO_SHORT"
+	}
+	if len(username) > 32 {
+		return "ERROR_USERNAME_TOO_LONG"
+	}
+	if !validString.MatchString(username) {
+		return "ERROR_USERNAME_INVALID_SYMBOLS"
+	}
+	if password == "" {
+		return "ERROR_PASSWORD_TOO_SHORT"
+	}
+	if len(password) > 128 {
+		return "ERROR_PASSWORD_TOO_LONG"
+	}
+	if botName.MatchString(username) && !strings.HasSuffix(ip, "127.0.0.1") {
+		return "ERROR_NO_PERMISSION"
+	}
+	return ""
+}
+
+func randID() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func hostOnly(s string) string {
+	h, _, err := net.SplitHostPort(s)
+	if err == nil {
+		return h
+	}
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+func portOnly(s string) int {
+	_, p, err := net.SplitHostPort(s)
+	if err == nil {
+		n, _ := strconv.Atoi(p)
+		return n
+	}
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		n, _ := strconv.Atoi(s[i+1:])
+		return n
+	}
+	return 4000
+}
