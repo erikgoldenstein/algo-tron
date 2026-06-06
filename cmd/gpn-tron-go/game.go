@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -148,6 +149,7 @@ func (g *Game) shouldEndLocked() bool {
 
 func (g *Game) endLocked() {
 	alive := g.aliveLocked()
+	g.updateEloLocked(alive)
 	names := []string{}
 	for _, p := range alive {
 		p.winLocked()
@@ -158,6 +160,35 @@ func (g *Game) endLocked() {
 	g.server.store()
 	g.server.updateScoreboardLocked()
 	g.server.updateViewLocked()
+}
+
+func (g *Game) updateEloLocked(winners []*Player) {
+	if len(winners) == 0 {
+		return
+	}
+	won := map[*Player]bool{}
+	for _, p := range winners {
+		won[p] = true
+	}
+	old := map[*Player]float64{}
+	for _, p := range g.players {
+		old[p] = p.Elo
+	}
+	for _, p := range g.players {
+		delta := 0.0
+		for _, opponent := range g.players {
+			if opponent == p || won[opponent] == won[p] {
+				continue
+			}
+			score := 0.0
+			if won[p] {
+				score = 1.0
+			}
+			expected := 1.0 / (1.0 + math.Pow(10, (old[opponent]-old[p])/400.0))
+			delta += eloKFactor * (score - expected)
+		}
+		p.Elo += delta
+	}
 }
 
 func (g *Game) broadcastPlayersLocked() {

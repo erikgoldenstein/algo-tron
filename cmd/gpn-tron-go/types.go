@@ -15,6 +15,7 @@ const (
 	joinTimeout         = 5 * time.Second
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
+	eloKFactor          = 32
 )
 
 type Move int
