@@ -22,9 +22,10 @@ htmx.on('htmx:wsAfterMessage', (event) => {
 function updateDom() {
   if (!state) return;
   const game = state.serverInfoList[0] || { host: 'localhost', port: 4000 };
-  const view = (state.viewInfoList || [])[0] || { host: location.hostname, port: Number(location.port || 443) };
-  ports.innerHTML = '<li>- ' + view.port + ' [HTTP] (View server)</li><li>- ' + game.port + ' [TCP] (Game server)</li>';
-  hosts.innerHTML = '<li>- ' + esc(view.host) + ' (View server)</li>' + state.serverInfoList.map((x) => '<li>- ' + esc(x.host) + ' (Game server)</li>').join('');
+  const view = (state.viewInfoList || [])[0] || { host: location.hostname, port: Number(location.port || 443), scheme: location.protocol.replace(':', '') || 'http' };
+  const viewScheme = (view.scheme || 'http').toUpperCase();
+  ports.innerHTML = '<li>- ' + view.port + ' [' + viewScheme + '] (View server)</li><li>- ' + game.port + ' [TCP] (Game server)</li>';
+  hosts.innerHTML = '<li>- ' + esc(view.scheme || 'http') + '://' + esc(view.host) + ':' + view.port + ' (View server)</li>' + state.serverInfoList.map((x) => '<li>- ' + esc(x.host) + ':' + x.port + ' (Game server)</li>').join('');
   scoreboard.innerHTML = state.scoreboard.length ? state.scoreboard.map(scoreRow).join('') : '<tr><td colspan="6">Nobody scored yet :(</td></tr>';
 
   for (const p of (state.game?.players || [])) {

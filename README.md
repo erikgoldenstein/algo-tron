@@ -1,1 +1,99 @@
 # go-tron
+
+A minimal Go reimplementation of [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/).
+
+It keeps the original TCP bot protocol and serves a public viewer UI over HTTP. The intended deployment model is to run the Go service on localhost and put nginx in front of it:
+
+- `play-tron.erik.gdn:443` routes to the raw TCP game server.
+- `view-tron.erik.gdn:443` routes to the HTTP viewer server.
+
+## Build
+
+```sh
+go build -o go-tron ./cmd/gpn-tron-go
+```
+
+## Run Locally
+
+```sh
+./go-tron \
+  -tcp 127.0.0.1:4000 \
+  -view 127.0.0.1:3000 \
+  -public-tcp play-tron.erik.gdn:443 \
+  -public-view view-tron.erik.gdn:443 \
+  -public-view-scheme https
+```
+
+Options:
+
+- `-tcp`: local raw TCP game listener.
+- `-view`: local HTTP viewer listener.
+- `-public-tcp`: public TCP endpoint shown in the viewer UI.
+- `-public-view`: public viewer endpoint shown in the viewer UI.
+- `-public-view-scheme`: `http` or `https`, only affects what the viewer UI displays.
+- `-data`: JSON persistence path for scores.
+
+## NixOS Flake Deployment
+
+This repo exposes a package and a NixOS module:
+
+```nix
+{
+  inputs.go-tron.url = "github:your-user/go-tron";
+
+  outputs = { self, nixpkgs, go-tron, ... }: {
+    nixosConfigurations.server = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        go-tron.nixosModules.default
+        {
+          services.go-tron = {
+            enable = true;
+            tcp.listen = "127.0.0.1:4000";
+            view.listen = "127.0.0.1:3000";
+            tcp.publicAddress = "play-tron.erik.gdn:443";
+            view.publicAddress = "view-tron.erik.gdn:443";
+            view.publicScheme = "https";
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+## Nginx
+
+The viewer is normal HTTP with websockets, so proxy it from an HTTP `server` block:
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name view-tron.erik.gdn;
+
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+  }
+}
+```
+
+The game endpoint is raw TCP, so route it with nginx `stream {}`:
+
+```nginx
+stream {
+  upstream go_tron_tcp {
+    server 127.0.0.1:4000;
+  }
+
+  server {
+    listen 443;
+    proxy_pass go_tron_tcp;
+  }
+}
+```
+
+If the same nginx instance terminates HTTPS for the viewer on `443`, the raw TCP game endpoint needs a different IP, a different port, or a TLS/SNI-aware stream setup that can separate `play-tron.erik.gdn` from `view-tron.erik.gdn`.

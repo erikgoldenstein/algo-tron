@@ -72,8 +72,9 @@ type GameState struct {
 }
 
 type ServerInfo struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host   string `json:"host"`
+	Port   int    `json:"port"`
+	Scheme string `json:"scheme,omitempty"`
 }
 
 type ScoreboardEntry struct {
