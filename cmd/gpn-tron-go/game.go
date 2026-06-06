@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ func (s *Server) gameLoop() {
 }
 
 func newGame(s *Server, players []*Player) *Game {
+	rand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
 	g := &Game{server: s, id: randID(), players: players, width: len(players) * 2, height: len(players) * 2, startTime: time.Now()}
 	g.fields = make([][]int, g.width)
 	for x := range g.fields {
