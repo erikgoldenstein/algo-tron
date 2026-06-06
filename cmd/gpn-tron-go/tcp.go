@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (s *Server) listenTCP(addr string) error {
+func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -16,21 +16,15 @@ func (s *Server) listenTCP(addr string) error {
 	for {
 		conn, err := ln.Accept()
 		if err == nil {
-			go s.handleConn(conn)
+			go s.handleConn(conn, proxyProtocol)
 		}
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) {
+func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer conn.Close()
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-
-	s.mu.Lock()
-	s.ipCount[ip]++
-	tooMany := maxConnections >= 0 && s.ipCount[ip] > maxConnections && !strings.HasSuffix(ip, "127.0.0.1")
-	s.mu.Unlock()
-	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
-
+	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 	send := func(parts ...any) {
 		vals := make([]string, len(parts))
@@ -41,6 +35,24 @@ func (s *Server) handleConn(conn net.Conn) {
 		w.Flush()
 	}
 
+	if proxyProtocol {
+		_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
+		proxyIP, err := readProxyProtocolIP(r)
+		if err != nil {
+			send("error", "ERROR_PROXY_PROTOCOL")
+			return
+		}
+		if proxyIP != "" {
+			ip = proxyIP
+		}
+	}
+
+	s.mu.Lock()
+	s.ipCount[ip]++
+	tooMany := maxConnections >= 0 && s.ipCount[ip] > maxConnections && !strings.HasSuffix(ip, "127.0.0.1")
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
+
 	if tooMany {
 		send("error", "ERROR_MAX_CONNECTIONS")
 		return
@@ -48,15 +60,15 @@ func (s *Server) handleConn(conn net.Conn) {
 	send("motd", "You can find the protocol documentation here: https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md")
 
 	_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
-	r := bufio.NewScanner(conn)
-	r.Buffer(make([]byte, 0, 1024), 1024)
-	if !r.Scan() {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 1024), 1024)
+	if !scanner.Scan() {
 		send("error", "ERROR_JOIN_TIMEOUT")
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
 
-	parts := strings.Split(r.Text(), "|")
+	parts := strings.Split(scanner.Text(), "|")
 	if len(parts) < 3 || parts[0] != "join" {
 		send("error", "ERROR_EXPECTED_JOIN")
 		return
@@ -83,8 +95,8 @@ func (s *Server) handleConn(conn net.Conn) {
 	p.conn, p.writer = conn, w
 	s.mu.Unlock()
 
-	for r.Scan() {
-		s.handlePacket(p, r.Text())
+	for scanner.Scan() {
+		s.handlePacket(p, scanner.Text())
 	}
 
 	s.mu.Lock()
@@ -93,6 +105,24 @@ func (s *Server) handleConn(conn net.Conn) {
 		p.writer = nil
 	}
 	s.mu.Unlock()
+}
+
+func readProxyProtocolIP(r *bufio.Reader) (string, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(strings.TrimRight(line, "\r\n"))
+	if len(fields) < 2 || fields[0] != "PROXY" {
+		return "", fmt.Errorf("expected PROXY protocol header")
+	}
+	if fields[1] == "UNKNOWN" {
+		return "", nil
+	}
+	if len(fields) < 6 {
+		return "", fmt.Errorf("invalid PROXY protocol header")
+	}
+	return fields[2], nil
 }
 
 func (s *Server) handlePacket(p *Player, packet string) {

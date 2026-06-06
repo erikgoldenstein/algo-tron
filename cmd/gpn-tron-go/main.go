@@ -12,6 +12,7 @@ import (
 func main() {
 	tcpAddr := flag.String("tcp", ":4000", "TCP game listen address")
 	viewAddr := flag.String("view", ":3000", "HTTP viewer listen address")
+	proxyProtocol := flag.Bool("proxy-protocol", false, "Expect HAProxy PROXY protocol v1 headers on TCP game connections")
 	publicTCP := flag.String("public-tcp", "play-tron.erik.gdn:443", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "view-tron.erik.gdn:443", "HTTP viewer connection string shown in viewer")
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
@@ -30,7 +31,7 @@ func main() {
 	s.updateScoreboardLocked()
 
 	go s.gameLoop()
-	go func() { log.Fatal(s.listenTCP(*tcpAddr)) }()
+	go func() { log.Fatal(s.listenTCP(*tcpAddr, *proxyProtocol)) }()
 
 	log.Printf("tcp game on %s", *tcpAddr)
 	log.Printf("http view on %s", *viewAddr)

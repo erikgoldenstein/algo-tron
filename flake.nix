@@ -44,6 +44,7 @@
           args = [
             "-tcp" cfg.tcp.listen
             "-view" cfg.view.listen
+          ] ++ lib.optional cfg.tcp.proxyProtocol "-proxy-protocol" ++ [
             "-public-tcp" cfg.tcp.publicAddress
             "-public-view" cfg.view.publicAddress
             "-public-view-scheme" cfg.view.publicScheme
@@ -90,6 +91,12 @@
               type = lib.types.str;
               default = "play-tron.erik.gdn:443";
               description = "Public TCP game endpoint shown in the viewer UI.";
+            };
+
+            tcp.proxyProtocol = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Accept HAProxy PROXY protocol v1 headers on TCP game connections.";
             };
 
             view.listen = lib.mkOption {
