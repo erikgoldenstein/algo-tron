@@ -13,6 +13,8 @@ const (
 	baseTickrate        = 1
 	tickIncreaseSeconds = 10
 	joinTimeout         = 5 * time.Second
+	maxViewUpdateRate   = 10
+	viewWriteTimeout    = 250 * time.Millisecond
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 32
@@ -103,6 +105,9 @@ type Server struct {
 	viewState   ViewState
 	viewClients map[*websocket.Conn]bool
 	dataPath    string
+
+	lastViewPush     time.Time
+	viewPushInFlight bool
 }
 
 type Game struct {

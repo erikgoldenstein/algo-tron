@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -41,9 +42,14 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	s.viewClients[c] = true
 	data, _ := json.Marshal(s.viewState)
-	_ = c.WriteMessage(websocket.TextMessage, data)
+	s.mu.Unlock()
+	if !writeViewMessage(c, data) {
+		c.Close()
+		return
+	}
+	s.mu.Lock()
+	s.viewClients[c] = true
 	s.mu.Unlock()
 
 	for {
@@ -64,8 +70,29 @@ func (s *Server) updateViewLocked() {
 			st.Players = append(st.Players, PlayerState{ID: p.ID, Alive: p.Alive, Name: p.Username, Pos: p.Pos, Moves: append([]Vec2(nil), p.Moves...), Chat: p.Chat})
 		}
 		s.viewState.Game = st
+	} else {
+		s.viewState.Game = nil
 	}
-	s.pushViewLocked()
+	s.pushViewLocked(false)
+}
+
+func (s *Server) pushViewLocked(force bool) {
+	now := time.Now()
+	if !force && !s.lastViewPush.IsZero() && now.Sub(s.lastViewPush) < time.Second/maxViewUpdateRate {
+		return
+	}
+	if s.viewPushInFlight {
+		return
+	}
+
+	data, _ := json.Marshal(s.viewState)
+	clients := make([]*websocket.Conn, 0, len(s.viewClients))
+	for c := range s.viewClients {
+		clients = append(clients, c)
+	}
+	s.lastViewPush = now
+	s.viewPushInFlight = true
+	go s.pushView(data, clients)
 }
 
 func (s *Server) updateScoreboardLocked() {
@@ -129,12 +156,26 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 	s.viewState.ChartData = data
 }
 
-func (s *Server) pushViewLocked() {
-	data, _ := json.Marshal(s.viewState)
-	for c := range s.viewClients {
-		if c.WriteMessage(websocket.TextMessage, data) != nil {
-			c.Close()
-			delete(s.viewClients, c)
+func (s *Server) pushView(data []byte, clients []*websocket.Conn) {
+	dead := []*websocket.Conn{}
+	for _, c := range clients {
+		if !writeViewMessage(c, data) {
+			dead = append(dead, c)
 		}
 	}
+
+	s.mu.Lock()
+	for _, c := range dead {
+		if s.viewClients[c] {
+			delete(s.viewClients, c)
+			c.Close()
+		}
+	}
+	s.viewPushInFlight = false
+	s.mu.Unlock()
+}
+
+func writeViewMessage(c *websocket.Conn, data []byte) bool {
+	_ = c.SetWriteDeadline(time.Now().Add(viewWriteTimeout))
+	return c.WriteMessage(websocket.TextMessage, data) == nil
 }
