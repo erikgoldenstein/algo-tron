@@ -56,7 +56,10 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-setInterval(render, 1000 / 30);
+setInterval(() => {
+  render();
+  renderChart();
+}, 1000 / 30);
 
 const wallSize = 1;
 const floorSize = 16;
@@ -182,6 +185,59 @@ function renderChat(ctx, message, x, y, room) {
   ctx.fillRect(x - 10, y + room - 20, ctx.measureText(message).width + 20, 40);
   ctx.fillStyle = 'black';
   ctx.fillText(message, x, y + room);
+}
+
+function renderChart() {
+  const canvas = document.getElementById('chart');
+  if (!canvas?.parentElement) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.parentElement.clientWidth;
+  const height = canvas.parentElement.clientHeight;
+  canvas.width = width;
+  canvas.height = height;
+  ctx.clearRect(0, 0, width, height);
+
+  const data = state?.chartData || [];
+  const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
+  if (!data.length || !names.length) {
+    ctx.fillStyle = 'white';
+    ctx.fillText('No winrate data yet', 8, 20);
+    return;
+  }
+
+  const pad = { top: 8, right: 8, bottom: 34, left: 28 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const x = (i) => pad.left + i / Math.max(data.length - 1, 1) * plotW;
+  const y = (v) => pad.top + (1 - v) * plotH;
+
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.left, pad.top, plotW, plotH);
+  ctx.fillStyle = 'white';
+  ctx.font = '10px serif';
+  for (const v of [0, .5, 1]) {
+    ctx.fillText(String(v), 2, y(v) + 3);
+  }
+
+  for (const name of names) {
+    ctx.strokeStyle = color(name);
+    ctx.beginPath();
+    data.forEach((point, i) => {
+      const v = point[name];
+      if (typeof v !== 'number') return;
+      if (i === 0) ctx.moveTo(x(i), y(v));
+      else ctx.lineTo(x(i), y(v));
+    });
+    ctx.stroke();
+  }
+
+  let legendX = pad.left;
+  for (const name of names.slice(0, 4)) {
+    ctx.fillStyle = color(name);
+    ctx.fillText(name, legendX, height - 12);
+    legendX += ctx.measureText(name).width + 12;
+  }
 }
 
 async function talks() {

@@ -92,7 +92,41 @@ func (s *Server) updateScoreboardLocked() {
 		entries = entries[:10]
 	}
 	s.viewState.Scoreboard = entries
-	s.viewState.ChartData = []map[string]any{}
+	s.updateChartDataLocked(entries)
+}
+
+func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
+	const chartPoints = 20
+	data := make([]map[string]any, chartPoints)
+	for i := range data {
+		point := map[string]any{"name": i}
+		for _, entry := range entries {
+			p := s.players[entry.Username]
+			if p == nil {
+				continue
+			}
+			end := len(p.ScoreHistory) - (chartPoints - 1 - i)
+			if end < 0 {
+				end = 0
+			}
+
+			wins, loses := 0, 0
+			for _, score := range p.ScoreHistory[:end] {
+				if score.Type == 1 {
+					wins++
+				} else {
+					loses++
+				}
+			}
+			wr := 0.0
+			if games := wins + loses; games > 0 {
+				wr = float64(wins) / float64(games)
+			}
+			point[entry.Username] = wr
+		}
+		data[i] = point
+	}
+	s.viewState.ChartData = data
 }
 
 func (s *Server) pushViewLocked() {
