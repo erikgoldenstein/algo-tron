@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"time"
 )
@@ -184,7 +185,7 @@ func (s *Server) connectedPlayersLocked() []*Player {
 			out = append(out, p)
 		}
 	}
-	sortPlayers(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
 	return out
 }
 
