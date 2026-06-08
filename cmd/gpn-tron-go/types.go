@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"net"
 	"sync"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 const (
-	baseTickrate        = 1
+	baseTickrate      = 1
 	tickIncreaseSeconds = 10
 	joinTimeout         = 5 * time.Second
 	maxViewUpdateRate   = 10
@@ -18,6 +19,9 @@ const (
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 32
+	maxPacketRate       = 60            // per-connection packets/sec cap
+	minPacketInterval   = time.Second / maxPacketRate
+	minChatInterval     = time.Second
 )
 
 type Move int
@@ -41,21 +45,22 @@ type Score struct {
 }
 
 type Player struct {
-	ID           int     `json:"id"`
-	Username     string  `json:"username"`
-	Password     string  `json:"password"`
-	Alive        bool    `json:"alive"`
-	Pos          Vec2    `json:"pos"`
-	Moves        []Vec2  `json:"moves"`
-	Chat         string  `json:"chat,omitempty"`
-	ScoreHistory []Score `json:"scoreHistory"`
-	Elo          float64 `json:"eloScore"`
+	ID           int
+	Username     string
+	PwHash       string
+	Alive        bool
+	Pos          Vec2
+	Moves        []Vec2
+	Chat         string
+	chatExpiry   time.Time
+	lastChatAt   time.Time
+	ScoreHistory []Score
+	Elo          float64
 
 	conn     net.Conn
 	writer   *bufio.Writer
 	move     Move
 	lastMove Move
-	mu       sync.Mutex
 }
 
 type PlayerState struct {
@@ -84,7 +89,7 @@ type ScoreboardEntry struct {
 	Username string  `json:"username"`
 	WinRatio float64 `json:"winRatio"`
 	Wins     int     `json:"wins"`
-	Loses    int     `json:"loses"`
+	Losses   int     `json:"losses"`
 	Elo      float64 `json:"elo"`
 }
 
@@ -104,7 +109,10 @@ type Server struct {
 	game        *Game
 	viewState   ViewState
 	viewClients map[*websocket.Conn]bool
-	dataPath    string
+
+	secret      []byte
+	db          *sql.DB
+	scheduleURL string
 
 	lastViewPush     time.Time
 	viewPushInFlight bool

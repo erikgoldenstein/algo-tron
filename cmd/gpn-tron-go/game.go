@@ -72,6 +72,7 @@ func (g *Game) tickLocked() bool {
 	g.applyCollisionsLocked(dead)
 	g.loseDeadLocked(dead)
 	g.broadcastPosLocked()
+	g.server.clearExpiredChatsLocked()
 	g.server.updateViewLocked()
 
 	if g.shouldEndLocked() {
@@ -223,8 +224,12 @@ func (g *Game) aliveLocked() []*Player {
 	return out
 }
 
+// removeFromFields clears only cells still owned by p, avoiding double-clear races
+// when another player has already claimed a cell in the same tick.
 func (g *Game) removeFromFields(p *Player) {
 	for _, m := range p.Moves {
-		g.fields[m.X][m.Y] = -1
+		if g.fields[m.X][m.Y] == p.ID {
+			g.fields[m.X][m.Y] = -1
+		}
 	}
 }

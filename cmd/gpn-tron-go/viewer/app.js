@@ -44,7 +44,7 @@ function updateDom() {
 
 function scoreRow(p, i) {
   const winner = state.lastWinners.includes(p.username) ? ' 🎉' : '';
-  return '<tr><td>' + (i + 1) + '.</td><td style="color:' + color(p.username) + '">' + esc(p.username) + winner + '</td><td>' + p.winRatio.toFixed(2) + '</td><td>' + p.elo.toFixed(0) + '</td><td>' + p.wins + '</td><td>' + p.loses + '</td></tr>';
+  return '<tr><td>' + (i + 1) + '.</td><td style="color:' + color(p.username) + '">' + esc(p.username) + winner + '</td><td>' + p.winRatio.toFixed(2) + '</td><td>' + p.elo.toFixed(0) + '</td><td>' + p.wins + '</td><td>' + p.losses + '</td></tr>';
 }
 
 function chatRow(m) {
@@ -240,31 +240,36 @@ function renderChart() {
   }
 }
 
-async function talks() {
-  try {
-    const response = await fetch('https://cfp.gulas.ch/gpn22/schedule/v/0.26/widget/v2.json').then((r) => r.json());
-    const now = new Date();
-    const upcoming = response.talks.map((talk) => {
-      const room = response.rooms.find((x) => x.id === talk.room) || {};
-      return {
-        title: typeof talk.title === 'string' ? talk.title : (talk.title.de || talk.title.en),
-        room: typeof room.name === 'string' ? room.name : (room.name?.de || room.name?.en || 'Unknown'),
-        start: new Date(talk.start),
-        end: new Date(talk.end),
-      };
-    }).filter((talk) => talk.end > now).sort((a, b) => a.start - b.start);
+const scheduleEl = document.getElementById('schedule-pane');
+if (scheduleEl) {
+  const scheduleURL = scheduleEl.dataset.url;
 
-    const current = upcoming.filter((talk) => talk.start <= now && talk.end > now);
-    let next = upcoming.slice(current.length);
-    if (next.length) next = next.filter((talk) => talk.start < new Date(+next[0].start + 7200000));
-    currentTalks.innerHTML = current.map(talkHTML).join('');
-    nextTalks.innerHTML = next.map(talkHTML).join('');
-  } catch (e) {}
+  async function talks() {
+    try {
+      const response = await fetch(scheduleURL).then((r) => r.json());
+      const now = new Date();
+      const upcoming = response.talks.map((talk) => {
+        const room = response.rooms.find((x) => x.id === talk.room) || {};
+        return {
+          title: typeof talk.title === 'string' ? talk.title : (talk.title.de || talk.title.en),
+          room: typeof room.name === 'string' ? room.name : (room.name?.de || room.name?.en || 'Unknown'),
+          start: new Date(talk.start),
+          end: new Date(talk.end),
+        };
+      }).filter((talk) => talk.end > now).sort((a, b) => a.start - b.start);
+
+      const current = upcoming.filter((talk) => talk.start <= now && talk.end > now);
+      let next = upcoming.slice(current.length);
+      if (next.length) next = next.filter((talk) => talk.start < new Date(+next[0].start + 7200000));
+      currentTalks.innerHTML = current.map(talkHTML).join('');
+      nextTalks.innerHTML = next.map(talkHTML).join('');
+    } catch (e) {}
+  }
+
+  talks();
+  setInterval(talks, 60000);
 }
 
 function talkHTML(talk) {
   return '<div><b>' + esc(talk.title) + '</b><br>' + esc(talk.room) + ' (' + talk.start.toTimeString().split(' ')[0] + ' - ' + talk.end.toTimeString().split(' ')[0] + ')<hr></div>';
 }
-
-talks();
-setInterval(talks, 60000);

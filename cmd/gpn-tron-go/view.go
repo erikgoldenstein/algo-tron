@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"io/fs"
+	"log"
 	"net/http"
 	"sort"
 	"time"
@@ -31,7 +32,9 @@ func (s *Server) listenHTTP(addr string) error {
 
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = viewTemplate.Execute(w, nil)
+	if err := viewTemplate.Execute(w, struct{ ScheduleURL string }{s.scheduleURL}); err != nil {
+		log.Printf("template: %v", err)
+	}
 }
 
 func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +43,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	c.SetReadLimit(512)
 
 	s.mu.Lock()
 	data, _ := json.Marshal(s.viewState)
@@ -104,7 +108,7 @@ func (s *Server) updateScoreboardLocked() {
 		if games > 0 {
 			wr = float64(w) / float64(games)
 		}
-		entries = append(entries, ScoreboardEntry{Username: p.Username, WinRatio: wr, Wins: w, Loses: l, Elo: p.Elo})
+		entries = append(entries, ScoreboardEntry{Username: p.Username, WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].WinRatio != entries[j].WinRatio {
@@ -113,7 +117,7 @@ func (s *Server) updateScoreboardLocked() {
 		if entries[i].Wins != entries[j].Wins {
 			return entries[i].Wins > entries[j].Wins
 		}
-		return entries[i].Loses > entries[j].Loses
+		return entries[i].Losses > entries[j].Losses
 	})
 	if len(entries) > 10 {
 		entries = entries[:10]

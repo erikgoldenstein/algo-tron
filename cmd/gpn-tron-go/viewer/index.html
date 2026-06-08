@@ -41,12 +41,14 @@
       <div class="gamewrap"><canvas id="game"></canvas></div>
     </div>
 
-    <div class="pane schedule-pane">
+    {{if .ScheduleURL}}
+    <div class="pane schedule-pane" id="schedule-pane" data-url="{{.ScheduleURL}}">
       <h2>Current talks</h2><br>
       <div id="currentTalks"></div><br>
       <h2>Next talks</h2>
       <div id="nextTalks"></div>
     </div>
+    {{end}}
 
     <div class="pane chat-pane">
       <h2>Chat</h2>

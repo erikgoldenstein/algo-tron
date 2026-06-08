@@ -30,7 +30,7 @@ func validateJoin(username, password, ip string) string {
 	if len(password) > 128 {
 		return "ERROR_PASSWORD_TOO_LONG"
 	}
-	if botName.MatchString(username) && !strings.HasSuffix(ip, "127.0.0.1") {
+	if botName.MatchString(username) && !isLocalhost(ip) {
 		return "ERROR_NO_PERMISSION"
 	}
 	return ""

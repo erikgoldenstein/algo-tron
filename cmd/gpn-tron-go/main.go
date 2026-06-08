@@ -16,14 +16,33 @@ func main() {
 	publicTCP := flag.String("public-tcp", "play-tron.erik.gdn:443", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "view-tron.erik.gdn:443", "HTTP viewer connection string shown in viewer")
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
-	dataPath := flag.String("data", filepath.Join(os.TempDir(), "gpn-tron-go-data.json"), "score persistence JSON path")
+	dataDir := flag.String("data-dir", filepath.Join(os.TempDir(), "gpn-tron-go"), "directory for secret and SQLite DB")
+	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
+
+	setupLogging(filepath.Dir(*dataDir))
+
+	if err := os.MkdirAll(*dataDir, 0755); err != nil {
+		log.Fatalf("data dir: %v", err)
+	}
+
+	secret, err := loadOrCreateSecret(*dataDir)
+	if err != nil {
+		log.Fatalf("secret: %v", err)
+	}
+
+	db, err := openDB(filepath.Join(*dataDir, "players.db"))
+	if err != nil {
+		log.Fatalf("db: %v", err)
+	}
 
 	s := &Server{
 		players:     map[string]*Player{},
 		ipCount:     map[string]int{},
 		viewClients: map[*websocket.Conn]bool{},
-		dataPath:    *dataPath,
+		secret:      secret,
+		db:          db,
+		scheduleURL: *scheduleURL,
 	}
 	s.viewState.ServerInfoList = []ServerInfo{{Host: hostOnly(*publicTCP), Port: portOnly(*publicTCP)}}
 	s.viewState.ViewInfoList = []ServerInfo{{Host: hostOnly(*publicView), Port: portOnly(*publicView), Scheme: *publicViewScheme}}

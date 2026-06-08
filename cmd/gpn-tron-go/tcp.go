@@ -3,22 +3,37 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"sort"
 	"strings"
 	"time"
 )
 
+func isLocalhost(ip string) bool {
+	return ip == "127.0.0.1" || ip == "::1"
+}
+
 func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	var delay time.Duration
 	for {
 		conn, err := ln.Accept()
-		if err == nil {
-			go s.handleConn(conn, proxyProtocol)
+		if err != nil {
+			if delay == 0 {
+				delay = 5 * time.Millisecond
+			} else if delay < time.Second {
+				delay *= 2
+			}
+			log.Printf("accept: %v (retrying in %v)", err, delay)
+			time.Sleep(delay)
+			continue
 		}
+		delay = 0
+		go s.handleConn(conn, proxyProtocol)
 	}
 }
 
@@ -50,7 +65,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 
 	s.mu.Lock()
 	s.ipCount[ip]++
-	tooMany := maxConnections >= 0 && s.ipCount[ip] > maxConnections && !strings.HasSuffix(ip, "127.0.0.1")
+	tooMany := maxConnections >= 0 && s.ipCount[ip] > maxConnections && !isLocalhost(ip)
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
 
@@ -70,7 +85,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	_ = conn.SetReadDeadline(time.Time{})
 
 	parts := strings.Split(scanner.Text(), "|")
-	if len(parts) < 3 || parts[0] != "join" {
+	if len(parts) != 3 || parts[0] != "join" {
 		send("error", "ERROR_EXPECTED_JOIN")
 		return
 	}
@@ -83,20 +98,25 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.mu.Lock()
 	p := s.players[username]
 	if p == nil {
-		p = &Player{Username: username, Password: password, Elo: 1000}
+		p = &Player{Username: username, PwHash: hashPassword(s.secret, password), Elo: 1000}
 		s.players[username] = p
-	} else if p.Password != password {
+	} else if p.PwHash != hashPassword(s.secret, password) {
 		s.mu.Unlock()
 		send("error", "ERROR_WRONG_PASSWORD")
 		return
 	} else if p.conn != nil {
-		p.send("error", "ERROR_ALREADY_CONNECTED")
+		p.sendLocked("error", "ERROR_ALREADY_CONNECTED")
 		p.disconnect()
 	}
 	p.conn, p.writer = conn, w
 	s.mu.Unlock()
 
+	lastPacket := time.Now()
 	for scanner.Scan() {
+		if elapsed := time.Since(lastPacket); elapsed < minPacketInterval {
+			time.Sleep(minPacketInterval - elapsed)
+		}
+		lastPacket = time.Now()
 		s.handlePacket(p, scanner.Text())
 	}
 
@@ -123,7 +143,11 @@ func readProxyProtocolIP(r *bufio.Reader) (string, error) {
 	if len(fields) < 6 {
 		return "", fmt.Errorf("invalid PROXY protocol header")
 	}
-	return fields[2], nil
+	ip := fields[2]
+	if net.ParseIP(ip) == nil {
+		return "", fmt.Errorf("invalid source IP in PROXY header: %q", ip)
+	}
+	return ip, nil
 }
 
 func (s *Server) handlePacket(p *Player, packet string) {
@@ -167,14 +191,27 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 		msg = strings.Join(parts[1:], "|")
 	}
 	msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\n", ""), "\r", "")
-	if !p.Alive {
+	switch {
+	case !p.Alive:
 		p.sendLocked("error", "ERROR_DEAD_CANNOT_CHAT")
-	} else if !validString.MatchString(msg) {
+	case time.Since(p.lastChatAt) < minChatInterval:
+		p.sendLocked("error", "WARNING_CHAT_RATE_LIMIT")
+	case !validString.MatchString(msg):
 		p.sendLocked("error", "ERROR_INVALID_CHAT_MESSAGE")
-	} else {
+	default:
 		p.Chat = msg
+		p.chatExpiry = time.Now().Add(5 * time.Second)
+		p.lastChatAt = time.Now()
 		s.broadcastAliveLocked("message", p.ID, msg)
-		go s.clearChatLater(p, msg)
+	}
+}
+
+func (s *Server) clearExpiredChatsLocked() {
+	now := time.Now()
+	for _, p := range s.players {
+		if p.Chat != "" && now.After(p.chatExpiry) {
+			p.Chat = ""
+		}
 	}
 }
 
@@ -204,14 +241,4 @@ func (s *Server) broadcastAliveRawLocked(packet string) {
 			p.writer.Flush()
 		}
 	}
-}
-
-func (s *Server) clearChatLater(p *Player, msg string) {
-	time.Sleep(5 * time.Second)
-	s.mu.Lock()
-	if p.Chat == msg {
-		p.Chat = ""
-		s.updateViewLocked()
-	}
-	s.mu.Unlock()
 }

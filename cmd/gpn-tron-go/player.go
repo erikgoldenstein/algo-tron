@@ -79,19 +79,13 @@ func (p *Player) trimScores() {
 	p.ScoreHistory = kept
 }
 
-func (p *Player) send(parts ...any) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.sendLocked(parts...)
-}
-
 func (p *Player) sendLocked(parts ...any) {
 	if p.writer == nil {
 		return
 	}
 	vals := make([]string, len(parts))
-	for i, p := range parts {
-		vals[i] = fmt.Sprint(p)
+	for i, part := range parts {
+		vals[i] = fmt.Sprint(part)
 	}
 	fmt.Fprintln(p.writer, strings.Join(vals, "|"))
 	p.writer.Flush()
