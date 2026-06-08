@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 const (
-	baseTickrate      = 1
+	baseTickrate        = 1
 	tickIncreaseSeconds = 10
 	joinTimeout         = 5 * time.Second
 	maxViewUpdateRate   = 10
@@ -19,9 +20,7 @@ const (
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 32
-	maxPacketRate       = 60            // per-connection packets/sec cap
-	minPacketInterval   = time.Second / maxPacketRate
-	minChatInterval     = time.Second
+	packetsPerTick      = 4
 )
 
 type Move int
@@ -113,6 +112,7 @@ type Server struct {
 	secret      []byte
 	db          *sql.DB
 	scheduleURL string
+	tickNs      atomic.Int64 // current tick interval in nanoseconds
 
 	lastViewPush     time.Time
 	viewPushInFlight bool

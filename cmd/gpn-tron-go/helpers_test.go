@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -17,13 +18,15 @@ func testServer(t *testing.T) *Server {
 		t.Fatalf("openDB: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return &Server{
+	s := &Server{
 		players:     map[string]*Player{},
 		ipCount:     map[string]int{},
 		viewClients: map[*websocket.Conn]bool{},
 		secret:      make([]byte, 32),
 		db:          db,
 	}
+	s.tickNs.Store(int64(time.Second))
+	return s
 }
 
 // testPlayer returns a Player with a buffer-backed writer.

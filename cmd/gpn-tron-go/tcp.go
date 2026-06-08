@@ -113,8 +113,9 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 
 	lastPacket := time.Now()
 	for scanner.Scan() {
-		if elapsed := time.Since(lastPacket); elapsed < minPacketInterval {
-			time.Sleep(minPacketInterval - elapsed)
+		minInterval := s.tickInterval() / packetsPerTick
+		if elapsed := time.Since(lastPacket); elapsed < minInterval {
+			time.Sleep(minInterval - elapsed)
 		}
 		lastPacket = time.Now()
 		s.handlePacket(p, scanner.Text())
@@ -194,7 +195,7 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 	switch {
 	case !p.Alive:
 		p.sendLocked("error", "ERROR_DEAD_CANNOT_CHAT")
-	case time.Since(p.lastChatAt) < minChatInterval:
+	case time.Since(p.lastChatAt) < s.tickInterval():
 		p.sendLocked("error", "WARNING_CHAT_RATE_LIMIT")
 	case !validString.MatchString(msg):
 		p.sendLocked("error", "ERROR_INVALID_CHAT_MESSAGE")
@@ -213,6 +214,13 @@ func (s *Server) clearExpiredChatsLocked() {
 			p.Chat = ""
 		}
 	}
+}
+
+func (s *Server) tickInterval() time.Duration {
+	if ns := s.tickNs.Load(); ns > 0 {
+		return time.Duration(ns)
+	}
+	return time.Second
 }
 
 func (s *Server) connectedPlayersLocked() []*Player {

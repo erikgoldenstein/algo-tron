@@ -55,7 +55,9 @@ func (g *Game) startLocked() {
 func (g *Game) run() {
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
-		time.Sleep(time.Second / time.Duration(rate))
+		interval := time.Second / time.Duration(rate)
+		g.server.tickNs.Store(int64(interval))
+		time.Sleep(interval)
 		g.server.mu.Lock()
 		done := g.tickLocked()
 		g.server.mu.Unlock()
