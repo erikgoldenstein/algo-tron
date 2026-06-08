@@ -117,6 +117,7 @@ func (s *Server) broadcastViewLocked(data []byte) {
 			delete(s.viewClients, c)
 			close(sink.done)
 			c.Close()
+			metricViewersKicked.Inc()
 		}
 	}
 }

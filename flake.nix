@@ -51,6 +51,8 @@
             "-data-dir" cfg.dataDir
           ] ++ lib.optionals (cfg.scheduleURL != "") [
             "-schedule-url" cfg.scheduleURL
+          ] ++ lib.optionals (cfg.metrics.listen != "") [
+            "-metrics" cfg.metrics.listen
           ];
         in
         {
@@ -125,6 +127,13 @@
               type = lib.types.enum [ "http" "https" ];
               default = "https";
               description = "Public viewer scheme shown in the viewer UI.";
+            };
+
+            metrics.listen = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              example = "127.0.0.1:9090";
+              description = "Prometheus /metrics listen address. Leave empty to disable. Bind to localhost — the endpoint is unauthenticated.";
             };
 
             openFirewall = lib.mkOption {

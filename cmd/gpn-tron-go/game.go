@@ -139,8 +139,16 @@ func (g *Game) tickLocked() bool {
 	fanoutStart := time.Now()
 	g.server.broadcastAliveLocked(string(frame))
 	g.server.broadcastTickLocked(deathIDs)
-	g.server.fanoutDurNs.Store(int64(time.Since(fanoutStart)))
-	g.server.tickDurNs.Store(int64(time.Since(tickStart)))
+	end := time.Now()
+	tickDur := end.Sub(tickStart)
+	fanoutDur := end.Sub(fanoutStart)
+	g.server.fanoutDurNs.Store(int64(fanoutDur))
+	g.server.tickDurNs.Store(int64(tickDur))
+	metricTicks.Inc()
+	if interval := g.server.tickInterval(); interval > 0 {
+		metricTickBudget.Observe(tickDur.Seconds() / interval.Seconds())
+		metricFanoutBudget.Observe(fanoutDur.Seconds() / interval.Seconds())
+	}
 
 	if ending {
 		g.endLocked()
@@ -155,6 +163,7 @@ func (g *Game) killDisconnectedLocked(dead map[*Player]bool) {
 			dead[p] = true
 			p.Alive = false
 			g.removeFromFields(p)
+			metricDisconnectKilled.Inc()
 		}
 	}
 }
@@ -227,7 +236,10 @@ func (g *Game) endLocked() {
 	g.server.store()
 	g.server.updateScoreboardLocked()
 	g.server.broadcastEndLocked()
-	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", time.Since(g.startTime).Milliseconds())
+	dur := time.Since(g.startTime)
+	metricGames.Inc()
+	metricGameDuration.Observe(dur.Seconds())
+	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", dur.Milliseconds())
 }
 
 func (g *Game) updateEloLocked(winners []*Player) {

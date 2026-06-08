@@ -29,6 +29,7 @@ func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
 			} else if delay < time.Second {
 				delay *= 2
 			}
+			metricTCPAcceptErrors.Inc()
 			slog.Warn("tcp accept", "err", err, "retry_in", delay)
 			time.Sleep(delay)
 			continue
@@ -42,6 +43,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer conn.Close()
 	defer func() {
 		if r := recover(); r != nil {
+			metricTCPPanics.Inc()
 			slog.Error("tcp handler panic", "err", r, "stack", string(debug.Stack()))
 		}
 	}()
@@ -56,6 +58,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
 		proxyIP, err := readProxyProtocolIP(r)
 		if err != nil {
+			metricTCPRejected.WithLabelValues("proxy_protocol").Inc()
 			writePacket(w, "error", "ERROR_PROXY_PROTOCOL")
 			return
 		}
@@ -71,6 +74,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
 
 	if tooMany {
+		metricTCPRejected.WithLabelValues("max_connections").Inc()
 		writePacket(w, "error", "ERROR_MAX_CONNECTIONS")
 		return
 	}
@@ -80,6 +84,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1024), 1024)
 	if !scanner.Scan() {
+		metricTCPRejected.WithLabelValues("join_timeout").Inc()
 		writePacket(w, "error", "ERROR_JOIN_TIMEOUT")
 		return
 	}
@@ -87,11 +92,13 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 
 	parts := strings.Split(scanner.Text(), "|")
 	if len(parts) != 3 || parts[0] != "join" {
+		metricTCPRejected.WithLabelValues("expected_join").Inc()
 		writePacket(w, "error", "ERROR_EXPECTED_JOIN")
 		return
 	}
 	username, password := parts[1], parts[2]
 	if errCode := validateJoin(username, password, ip); errCode != "" {
+		metricTCPRejected.WithLabelValues("invalid_join").Inc()
 		writePacket(w, "error", errCode)
 		return
 	}
@@ -103,6 +110,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		s.players[username] = p
 	} else if p.PwHash != hashPassword(s.secret, password) {
 		s.mu.Unlock()
+		metricTCPRejected.WithLabelValues("wrong_password").Inc()
 		writePacket(w, "error", "ERROR_WRONG_PASSWORD")
 		return
 	} else if p.conn != nil {
@@ -196,6 +204,7 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 	case !p.Alive:
 		p.sendLocked("error", "ERROR_DEAD_CANNOT_CHAT")
 	case time.Since(p.lastChatAt) < s.tickInterval():
+		metricChatRateLimited.Inc()
 		p.sendLocked("error", "WARNING_CHAT_RATE_LIMIT")
 	case !validString.MatchString(msg):
 		p.sendLocked("error", "ERROR_INVALID_CHAT_MESSAGE")

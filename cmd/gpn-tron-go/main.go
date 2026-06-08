@@ -13,6 +13,7 @@ import (
 func main() {
 	tcpAddr := flag.String("tcp", ":4000", "TCP game listen address")
 	viewAddr := flag.String("view", ":3000", "HTTP viewer listen address")
+	metricsAddr := flag.String("metrics", "", "Prometheus /metrics listen address (empty to disable). Bind to localhost; this port is unauthenticated.")
 	proxyProtocol := flag.Bool("proxy-protocol", false, "Expect HAProxy PROXY protocol v1 headers on TCP game connections")
 	publicTCP := flag.String("public-tcp", "play-tron.erik.gdn:443", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "view-tron.erik.gdn:443", "HTTP viewer connection string shown in viewer")
@@ -49,11 +50,15 @@ func main() {
 	s.viewState.ViewInfoList = []ServerInfo{{Host: hostOnly(*publicView), Port: portOnly(*publicView), Scheme: *publicViewScheme}}
 	s.load()
 	s.updateScoreboardLocked()
+	s.registerGauges()
 
 	go s.gameLoop()
 	go s.statsLoop()
 	go func() { log.Fatal(s.listenTCP(*tcpAddr, *proxyProtocol)) }()
+	if *metricsAddr != "" {
+		go func() { log.Fatal(listenMetrics(*metricsAddr)) }()
+	}
 
-	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr)
+	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr)
 	log.Fatal(s.listenHTTP(*viewAddr))
 }
