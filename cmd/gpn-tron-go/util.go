@@ -6,7 +6,6 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -43,24 +42,15 @@ func randID() string {
 }
 
 func hostOnly(s string) string {
-	h, _, err := net.SplitHostPort(s)
-	if err == nil {
+	if h, _, err := net.SplitHostPort(s); err == nil {
 		return h
-	}
-	if i := strings.LastIndex(s, ":"); i >= 0 {
-		return s[:i]
 	}
 	return s
 }
 
 func portOnly(s string) int {
-	_, p, err := net.SplitHostPort(s)
-	if err == nil {
+	if _, p, err := net.SplitHostPort(s); err == nil {
 		n, _ := strconv.Atoi(p)
-		return n
-	}
-	if i := strings.LastIndex(s, ":"); i >= 0 {
-		n, _ := strconv.Atoi(s[i+1:])
 		return n
 	}
 	return 4000

@@ -99,11 +99,12 @@ func TestWinsLoses(t *testing.T) {
 		{Type: 1, Time: now},
 		{Type: 0, Time: now},
 	}
-	if got := p.wins(); got != 2 {
-		t.Errorf("wins = %d, want 2", got)
+	w, l := p.winsLosses()
+	if w != 2 {
+		t.Errorf("wins = %d, want 2", w)
 	}
-	if got := p.loses(); got != 1 {
-		t.Errorf("loses = %d, want 1", got)
+	if l != 1 {
+		t.Errorf("loses = %d, want 1", l)
 	}
 }
 

@@ -84,24 +84,16 @@ func (s *Server) updateViewLocked() {
 }
 
 // pushLoop drains pushSig and writes viewState to all viewer clients,
-// rate-limited to maxViewUpdateRate. One goroutine for the lifetime of the
-// process; a panic in pushOnce is recovered and the loop continues.
+// rate-limited to maxViewUpdateRate.
 func (s *Server) pushLoop() {
 	interval := time.Second / maxViewUpdateRate
 	var last time.Time
 	for range s.pushSig {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("pushLoop: recovered from panic: %v", r)
-				}
-			}()
-			if d := time.Since(last); d < interval {
-				time.Sleep(interval - d)
-			}
-			s.pushOnce()
-			last = time.Now()
-		}()
+		if d := time.Since(last); d < interval {
+			time.Sleep(interval - d)
+		}
+		s.pushOnce()
+		last = time.Now()
 	}
 }
 
@@ -139,9 +131,6 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 		point := map[string]any{"name": i}
 		for _, entry := range entries {
 			p := s.players[entry.Username]
-			if p == nil {
-				continue
-			}
 			end := len(p.ScoreHistory) - (chartPoints - 1 - i)
 			if end < 0 {
 				end = 0

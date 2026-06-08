@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,11 @@ func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
 
 func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer conn.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in handleConn: %v\n%s", r, debug.Stack())
+		}
+	}()
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)

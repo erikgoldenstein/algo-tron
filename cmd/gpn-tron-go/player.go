@@ -62,9 +62,6 @@ func (p *Player) winsLosses() (int, int) {
 	return w, l
 }
 
-func (p *Player) wins() int  { w, _ := p.winsLosses(); return w }
-func (p *Player) loses() int { _, l := p.winsLosses(); return l }
-
 func (p *Player) trimScores() {
 	cutoff := time.Now().Add(-scoreWindow).UnixMilli()
 	kept := p.ScoreHistory[:0]
