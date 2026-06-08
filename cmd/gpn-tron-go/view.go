@@ -45,15 +45,17 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	}
 	c.SetReadLimit(512)
 
+	sink := &viewerSink{ch: make(chan []byte, 1), done: make(chan struct{})}
+
 	s.mu.Lock()
 	data, _ := json.Marshal(s.viewState)
 	s.mu.Unlock()
-	if !writeViewMessage(c, data) {
-		c.Close()
-		return
-	}
+	sink.ch <- data // seed; cap-1 chan, no contention yet
+
+	go s.viewWriter(c, sink)
+
 	s.mu.Lock()
-	s.viewClients[c] = true
+	s.viewClients[c] = sink
 	s.mu.Unlock()
 
 	for {
@@ -61,8 +63,27 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			s.mu.Lock()
 			delete(s.viewClients, c)
 			s.mu.Unlock()
+			close(sink.done)
 			c.Close()
 			return
+		}
+	}
+}
+
+// viewWriter drains the sink and writes frames to c. A bad write closes c so
+// the read loop sees the disconnect and runs cleanup; the writer then exits on
+// sink.done. sink.ch is never closed (would race with pushOnce sends).
+func (s *Server) viewWriter(c *websocket.Conn, sink *viewerSink) {
+	for {
+		select {
+		case <-sink.done:
+			return
+		case data := <-sink.ch:
+			if !writeViewMessage(c, data) {
+				c.Close()
+				<-sink.done
+				return
+			}
 		}
 	}
 }
@@ -162,30 +183,28 @@ func (s *Server) pushOnce() {
 		return
 	}
 	data, _ := json.Marshal(s.viewState)
-	clients := make([]*websocket.Conn, 0, len(s.viewClients))
-	for c := range s.viewClients {
-		clients = append(clients, c)
+	sinks := make([]*viewerSink, 0, len(s.viewClients))
+	for _, sink := range s.viewClients {
+		sinks = append(sinks, sink)
 	}
 	s.mu.Unlock()
 
-	dead := []*websocket.Conn{}
-	for _, c := range clients {
-		if !writeViewMessage(c, data) {
-			dead = append(dead, c)
+	// Non-blocking send; if the sink still holds a stale frame, drop it and
+	// queue the newer one. Viewers only care about the latest state.
+	for _, sink := range sinks {
+		select {
+		case sink.ch <- data:
+		default:
+			select {
+			case <-sink.ch:
+			default:
+			}
+			select {
+			case sink.ch <- data:
+			default:
+			}
 		}
 	}
-	if len(dead) == 0 {
-		return
-	}
-
-	s.mu.Lock()
-	for _, c := range dead {
-		if s.viewClients[c] {
-			delete(s.viewClients, c)
-			c.Close()
-		}
-	}
-	s.mu.Unlock()
 }
 
 func writeViewMessage(c *websocket.Conn, data []byte) bool {

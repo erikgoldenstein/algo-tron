@@ -45,9 +45,19 @@ func (g *Game) startLocked() {
 	for _, p := range g.players {
 		p.sendLocked("game", g.width, g.height, p.ID)
 	}
-	g.broadcastPlayersLocked()
-	g.broadcastPosLocked()
-	g.server.broadcastAliveLocked("tick\n")
+	var b strings.Builder
+	for _, p := range g.players {
+		if p.Alive {
+			fmt.Fprintf(&b, "player|%d|%s\n", p.ID, p.Username)
+		}
+	}
+	for _, p := range g.players {
+		if p.Alive {
+			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
+		}
+	}
+	b.WriteString("tick\n")
+	g.server.broadcastAliveLocked(b.String())
 	g.server.updateViewLocked()
 	go g.run()
 }
@@ -72,16 +82,31 @@ func (g *Game) tickLocked() bool {
 	g.killDisconnectedLocked(dead)
 	g.movePlayersLocked()
 	g.applyCollisionsLocked(dead)
-	g.loseDeadLocked(dead)
-	g.broadcastPosLocked()
+	deathIDs := g.processDeadLocked(dead)
 	g.server.clearExpiredChatsLocked()
 	g.server.updateViewLocked()
 
-	if g.shouldEndLocked() {
+	ending := g.shouldEndLocked()
+	var b strings.Builder
+	if len(deathIDs) > 0 {
+		b.WriteString("die|")
+		b.WriteString(strings.Join(deathIDs, "|"))
+		b.WriteByte('\n')
+	}
+	for _, p := range g.players {
+		if p.Alive {
+			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
+		}
+	}
+	if !ending {
+		b.WriteString("tick\n")
+	}
+	g.server.broadcastAliveLocked(b.String())
+
+	if ending {
 		g.endLocked()
 		return true
 	}
-	g.server.broadcastAliveLocked("tick\n")
 	return false
 }
 
@@ -135,16 +160,14 @@ func (g *Game) applyCollisionsLocked(dead map[*Player]bool) {
 	}
 }
 
-func (g *Game) loseDeadLocked(dead map[*Player]bool) {
+func (g *Game) processDeadLocked(dead map[*Player]bool) []string {
 	ids := []string{}
 	for p := range dead {
 		g.removeFromFields(p)
 		p.loseLocked()
 		ids = append(ids, strconv.Itoa(p.ID))
 	}
-	if len(ids) > 0 {
-		g.server.broadcastAliveLocked("die|" + strings.Join(ids, "|") + "\n")
-	}
+	return ids
 }
 
 func (g *Game) shouldEndLocked() bool {
@@ -194,26 +217,6 @@ func (g *Game) updateEloLocked(winners []*Player) {
 		}
 		p.Elo += delta
 	}
-}
-
-func (g *Game) broadcastPlayersLocked() {
-	var b strings.Builder
-	for _, p := range g.players {
-		if p.Alive {
-			fmt.Fprintf(&b, "player|%d|%s\n", p.ID, p.Username)
-		}
-	}
-	g.server.broadcastAliveLocked(b.String())
-}
-
-func (g *Game) broadcastPosLocked() {
-	var b strings.Builder
-	for _, p := range g.players {
-		if p.Alive {
-			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
-		}
-	}
-	g.server.broadcastAliveLocked(b.String())
 }
 
 func (g *Game) aliveLocked() []*Player {

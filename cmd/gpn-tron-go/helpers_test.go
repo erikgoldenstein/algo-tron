@@ -21,7 +21,7 @@ func testServer(t *testing.T) *Server {
 	s := &Server{
 		players:     map[string]*Player{},
 		ipCount:     map[string]int{},
-		viewClients: map[*websocket.Conn]bool{},
+		viewClients: map[*websocket.Conn]*viewerSink{},
 		secret:      make([]byte, 32),
 		db:          db,
 		pushSig:     make(chan struct{}, 1),

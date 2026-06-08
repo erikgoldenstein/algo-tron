@@ -45,6 +45,9 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 			log.Printf("panic in handleConn: %v\n%s", r, debug.Stack())
 		}
 	}()
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)

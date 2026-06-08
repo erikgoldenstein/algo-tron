@@ -39,7 +39,7 @@ func main() {
 	s := &Server{
 		players:     map[string]*Player{},
 		ipCount:     map[string]int{},
-		viewClients: map[*websocket.Conn]bool{},
+		viewClients: map[*websocket.Conn]*viewerSink{},
 		secret:      secret,
 		db:          db,
 		scheduleURL: *scheduleURL,

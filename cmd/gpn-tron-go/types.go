@@ -107,7 +107,7 @@ type Server struct {
 	ipCount     map[string]int
 	game        *Game
 	viewState   ViewState
-	viewClients map[*websocket.Conn]bool
+	viewClients map[*websocket.Conn]*viewerSink
 
 	secret      []byte
 	db          *sql.DB
@@ -115,6 +115,16 @@ type Server struct {
 	tickNs      atomic.Int64 // current tick interval in nanoseconds
 
 	pushSig chan struct{} // cap 1, signals pushLoop that viewState changed
+}
+
+// viewerSink decouples pushes from per-client write latency: pushOnce does a
+// non-blocking send into ch (replacing any stale payload), and a dedicated
+// writer goroutine drains ch into the websocket. A slow client only slows
+// itself. done is closed by viewWS when the client disconnects, so the writer
+// can exit without ch ever being closed (avoids send-on-closed-chan races).
+type viewerSink struct {
+	ch   chan []byte
+	done chan struct{}
 }
 
 type Game struct {

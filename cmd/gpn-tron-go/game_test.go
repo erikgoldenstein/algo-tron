@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -253,12 +253,12 @@ func TestKillDisconnectedLocked(t *testing.T) {
 	}
 }
 
-// — loseDeadLocked ————————————————————————————————————————————————————
+// — processDeadLocked ————————————————————————————————————————————————————
 
-func TestLoseDeadLocked(t *testing.T) {
+func TestProcessDeadLocked(t *testing.T) {
 	s := testServer(t)
 	a, _ := testPlayer("a")
-	b, bufB := testPlayer("b")
+	b, _ := testPlayer("b")
 	g := makeGame(s, []*Player{a, b})
 	s.players["a"] = a
 	s.players["b"] = b
@@ -266,16 +266,16 @@ func TestLoseDeadLocked(t *testing.T) {
 	a.Alive = false
 
 	dead := map[*Player]bool{a: true}
-	g.loseDeadLocked(dead)
+	ids := g.processDeadLocked(dead)
 
+	if len(ids) != 1 || ids[0] != strconv.Itoa(a.ID) {
+		t.Errorf("ids = %v, want [%d]", ids, a.ID)
+	}
 	if len(a.ScoreHistory) != 1 || a.ScoreHistory[0].Type != 0 {
 		t.Error("a should have one loss in ScoreHistory")
 	}
 	if g.fields[0][0] != -1 {
 		t.Error("a's cell should be cleared after death")
-	}
-	if !strings.Contains(bufB.String(), "die|") {
-		t.Errorf("alive player b should receive die broadcast, got %q", bufB.String())
 	}
 }
 
