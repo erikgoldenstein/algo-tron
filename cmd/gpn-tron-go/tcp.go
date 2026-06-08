@@ -42,20 +42,12 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
-	send := func(parts ...any) {
-		vals := make([]string, len(parts))
-		for i, p := range parts {
-			vals[i] = fmt.Sprint(p)
-		}
-		fmt.Fprintln(w, strings.Join(vals, "|"))
-		w.Flush()
-	}
 
 	if proxyProtocol {
 		_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
 		proxyIP, err := readProxyProtocolIP(r)
 		if err != nil {
-			send("error", "ERROR_PROXY_PROTOCOL")
+			writePacket(w, "error", "ERROR_PROXY_PROTOCOL")
 			return
 		}
 		if proxyIP != "" {
@@ -70,28 +62,28 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
 
 	if tooMany {
-		send("error", "ERROR_MAX_CONNECTIONS")
+		writePacket(w, "error", "ERROR_MAX_CONNECTIONS")
 		return
 	}
-	send("motd", "You can find the protocol documentation here: https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md")
+	writePacket(w, "motd", "You can find the protocol documentation here: https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md")
 
 	_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1024), 1024)
 	if !scanner.Scan() {
-		send("error", "ERROR_JOIN_TIMEOUT")
+		writePacket(w, "error", "ERROR_JOIN_TIMEOUT")
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
 
 	parts := strings.Split(scanner.Text(), "|")
 	if len(parts) != 3 || parts[0] != "join" {
-		send("error", "ERROR_EXPECTED_JOIN")
+		writePacket(w, "error", "ERROR_EXPECTED_JOIN")
 		return
 	}
 	username, password := parts[1], parts[2]
 	if errCode := validateJoin(username, password, ip); errCode != "" {
-		send("error", errCode)
+		writePacket(w, "error", errCode)
 		return
 	}
 
@@ -102,7 +94,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		s.players[username] = p
 	} else if p.PwHash != hashPassword(s.secret, password) {
 		s.mu.Unlock()
-		send("error", "ERROR_WRONG_PASSWORD")
+		writePacket(w, "error", "ERROR_WRONG_PASSWORD")
 		return
 	} else if p.conn != nil {
 		p.sendLocked("error", "ERROR_ALREADY_CONNECTED")
@@ -203,7 +195,7 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 		p.Chat = msg
 		p.chatExpiry = time.Now().Add(5 * time.Second)
 		p.lastChatAt = time.Now()
-		s.broadcastAliveLocked("message", p.ID, msg)
+		s.broadcastAliveLocked(fmt.Sprintf("message|%d|%s\n", p.ID, msg))
 	}
 }
 
@@ -234,15 +226,7 @@ func (s *Server) connectedPlayersLocked() []*Player {
 	return out
 }
 
-func (s *Server) broadcastAliveLocked(parts ...any) {
-	for _, p := range s.players {
-		if p.Alive {
-			p.sendLocked(parts...)
-		}
-	}
-}
-
-func (s *Server) broadcastAliveRawLocked(packet string) {
+func (s *Server) broadcastAliveLocked(packet string) {
 	for _, p := range s.players {
 		if p.Alive && p.writer != nil {
 			p.writer.WriteString(packet)

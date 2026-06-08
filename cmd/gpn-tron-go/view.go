@@ -102,7 +102,7 @@ func (s *Server) pushViewLocked(force bool) {
 func (s *Server) updateScoreboardLocked() {
 	entries := []ScoreboardEntry{}
 	for _, p := range s.players {
-		w, l := p.wins(), p.loses()
+		w, l := p.winsLosses()
 		games := w + l
 		wr := 0.0
 		if games > 0 {

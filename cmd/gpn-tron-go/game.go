@@ -47,7 +47,7 @@ func (g *Game) startLocked() {
 	}
 	g.broadcastPlayersLocked()
 	g.broadcastPosLocked()
-	g.server.broadcastAliveLocked("tick")
+	g.server.broadcastAliveLocked("tick\n")
 	g.server.updateViewLocked()
 	go g.run()
 }
@@ -81,7 +81,7 @@ func (g *Game) tickLocked() bool {
 		g.endLocked()
 		return true
 	}
-	g.server.broadcastAliveLocked("tick")
+	g.server.broadcastAliveLocked("tick\n")
 	return false
 }
 
@@ -143,7 +143,7 @@ func (g *Game) loseDeadLocked(dead map[*Player]bool) {
 		ids = append(ids, strconv.Itoa(p.ID))
 	}
 	if len(ids) > 0 {
-		g.server.broadcastAliveRawLocked("die|" + strings.Join(ids, "|") + "\n")
+		g.server.broadcastAliveLocked("die|" + strings.Join(ids, "|") + "\n")
 	}
 }
 
@@ -203,7 +203,7 @@ func (g *Game) broadcastPlayersLocked() {
 			fmt.Fprintf(&b, "player|%d|%s\n", p.ID, p.Username)
 		}
 	}
-	g.server.broadcastAliveRawLocked(b.String())
+	g.server.broadcastAliveLocked(b.String())
 }
 
 func (g *Game) broadcastPosLocked() {
@@ -213,7 +213,7 @@ func (g *Game) broadcastPosLocked() {
 			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
 		}
 	}
-	g.server.broadcastAliveRawLocked(b.String())
+	g.server.broadcastAliveLocked(b.String())
 }
 
 func (g *Game) aliveLocked() []*Player {

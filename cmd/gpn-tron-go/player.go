@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 	"time"
@@ -38,35 +39,31 @@ func (p *Player) readMoveLocked() Move {
 
 func (p *Player) winLocked() {
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 1, Time: time.Now().UnixMilli()})
-	p.sendLocked("win", p.wins(), p.loses())
+	w, l := p.winsLosses()
+	p.sendLocked("win", w, l)
 }
 
 func (p *Player) loseLocked() {
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: time.Now().UnixMilli()})
-	p.sendLocked("lose", p.wins(), p.loses())
+	w, l := p.winsLosses()
+	p.sendLocked("lose", w, l)
 }
 
-func (p *Player) wins() int {
+func (p *Player) winsLosses() (int, int) {
 	p.trimScores()
-	n := 0
+	w, l := 0, 0
 	for _, s := range p.ScoreHistory {
 		if s.Type == 1 {
-			n++
+			w++
+		} else {
+			l++
 		}
 	}
-	return n
+	return w, l
 }
 
-func (p *Player) loses() int {
-	p.trimScores()
-	n := 0
-	for _, s := range p.ScoreHistory {
-		if s.Type == 0 {
-			n++
-		}
-	}
-	return n
-}
+func (p *Player) wins() int  { w, _ := p.winsLosses(); return w }
+func (p *Player) loses() int { _, l := p.winsLosses(); return l }
 
 func (p *Player) trimScores() {
 	cutoff := time.Now().Add(-scoreWindow).UnixMilli()
@@ -79,16 +76,18 @@ func (p *Player) trimScores() {
 	p.ScoreHistory = kept
 }
 
-func (p *Player) sendLocked(parts ...any) {
-	if p.writer == nil {
+func (p *Player) sendLocked(parts ...any) { writePacket(p.writer, parts...) }
+
+func writePacket(w *bufio.Writer, parts ...any) {
+	if w == nil {
 		return
 	}
 	vals := make([]string, len(parts))
 	for i, part := range parts {
 		vals[i] = fmt.Sprint(part)
 	}
-	fmt.Fprintln(p.writer, strings.Join(vals, "|"))
-	p.writer.Flush()
+	fmt.Fprintln(w, strings.Join(vals, "|"))
+	w.Flush()
 }
 
 func (p *Player) disconnect() {
