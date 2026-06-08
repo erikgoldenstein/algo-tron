@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"math/rand/v2"
 	"strconv"
@@ -45,19 +44,19 @@ func (g *Game) startLocked() {
 	for _, p := range g.players {
 		p.sendLocked("game", g.width, g.height, p.ID)
 	}
-	var b strings.Builder
+	frame := make([]byte, 0, len(g.players)*32)
 	for _, p := range g.players {
 		if p.Alive {
-			fmt.Fprintf(&b, "player|%d|%s\n", p.ID, p.Username)
+			frame = appendPlayer(frame, p.ID, p.Username)
 		}
 	}
 	for _, p := range g.players {
 		if p.Alive {
-			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
+			frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
 		}
 	}
-	b.WriteString("tick\n")
-	g.server.broadcastAliveLocked(b.String())
+	frame = append(frame, "tick\n"...)
+	g.server.broadcastAliveLocked(string(frame))
 	g.server.updateViewLocked()
 	go g.run()
 }
@@ -87,21 +86,21 @@ func (g *Game) tickLocked() bool {
 	g.server.updateViewLocked()
 
 	ending := g.shouldEndLocked()
-	var b strings.Builder
+	frame := make([]byte, 0, len(g.players)*16)
 	if len(deathIDs) > 0 {
-		b.WriteString("die|")
-		b.WriteString(strings.Join(deathIDs, "|"))
-		b.WriteByte('\n')
+		frame = append(frame, "die|"...)
+		frame = append(frame, strings.Join(deathIDs, "|")...)
+		frame = append(frame, '\n')
 	}
 	for _, p := range g.players {
 		if p.Alive {
-			fmt.Fprintf(&b, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
+			frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
 		}
 	}
 	if !ending {
-		b.WriteString("tick\n")
+		frame = append(frame, "tick\n"...)
 	}
-	g.server.broadcastAliveLocked(b.String())
+	g.server.broadcastAliveLocked(string(frame))
 
 	if ending {
 		g.endLocked()
@@ -237,4 +236,28 @@ func (g *Game) removeFromFields(p *Player) {
 			g.fields[m.X][m.Y] = -1
 		}
 	}
+}
+
+// appendPos and appendPlayer write protocol lines directly into a []byte.
+// They exist instead of fmt.Fprintf("pos|%d|%d|%d\n", ...) because the per-tick
+// broadcast runs in O(players) and fmt's reflection allocates per call; on
+// large games that dominates frame-build time. If you change the wire format,
+// update these and the matching reader in the bot/tcp tests.
+
+func appendPos(buf []byte, id, x, y int) []byte {
+	buf = append(buf, "pos|"...)
+	buf = strconv.AppendInt(buf, int64(id), 10)
+	buf = append(buf, '|')
+	buf = strconv.AppendInt(buf, int64(x), 10)
+	buf = append(buf, '|')
+	buf = strconv.AppendInt(buf, int64(y), 10)
+	return append(buf, '\n')
+}
+
+func appendPlayer(buf []byte, id int, name string) []byte {
+	buf = append(buf, "player|"...)
+	buf = strconv.AppendInt(buf, int64(id), 10)
+	buf = append(buf, '|')
+	buf = append(buf, name...)
+	return append(buf, '\n')
 }

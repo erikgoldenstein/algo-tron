@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -44,8 +43,8 @@ func reportMaxTPS(b *testing.B) {
 }
 
 // BenchmarkTickFrame measures the cost of building the combined pos|...\ntick\n
-// frame that tickLocked broadcasts each tick. Stresses the broadcast-coalescing
-// hot path introduced when the per-tick die/pos/tick lines were merged.
+// frame that tickLocked broadcasts each tick. Mirrors the production hot loop
+// (appendPos + append "tick\n") so changes to those helpers show up here.
 func BenchmarkTickFrame(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		b.Run(fmt.Sprintf("players=%d", n), func(b *testing.B) {
@@ -53,14 +52,14 @@ func BenchmarkTickFrame(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				var sb strings.Builder
+				frame := make([]byte, 0, len(players)*16)
 				for _, p := range players {
 					if p.Alive {
-						fmt.Fprintf(&sb, "pos|%d|%d|%d\n", p.ID, p.Pos.X, p.Pos.Y)
+						frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
 					}
 				}
-				sb.WriteString("tick\n")
-				_ = sb.String()
+				frame = append(frame, "tick\n"...)
+				_ = string(frame)
 			}
 			b.StopTimer()
 			reportMaxTPS(b)
