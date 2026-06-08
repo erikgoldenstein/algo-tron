@@ -43,14 +43,12 @@ func main() {
 		secret:      secret,
 		db:          db,
 		scheduleURL: *scheduleURL,
-		pushSig:     make(chan struct{}, 1),
 	}
 	s.viewState.ServerInfoList = []ServerInfo{{Host: hostOnly(*publicTCP), Port: portOnly(*publicTCP)}}
 	s.viewState.ViewInfoList = []ServerInfo{{Host: hostOnly(*publicView), Port: portOnly(*publicView), Scheme: *publicViewScheme}}
 	s.load()
 	s.updateScoreboardLocked()
 
-	go s.pushLoop()
 	go s.gameLoop()
 	go func() { log.Fatal(s.listenTCP(*tcpAddr, *proxyProtocol)) }()
 

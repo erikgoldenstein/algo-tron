@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -268,7 +267,7 @@ func TestProcessDeadLocked(t *testing.T) {
 	dead := map[*Player]bool{a: true}
 	ids := g.processDeadLocked(dead)
 
-	if len(ids) != 1 || ids[0] != strconv.Itoa(a.ID) {
+	if len(ids) != 1 || ids[0] != a.ID {
 		t.Errorf("ids = %v, want [%d]", ids, a.ID)
 	}
 	if len(a.ScoreHistory) != 1 || a.ScoreHistory[0].Type != 0 {

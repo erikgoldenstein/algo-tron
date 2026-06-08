@@ -67,10 +67,12 @@ func BenchmarkTickFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkViewMarshal measures JSON marshalling of ViewState with a game of
-// N players, each carrying a 64-step trail. This is the dominant cost inside
-// pushOnce and scales nonlinearly with player count (each trail is N moves).
-func BenchmarkViewMarshal(b *testing.B) {
+// BenchmarkInitMarshal measures JSON marshalling of the init/game snapshot
+// (the largest message, sent on viewer connect and at every new game) with
+// N players each carrying a 64-step trail. Per-tick deltas don't hit this
+// path — they're a tiny tickMsg. Scales nonlinearly with player count
+// (each trail is N moves).
+func BenchmarkInitMarshal(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		b.Run(fmt.Sprintf("players=%d", n), func(b *testing.B) {
 			players := benchPlayers(n)
@@ -80,16 +82,13 @@ func BenchmarkViewMarshal(b *testing.B) {
 					p.Moves[j] = Vec2{X: j, Y: j}
 				}
 			}
-			st := ViewState{Game: &GameState{ID: "bench", Width: 64, Height: 64}}
-			for _, p := range players {
-				st.Game.Players = append(st.Game.Players, PlayerState{
-					ID: p.ID, Alive: p.Alive, Name: p.Username, Pos: p.Pos, Moves: p.Moves,
-				})
-			}
+			g := &Game{id: "bench", width: 64, height: 64, players: players}
+			m := buildGameMsgLocked(g)
+			m.Type = "game"
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _ = json.Marshal(st)
+				_, _ = json.Marshal(m)
 			}
 			b.StopTimer()
 			reportMaxTPS(b)
@@ -97,29 +96,24 @@ func BenchmarkViewMarshal(b *testing.B) {
 	}
 }
 
-// BenchmarkPushFanout drives full pushOnce against N viewer sinks, each
-// drained by a goroutine (no real websocket I/O — measures dispatch cost,
-// not network). This is the closest analog to 'how does the server handle
-// 1k connected viewers?'
+// BenchmarkPushFanout drives broadcastTickLocked (per-tick delta fanout)
+// against N viewer sinks, each drained by a goroutine. No real websocket
+// I/O — measures dispatch + marshal cost, not network. Closest analog to
+// 'how does the server handle 1k connected viewers per tick?'
 func BenchmarkPushFanout(b *testing.B) {
 	for _, n := range []int{64, 256, 1024} {
 		b.Run(fmt.Sprintf("viewers=%d", n), func(b *testing.B) {
 			s := &Server{viewClients: make(map[*websocket.Conn]*viewerSink, n)}
 
-			// Realistic game so pushOnce's rebuild + json.Marshal do real work.
 			players := benchPlayers(64)
-			for _, p := range players {
-				p.Moves = make([]Vec2, 32)
-				for j := range p.Moves {
-					p.Moves[j] = Vec2{X: j, Y: j}
-				}
-			}
 			s.game = &Game{id: "bench", width: 64, height: 64, players: players}
 
 			// Spin up N draining sinks. Distinct *websocket.Conn pointers are
-			// fine as map keys; we never call methods on them.
+			// fine as map keys; we never call methods on them. Buffer is
+			// oversized so broadcastViewLocked never triggers its kick path
+			// (which would Close a zero-value Conn and panic).
 			for i := 0; i < n; i++ {
-				sink := &viewerSink{ch: make(chan []byte, 1), done: make(chan struct{})}
+				sink := &viewerSink{ch: make(chan []byte, 1<<14), done: make(chan struct{})}
 				go func(sink *viewerSink) {
 					for {
 						select {
@@ -140,7 +134,7 @@ func BenchmarkPushFanout(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.pushOnce()
+				s.broadcastTickLocked(nil)
 			}
 			b.StopTimer()
 			reportMaxTPS(b)

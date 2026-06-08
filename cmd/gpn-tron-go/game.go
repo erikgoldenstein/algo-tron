@@ -4,7 +4,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -57,7 +56,7 @@ func (g *Game) startLocked() {
 	}
 	frame = append(frame, "tick\n"...)
 	g.server.broadcastAliveLocked(string(frame))
-	g.server.markViewDirtyLocked()
+	g.server.broadcastGameLocked()
 	go g.run()
 }
 
@@ -83,13 +82,17 @@ func (g *Game) tickLocked() bool {
 	g.applyCollisionsLocked(dead)
 	deathIDs := g.processDeadLocked(dead)
 	g.server.clearExpiredChatsLocked()
-	g.server.markViewDirtyLocked()
 
 	ending := g.shouldEndLocked()
 	frame := make([]byte, 0, len(g.players)*16)
 	if len(deathIDs) > 0 {
 		frame = append(frame, "die|"...)
-		frame = append(frame, strings.Join(deathIDs, "|")...)
+		for i, id := range deathIDs {
+			if i > 0 {
+				frame = append(frame, '|')
+			}
+			frame = strconv.AppendInt(frame, int64(id), 10)
+		}
 		frame = append(frame, '\n')
 	}
 	for _, p := range g.players {
@@ -101,6 +104,7 @@ func (g *Game) tickLocked() bool {
 		frame = append(frame, "tick\n"...)
 	}
 	g.server.broadcastAliveLocked(string(frame))
+	g.server.broadcastTickLocked(deathIDs)
 
 	if ending {
 		g.endLocked()
@@ -159,12 +163,12 @@ func (g *Game) applyCollisionsLocked(dead map[*Player]bool) {
 	}
 }
 
-func (g *Game) processDeadLocked(dead map[*Player]bool) []string {
-	ids := []string{}
+func (g *Game) processDeadLocked(dead map[*Player]bool) []int {
+	ids := []int{}
 	for p := range dead {
 		g.removeFromFields(p)
 		p.loseLocked()
-		ids = append(ids, strconv.Itoa(p.ID))
+		ids = append(ids, p.ID)
 	}
 	return ids
 }
@@ -186,7 +190,7 @@ func (g *Game) endLocked() {
 	g.server.viewState.LastWinners = names
 	g.server.store()
 	g.server.updateScoreboardLocked()
-	g.server.markViewDirtyLocked()
+	g.server.broadcastEndLocked()
 }
 
 func (g *Game) updateEloLocked(winners []*Player) {
@@ -238,26 +242,3 @@ func (g *Game) removeFromFields(p *Player) {
 	}
 }
 
-// appendPos and appendPlayer write protocol lines directly into a []byte.
-// They exist instead of fmt.Fprintf("pos|%d|%d|%d\n", ...) because the per-tick
-// broadcast runs in O(players) and fmt's reflection allocates per call; on
-// large games that dominates frame-build time. If you change the wire format,
-// update these and the matching reader in the bot/tcp tests.
-
-func appendPos(buf []byte, id, x, y int) []byte {
-	buf = append(buf, "pos|"...)
-	buf = strconv.AppendInt(buf, int64(id), 10)
-	buf = append(buf, '|')
-	buf = strconv.AppendInt(buf, int64(x), 10)
-	buf = append(buf, '|')
-	buf = strconv.AppendInt(buf, int64(y), 10)
-	return append(buf, '\n')
-}
-
-func appendPlayer(buf []byte, id int, name string) []byte {
-	buf = append(buf, "player|"...)
-	buf = strconv.AppendInt(buf, int64(id), 10)
-	buf = append(buf, '|')
-	buf = append(buf, name...)
-	return append(buf, '\n')
-}

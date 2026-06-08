@@ -165,7 +165,6 @@ func (s *Server) handlePacket(p *Player, packet string) {
 	default:
 		p.sendLocked("error", "ERROR_UNKNOWN_PACKET")
 	}
-	s.markViewDirtyLocked()
 }
 
 func (s *Server) handleMoveLocked(p *Player, parts []string) {

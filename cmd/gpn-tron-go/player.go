@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"strings"
 	"time"
 )
 
@@ -74,18 +71,6 @@ func (p *Player) trimScores() {
 }
 
 func (p *Player) sendLocked(parts ...any) { writePacket(p.writer, parts...) }
-
-func writePacket(w *bufio.Writer, parts ...any) {
-	if w == nil {
-		return
-	}
-	vals := make([]string, len(parts))
-	for i, part := range parts {
-		vals[i] = fmt.Sprint(part)
-	}
-	fmt.Fprintln(w, strings.Join(vals, "|"))
-	w.Flush()
-}
 
 func (p *Player) disconnect() {
 	if p.conn != nil {

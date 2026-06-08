@@ -85,7 +85,6 @@ func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func()) {
 		viewClients: map[*websocket.Conn]*viewerSink{},
 		secret:      make([]byte, 32),
 		db:          db,
-		pushSig:     make(chan struct{}, 1),
 	}
 	s.tickNs.Store(int64(time.Second))
 
@@ -99,7 +98,6 @@ func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func()) {
 		b.Fatalf("listen http: %v", err)
 	}
 
-	go s.pushLoop()
 	go s.gameLoop()
 	go func() {
 		for {

@@ -1,49 +1,68 @@
-let state = null;
-let chat = [];
-let last = {};
+// UI bindings: WebSocket connection, DOM updates, canvas rendering, and the
+// optional schedule pane. All game-state mutation lives in gameState.js;
+// this file only reads from the shared `gameState` object.
 
-const crc32 = function (r) {
-  for (var a, o = [], c = 0; c < 256; c++) {
-    a = c;
-    for (var f = 0; f < 8; f++) a = 1 & a ? 3988292384 ^ a >>> 1 : a >>> 1;
+const chatPanel = [];
+const chatLast = {};
+
+const wallSize = 1;
+const floorSize = 16;
+const roomSize = floorSize + wallSize;
+
+const crc32 = (r) => {
+  const o = [];
+  for (let c = 0; c < 256; c++) {
+    let a = c;
+    for (let f = 0; f < 8; f++) a = 1 & a ? 3988292384 ^ a >>> 1 : a >>> 1;
     o[c] = a;
   }
-  for (var n = -1, t = 0; t < r.length; t++) n = n >>> 8 ^ o[255 & (n ^ r.charCodeAt(t))];
+  let n = -1;
+  for (let t = 0; t < r.length; t++) n = n >>> 8 ^ o[255 & (n ^ r.charCodeAt(t))];
   return (-1 ^ n) >>> 0;
 };
-
 const color = (s) => '#' + ('000000' + crc32(s).toString(16)).slice(-6);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-htmx.on('htmx:wsAfterMessage', (event) => {
-  state = JSON.parse(event.detail.message);
-  updateDom();
-});
+// — WebSocket ————————————————————————————————————————————————————————————
+
+function connect() {
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(scheme + '://' + location.host + '/ws');
+  ws.onmessage = (e) => {
+    applyMessage(JSON.parse(e.data));
+    updateDom();
+  };
+  ws.onclose = () => setTimeout(connect, 1000);
+  ws.onerror = () => ws.close();
+}
+connect();
+
+// — DOM (scoreboard, ports, chat) ———————————————————————————————————————
 
 function updateDom() {
-  if (!state) return;
-  const game = state.serverInfoList[0] || { host: 'localhost', port: 4000 };
-  const view = (state.viewInfoList || [])[0] || { host: location.hostname, port: Number(location.port || 443), scheme: location.protocol.replace(':', '') || 'http' };
+  const game = gameState.serverInfo[0] || { host: 'localhost', port: 4000 };
+  const view = gameState.viewInfo[0] || { host: location.hostname, port: Number(location.port || 443), scheme: location.protocol.replace(':', '') || 'http' };
   const viewScheme = (view.scheme || 'http').toUpperCase();
   ports.innerHTML = '<li>- ' + view.port + ' [' + viewScheme + '] (View server)</li><li>- ' + game.port + ' [TCP] (Game server)</li>';
-  hosts.innerHTML = '<li>- ' + esc(view.scheme || 'http') + '://' + esc(view.host) + ':' + view.port + ' (View server)</li>' + state.serverInfoList.map((x) => '<li>- ' + esc(x.host) + ':' + x.port + ' (Game server)</li>').join('');
-  scoreboard.innerHTML = state.scoreboard.length ? state.scoreboard.map(scoreRow).join('') : '<tr><td colspan="6">Nobody scored yet :(</td></tr>';
+  hosts.innerHTML = '<li>- ' + esc(view.scheme || 'http') + '://' + esc(view.host) + ':' + view.port + ' (View server)</li>' + gameState.serverInfo.map((x) => '<li>- ' + esc(x.host) + ':' + x.port + ' (Game server)</li>').join('');
+  scoreboard.innerHTML = gameState.scoreboard.length ? gameState.scoreboard.map(scoreRow).join('') : '<tr><td colspan="6">Nobody scored yet :(</td></tr>';
 
-  for (const p of (state.game?.players || [])) {
+  for (const p of Object.values(gameState.game?.players || {})) {
     if (!p.chat) {
-      last[p.name] = undefined;
+      chatLast[p.name] = undefined;
       continue;
     }
-    if (last[p.name] !== p.chat) {
-      last[p.name] = p.chat;
-      chat.push({ date: Date.now(), from: p.name, message: p.chat });
-      chat = chat.slice(-30);
+    if (chatLast[p.name] !== p.chat) {
+      chatLast[p.name] = p.chat;
+      chatPanel.push({ date: Date.now(), from: p.name, message: p.chat });
+      if (chatPanel.length > 30) chatPanel.shift();
     }
   }
-  document.getElementById('chat').innerHTML = [...chat].reverse().map(chatRow).join('');
+  document.getElementById('chat').innerHTML = [...chatPanel].reverse().map(chatRow).join('');
 }
 
 function scoreRow(p, i) {
-  const winner = state.lastWinners.includes(p.username) ? ' 🎉' : '';
+  const winner = gameState.lastWinners.includes(p.username) ? ' 🎉' : '';
   return '<tr><td>' + (i + 1) + '.</td><td style="color:' + color(p.username) + '">' + esc(p.username) + winner + '</td><td>' + p.winRatio.toFixed(2) + '</td><td>' + p.elo.toFixed(0) + '</td><td>' + p.wins + '</td><td>' + p.losses + '</td></tr>';
 }
 
@@ -52,18 +71,9 @@ function chatRow(m) {
   return '<div style="margin:.5rem"><b>' + esc(m.from) + ' (' + date + ')</b><br>' + esc(m.message) + '</div>';
 }
 
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+// — Canvas rendering ————————————————————————————————————————————————————
 
-setInterval(() => {
-  render();
-  renderChart();
-}, 1000 / 30);
-
-const wallSize = 1;
-const floorSize = 16;
-const roomSize = floorSize + wallSize;
+setInterval(() => { render(); renderChart(); }, 1000 / 30);
 
 function line(ctx, radius, color, from, to) {
   ctx.strokeStyle = color;
@@ -75,7 +85,7 @@ function line(ctx, radius, color, from, to) {
 }
 
 function render() {
-  const game = state?.game;
+  const game = gameState.game;
   const canvas = document.getElementById('game');
   if (!game || !canvas.parentElement) return;
 
@@ -114,7 +124,7 @@ function renderBoard(ctx, game, size, room) {
 }
 
 function renderPlayers(ctx, game, room, radius) {
-  for (const player of game.players) {
+  for (const player of Object.values(game.players)) {
     if (!player.alive) continue;
     const playerColor = color(player.name);
     const x = player.pos.x * room + room / 2;
@@ -197,7 +207,7 @@ function renderChart() {
   canvas.height = height;
   ctx.clearRect(0, 0, width, height);
 
-  const data = state?.chartData || [];
+  const data = gameState.chartData || [];
   const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
   if (!data.length || !names.length) {
     ctx.fillStyle = 'white';
@@ -239,6 +249,8 @@ function renderChart() {
     legendX += ctx.measureText(name).width + 12;
   }
 }
+
+// — Schedule pane (optional) ————————————————————————————————————————————
 
 const scheduleEl = document.getElementById('schedule-pane');
 if (scheduleEl) {
