@@ -1,7 +1,5 @@
-# go-tron
 
-A minimal Go reimplementation of [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/).
-
+A minimal Go reimplementation of [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron
 It keeps the original TCP bot protocol and serves a public viewer UI over HTTP. The intended deployment model is to run the Go service on localhost and put nginx in front of it:
 
 - `tron.erik.gdn:4000` routes to the raw TCP game server.
@@ -53,8 +51,8 @@ This repo exposes a package and a NixOS module:
             enable = true;
             tcp.listen = "127.0.0.1:4000";
             view.listen = "127.0.0.1:3000";
-            tcp.publicAddress = "play-tron.erik.gdn:443";
-            view.publicAddress = "view-tron.erik.gdn:443";
+            tcp.publicAddress = "tron.erik.gdn:4000";
+            view.publicAddress = "tron.erik.gdn";
             view.publicScheme = "https";
             # Optional:
             # tcp.proxyProtocol = true;
