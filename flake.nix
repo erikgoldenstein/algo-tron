@@ -48,7 +48,9 @@
             "-public-tcp" cfg.tcp.publicAddress
             "-public-view" cfg.view.publicAddress
             "-public-view-scheme" cfg.view.publicScheme
-            "-data" cfg.dataPath
+            "-data-dir" cfg.dataDir
+          ] ++ lib.optionals (cfg.scheduleURL != "") [
+            "-schedule-url" cfg.scheduleURL
           ];
         in
         {
@@ -74,10 +76,17 @@
               description = "Group account for the service.";
             };
 
-            dataPath = lib.mkOption {
+            dataDir = lib.mkOption {
               type = lib.types.str;
-              default = "/var/lib/go-tron/data.json";
-              description = "Path for persisted score data.";
+              default = "/var/lib/go-tron";
+              description = "Directory holding the SQLite player database, HMAC secret, and rotated log files.";
+            };
+
+            scheduleURL = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              example = "https://example.org/schedule.json";
+              description = "URL for the optional talk schedule JSON shown in the viewer UI. Leave empty to hide the schedule panel.";
             };
 
             tcp.listen = lib.mkOption {
@@ -151,7 +160,7 @@
                 PrivateTmp = true;
                 ProtectHome = true;
                 ProtectSystem = "strict";
-                ReadWritePaths = [ (dirOf cfg.dataPath) ];
+                ReadWritePaths = [ cfg.dataDir ];
               };
             };
 
