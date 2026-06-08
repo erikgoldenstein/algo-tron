@@ -24,6 +24,7 @@ func testServer(t *testing.T) *Server {
 		viewClients: map[*websocket.Conn]bool{},
 		secret:      make([]byte, 32),
 		db:          db,
+		pushSig:     make(chan struct{}, 1),
 	}
 	s.tickNs.Store(int64(time.Second))
 	return s

@@ -114,8 +114,7 @@ type Server struct {
 	scheduleURL string
 	tickNs      atomic.Int64 // current tick interval in nanoseconds
 
-	lastViewPush     time.Time
-	viewPushInFlight bool
+	pushSig chan struct{} // cap 1, signals pushLoop that viewState changed
 }
 
 type Game struct {

@@ -77,26 +77,32 @@ func (s *Server) updateViewLocked() {
 	} else {
 		s.viewState.Game = nil
 	}
-	s.pushViewLocked(false)
+	select {
+	case s.pushSig <- struct{}{}:
+	default:
+	}
 }
 
-func (s *Server) pushViewLocked(force bool) {
-	now := time.Now()
-	if !force && !s.lastViewPush.IsZero() && now.Sub(s.lastViewPush) < time.Second/maxViewUpdateRate {
-		return
+// pushLoop drains pushSig and writes viewState to all viewer clients,
+// rate-limited to maxViewUpdateRate. One goroutine for the lifetime of the
+// process; a panic in pushOnce is recovered and the loop continues.
+func (s *Server) pushLoop() {
+	interval := time.Second / maxViewUpdateRate
+	var last time.Time
+	for range s.pushSig {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("pushLoop: recovered from panic: %v", r)
+				}
+			}()
+			if d := time.Since(last); d < interval {
+				time.Sleep(interval - d)
+			}
+			s.pushOnce()
+			last = time.Now()
+		}()
 	}
-	if s.viewPushInFlight {
-		return
-	}
-
-	data, _ := json.Marshal(s.viewState)
-	clients := make([]*websocket.Conn, 0, len(s.viewClients))
-	for c := range s.viewClients {
-		clients = append(clients, c)
-	}
-	s.lastViewPush = now
-	s.viewPushInFlight = true
-	go s.pushView(data, clients)
 }
 
 func (s *Server) updateScoreboardLocked() {
@@ -160,12 +166,27 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 	s.viewState.ChartData = data
 }
 
-func (s *Server) pushView(data []byte, clients []*websocket.Conn) {
+func (s *Server) pushOnce() {
+	s.mu.Lock()
+	if len(s.viewClients) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	data, _ := json.Marshal(s.viewState)
+	clients := make([]*websocket.Conn, 0, len(s.viewClients))
+	for c := range s.viewClients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+
 	dead := []*websocket.Conn{}
 	for _, c := range clients {
 		if !writeViewMessage(c, data) {
 			dead = append(dead, c)
 		}
+	}
+	if len(dead) == 0 {
+		return
 	}
 
 	s.mu.Lock()
@@ -175,7 +196,6 @@ func (s *Server) pushView(data []byte, clients []*websocket.Conn) {
 			c.Close()
 		}
 	}
-	s.viewPushInFlight = false
 	s.mu.Unlock()
 }
 
