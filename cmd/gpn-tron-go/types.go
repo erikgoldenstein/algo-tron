@@ -151,6 +151,8 @@ type Server struct {
 	db          *sql.DB
 	scheduleURL string
 	tickNs      atomic.Int64 // current tick interval in nanoseconds
+	tickDurNs   atomic.Int64 // last tick build+broadcast duration, for stats log
+	fanoutDurNs atomic.Int64 // last viewer fanout duration, for stats log
 }
 
 // viewerSink is the per-viewer outbound queue of delta JSON messages. ch is

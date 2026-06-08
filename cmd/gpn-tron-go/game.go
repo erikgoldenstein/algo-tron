@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"math"
 	"math/rand/v2"
 	"strconv"
@@ -22,6 +23,36 @@ func (s *Server) gameLoop() {
 	}
 }
 
+// statsLoop emits one slog.Info line per minute summarizing live load: the
+// per-IP connected player count, viewer count, and the last tick's build +
+// fanout durations (from tickLocked atomics). Cheap to add, and the only
+// way to spot per-tick regressions on the live server without rerunning the
+// benchmarks. Skips emitting while idle (no game) to keep logs quiet.
+func (s *Server) statsLoop() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for range t.C {
+		s.mu.Lock()
+		players := len(s.players)
+		viewers := len(s.viewClients)
+		gameID := ""
+		if s.game != nil {
+			gameID = s.game.id
+		}
+		s.mu.Unlock()
+		if gameID == "" {
+			continue
+		}
+		slog.Info("stats",
+			"game", gameID,
+			"players", players,
+			"viewers", viewers,
+			"tick_ms", time.Duration(s.tickDurNs.Load()).Milliseconds(),
+			"fanout_ms", time.Duration(s.fanoutDurNs.Load()).Milliseconds(),
+		)
+	}
+}
+
 func newGame(s *Server, players []*Player) *Game {
 	rand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
 	g := &Game{server: s, id: randID(), players: players, width: len(players) * 2, height: len(players) * 2, startTime: time.Now()}
@@ -40,6 +71,7 @@ func newGame(s *Server, players []*Player) *Game {
 }
 
 func (g *Game) startLocked() {
+	slog.Info("game start", "id", g.id, "players", len(g.players), "width", g.width, "height", g.height)
 	for _, p := range g.players {
 		p.sendLocked("game", g.width, g.height, p.ID)
 	}
@@ -76,6 +108,7 @@ func (g *Game) run() {
 }
 
 func (g *Game) tickLocked() bool {
+	tickStart := time.Now()
 	dead := map[*Player]bool{}
 	g.killDisconnectedLocked(dead)
 	g.movePlayersLocked()
@@ -103,8 +136,11 @@ func (g *Game) tickLocked() bool {
 	if !ending {
 		frame = append(frame, "tick\n"...)
 	}
+	fanoutStart := time.Now()
 	g.server.broadcastAliveLocked(string(frame))
 	g.server.broadcastTickLocked(deathIDs)
+	g.server.fanoutDurNs.Store(int64(time.Since(fanoutStart)))
+	g.server.tickDurNs.Store(int64(time.Since(tickStart)))
 
 	if ending {
 		g.endLocked()
@@ -191,6 +227,7 @@ func (g *Game) endLocked() {
 	g.server.store()
 	g.server.updateScoreboardLocked()
 	g.server.broadcastEndLocked()
+	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", time.Since(g.startTime).Milliseconds())
 }
 
 func (g *Game) updateEloLocked(winners []*Player) {

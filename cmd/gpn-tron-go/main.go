@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -50,9 +51,9 @@ func main() {
 	s.updateScoreboardLocked()
 
 	go s.gameLoop()
+	go s.statsLoop()
 	go func() { log.Fatal(s.listenTCP(*tcpAddr, *proxyProtocol)) }()
 
-	log.Printf("tcp game on %s", *tcpAddr)
-	log.Printf("http view on %s", *viewAddr)
+	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr)
 	log.Fatal(s.listenHTTP(*viewAddr))
 }

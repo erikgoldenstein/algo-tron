@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -53,7 +53,7 @@ func openDB(path string) (*sql.DB, error) {
 func (s *Server) load() {
 	rows, err := s.db.Query("SELECT username, pw_hash, elo, score_history FROM players")
 	if err != nil {
-		log.Printf("load: %v", err)
+		slog.Error("db load", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -61,7 +61,7 @@ func (s *Server) load() {
 		var username, pwHash, scoresJSON string
 		var elo float64
 		if err := rows.Scan(&username, &pwHash, &elo, &scoresJSON); err != nil {
-			log.Printf("load row: %v", err)
+			slog.Error("db load row", "err", err)
 			continue
 		}
 		if elo == 0 {
@@ -76,23 +76,23 @@ func (s *Server) load() {
 func (s *Server) store() {
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("store begin: %v", err)
+		slog.Error("db store begin", "err", err)
 		return
 	}
 	defer tx.Rollback()
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history) VALUES (?, ?, ?, ?)`)
 	if err != nil {
-		log.Printf("store prepare: %v", err)
+		slog.Error("db store prepare", "err", err)
 		return
 	}
 	defer stmt.Close()
 	for _, p := range s.players {
 		scores, _ := json.Marshal(p.ScoreHistory)
 		if _, err := stmt.Exec(p.Username, p.PwHash, p.Elo, string(scores)); err != nil {
-			log.Printf("store %s: %v", p.Username, err)
+			slog.Error("db store row", "user", p.Username, "err", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		log.Printf("store commit: %v", err)
+		slog.Error("db store commit", "err", err)
 	}
 }

@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"runtime/debug"
 	"sort"
@@ -29,7 +29,7 @@ func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
 			} else if delay < time.Second {
 				delay *= 2
 			}
-			log.Printf("accept: %v (retrying in %v)", err, delay)
+			slog.Warn("tcp accept", "err", err, "retry_in", delay)
 			time.Sleep(delay)
 			continue
 		}
@@ -42,7 +42,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer conn.Close()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("panic in handleConn: %v\n%s", r, debug.Stack())
+			slog.Error("tcp handler panic", "err", r, "stack", string(debug.Stack()))
 		}
 	}()
 	if tc, ok := conn.(*net.TCPConn); ok {

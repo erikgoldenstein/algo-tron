@@ -3,12 +3,24 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"io"
+	"log"
+	"log/slog"
 	"net"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// TestMain silences slog and stdlib log so the production lifecycle/stats
+// log lines don't pollute test or benchmark output.
+func TestMain(m *testing.M) {
+	log.SetOutput(io.Discard)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	os.Exit(m.Run())
+}
 
 // testServer returns a Server backed by an in-memory SQLite DB.
 func testServer(t *testing.T) *Server {

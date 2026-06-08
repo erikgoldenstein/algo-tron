@@ -3,11 +3,20 @@ package main
 import (
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// setSink points both the legacy log.* package and slog at w. Both are kept
+// in sync because log.Fatalf (used for boot errors in main.go) still goes
+// through stdlib log, while everything else now uses slog for levels.
+func setSink(w io.Writer) {
+	log.SetOutput(w)
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
+}
 
 func setupLogging(dir string) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -20,7 +29,7 @@ func setupLogging(dir string) {
 		log.Printf("log file: %v", err)
 		return
 	}
-	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	setSink(io.MultiWriter(os.Stderr, f))
 	go rotateLogs(dir, logPath, f)
 }
 
@@ -38,7 +47,7 @@ func rotateLogs(dir, logPath string, current *os.File) {
 
 		current, _ = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if current != nil {
-			log.SetOutput(io.MultiWriter(os.Stderr, current))
+			setSink(io.MultiWriter(os.Stderr, current))
 		}
 	}
 }

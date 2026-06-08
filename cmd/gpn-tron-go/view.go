@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -40,7 +40,7 @@ func (s *Server) listenHTTP(addr string) error {
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := viewTemplate.Execute(w, struct{ ScheduleURL string }{s.scheduleURL}); err != nil {
-		log.Printf("template: %v", err)
+		slog.Error("viewer template", "err", err)
 	}
 }
 
