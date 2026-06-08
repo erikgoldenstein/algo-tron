@@ -57,7 +57,7 @@ func (g *Game) startLocked() {
 	}
 	frame = append(frame, "tick\n"...)
 	g.server.broadcastAliveLocked(string(frame))
-	g.server.updateViewLocked()
+	g.server.markViewDirtyLocked()
 	go g.run()
 }
 
@@ -83,7 +83,7 @@ func (g *Game) tickLocked() bool {
 	g.applyCollisionsLocked(dead)
 	deathIDs := g.processDeadLocked(dead)
 	g.server.clearExpiredChatsLocked()
-	g.server.updateViewLocked()
+	g.server.markViewDirtyLocked()
 
 	ending := g.shouldEndLocked()
 	frame := make([]byte, 0, len(g.players)*16)
@@ -186,7 +186,7 @@ func (g *Game) endLocked() {
 	g.server.viewState.LastWinners = names
 	g.server.store()
 	g.server.updateScoreboardLocked()
-	g.server.updateViewLocked()
+	g.server.markViewDirtyLocked()
 }
 
 func (g *Game) updateEloLocked(winners []*Player) {

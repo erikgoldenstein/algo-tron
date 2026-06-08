@@ -88,20 +88,27 @@ func (s *Server) viewWriter(c *websocket.Conn, sink *viewerSink) {
 	}
 }
 
-func (s *Server) updateViewLocked() {
-	if s.game != nil {
-		st := &GameState{ID: s.game.id, Width: s.game.width, Height: s.game.height}
-		for _, p := range s.game.players {
-			st.Players = append(st.Players, PlayerState{ID: p.ID, Alive: p.Alive, Name: p.Username, Pos: p.Pos, Moves: append([]Vec2(nil), p.Moves...), Chat: p.Chat})
-		}
-		s.viewState.Game = st
-	} else {
-		s.viewState.Game = nil
-	}
+// markViewDirtyLocked tells pushLoop that viewState may have changed. The
+// expensive rebuild happens lazily inside pushOnce, so callers on the hot
+// path (per-tick, per-packet) only pay for a non-blocking channel send.
+func (s *Server) markViewDirtyLocked() {
 	select {
 	case s.pushSig <- struct{}{}:
 	default:
 	}
+}
+
+// buildGameStateLocked snapshots the current game for the viewer. Runs at
+// most maxViewUpdateRate times per second (from pushOnce), not per packet.
+func buildGameStateLocked(g *Game) *GameState {
+	if g == nil {
+		return nil
+	}
+	st := &GameState{ID: g.id, Width: g.width, Height: g.height}
+	for _, p := range g.players {
+		st.Players = append(st.Players, PlayerState{ID: p.ID, Alive: p.Alive, Name: p.Username, Pos: p.Pos, Moves: append([]Vec2(nil), p.Moves...), Chat: p.Chat})
+	}
+	return st
 }
 
 // pushLoop drains pushSig and writes viewState to all viewer clients,
@@ -182,6 +189,7 @@ func (s *Server) pushOnce() {
 		s.mu.Unlock()
 		return
 	}
+	s.viewState.Game = buildGameStateLocked(s.game)
 	data, _ := json.Marshal(s.viewState)
 	sinks := make([]*viewerSink, 0, len(s.viewClients))
 	for _, sink := range s.viewClients {

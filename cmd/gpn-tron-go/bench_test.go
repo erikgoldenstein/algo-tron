@@ -106,7 +106,7 @@ func BenchmarkPushFanout(b *testing.B) {
 		b.Run(fmt.Sprintf("viewers=%d", n), func(b *testing.B) {
 			s := &Server{viewClients: make(map[*websocket.Conn]*viewerSink, n)}
 
-			// Realistic viewState: mid-size game so json.Marshal does real work.
+			// Realistic game so pushOnce's rebuild + json.Marshal do real work.
 			players := benchPlayers(64)
 			for _, p := range players {
 				p.Moves = make([]Vec2, 32)
@@ -114,12 +114,7 @@ func BenchmarkPushFanout(b *testing.B) {
 					p.Moves[j] = Vec2{X: j, Y: j}
 				}
 			}
-			s.viewState.Game = &GameState{ID: "bench", Width: 64, Height: 64}
-			for _, p := range players {
-				s.viewState.Game.Players = append(s.viewState.Game.Players, PlayerState{
-					ID: p.ID, Alive: true, Name: p.Username, Pos: p.Pos, Moves: p.Moves,
-				})
-			}
+			s.game = &Game{id: "bench", width: 64, height: 64, players: players}
 
 			// Spin up N draining sinks. Distinct *websocket.Conn pointers are
 			// fine as map keys; we never call methods on them.
