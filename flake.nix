@@ -14,7 +14,7 @@
           pname = "algo-tron";
           version = "0.1.0";
           src = ./.;
-          vendorHash = "sha256-DeUBPL/TRJe26VBrEylSkW4uxVuJpJ2yTwSaAYd3dlc=";
+          vendorHash = "sha256-QNwJNR0SKoRorUPYE1AiagufK0u+eYnFuKLrYv6PomY=";
           subPackages = [ "cmd/algo-tron" ];
           ldflags = [ "-s" "-w" ];
         };
