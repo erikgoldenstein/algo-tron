@@ -73,6 +73,9 @@ func (p *Player) trimScores() {
 func (p *Player) sendLocked(parts ...any) { writePacket(p.writer, parts...) }
 
 func (p *Player) disconnect() {
+	if p.writer != nil {
+		p.writer.Flush()
+	}
 	if p.conn != nil {
 		p.conn.Close()
 	}

@@ -50,6 +50,8 @@ func (s *Server) listenTCP(ctx context.Context, addr string, proxyProtocol bool)
 
 func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	defer conn.Close()
+	w := bufio.NewWriter(conn)
+	defer w.Flush()
 	defer func() {
 		if r := recover(); r != nil {
 			metricTCPPanics.Inc()
@@ -61,7 +63,6 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	r := bufio.NewReader(conn)
-	w := bufio.NewWriter(conn)
 
 	if proxyProtocol {
 		_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
