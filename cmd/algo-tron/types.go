@@ -154,6 +154,12 @@ type Server struct {
 	tickNs      atomic.Int64 // current tick interval in nanoseconds
 	tickDurNs   atomic.Int64 // last tick build+broadcast duration, for stats log
 	fanoutDurNs atomic.Int64 // last viewer fanout duration, for stats log
+
+	// tickOffsetCh, when non-nil, receives one (actual-expected)/expected
+	// sample per tick. Send is non-blocking; full buffer drops the sample.
+	// Tests set this to a buffered channel to collect jitter for analysis;
+	// production leaves it nil.
+	tickOffsetCh chan float64
 }
 
 // viewerSink is the per-viewer outbound queue of delta JSON messages. ch is

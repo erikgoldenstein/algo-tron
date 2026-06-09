@@ -93,11 +93,38 @@ func (g *Game) startLocked() {
 }
 
 func (g *Game) run() {
+	var lastTick time.Time
+	var ticker *time.Ticker
+	var curRate int
+	defer func() {
+		if ticker != nil {
+			ticker.Stop()
+		}
+	}()
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
 		interval := time.Second / time.Duration(rate)
 		g.server.tickNs.Store(int64(interval))
-		time.Sleep(interval)
+		if rate != curRate {
+			if ticker != nil {
+				ticker.Stop()
+			}
+			ticker = time.NewTicker(interval)
+			curRate = rate
+		}
+		<-ticker.C
+		now := time.Now()
+		if !lastTick.IsZero() {
+			offset := float64(now.Sub(lastTick)-interval) / float64(interval)
+			metricTickOffset.Observe(offset)
+			if ch := g.server.tickOffsetCh; ch != nil {
+				select {
+				case ch <- offset:
+				default:
+				}
+			}
+		}
+		lastTick = now
 		g.server.mu.Lock()
 		done := g.tickLocked()
 		g.server.mu.Unlock()
@@ -168,8 +195,6 @@ func (g *Game) killDisconnectedLocked(dead map[*Player]bool) {
 	}
 }
 
-// markDeadLocked transitions p to dead, recording the tick it died on. Idempotent:
-// only the first death tick per game is kept so order-of-death is preserved.
 func (g *Game) markDeadLocked(p *Player, dead map[*Player]bool) {
 	dead[p] = true
 	p.Alive = false

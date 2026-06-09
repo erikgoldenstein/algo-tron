@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +41,7 @@ func BenchmarkE2E(b *testing.B) {
 	for _, n := range []int{16, 64, 256} {
 		n := n
 		quit := make(chan struct{})
-		tcpAddr, httpAddr, stop := startE2EServer(b)
+		tcpAddr, httpAddr, stop, gameSrv := startE2EServer(b)
 
 		tickCh := make(chan struct{}, n*8)
 		var ready sync.WaitGroup
@@ -56,6 +58,7 @@ func BenchmarkE2E(b *testing.B) {
 
 		b.Run(fmt.Sprintf("clients=%d", n), func(b *testing.B) {
 			drainBurst(tickCh, 250*time.Millisecond)
+			drainOffsets(gameSrv.tickOffsetCh)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -66,6 +69,8 @@ func BenchmarkE2E(b *testing.B) {
 			if ns > 0 {
 				b.ReportMetric(1e9/(ns*float64(n)), "game_tps")
 			}
+			samples := drainOffsets(gameSrv.tickOffsetCh)
+			reportOffsetStats(b, samples)
 		})
 
 		close(quit)
@@ -73,18 +78,71 @@ func BenchmarkE2E(b *testing.B) {
 	}
 }
 
-func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func()) {
+// drainOffsets pulls every available sample from the server's jitter channel
+// without blocking. Called both before the timed window (to discard warm-up)
+// and after (to harvest samples for the report).
+func drainOffsets(ch chan float64) []float64 {
+	out := make([]float64, 0, len(ch))
+	for {
+		select {
+		case v := <-ch:
+			out = append(out, v)
+		default:
+			return out
+		}
+	}
+}
+
+// reportOffsetStats computes mean/stdev/min/max + p50/p95/p99 for the tick
+// offset samples and emits them as bench metrics. Samples are fractions of
+// the expected interval ((actual-expected)/expected); we report them as
+// percent for human readability.
+func reportOffsetStats(b *testing.B, samples []float64) {
+	b.Helper()
+	if len(samples) == 0 {
+		return
+	}
+	sorted := append([]float64(nil), samples...)
+	sort.Float64s(sorted)
+	var sum, sqSum float64
+	min, max := sorted[0], sorted[len(sorted)-1]
+	for _, v := range samples {
+		sum += v
+		sqSum += v * v
+	}
+	mean := sum / float64(len(samples))
+	variance := sqSum/float64(len(samples)) - mean*mean
+	if variance < 0 {
+		variance = 0
+	}
+	stdev := math.Sqrt(variance)
+	pct := func(p float64) float64 {
+		idx := int(p * float64(len(sorted)-1))
+		return sorted[idx]
+	}
+	b.ReportMetric(float64(len(samples)), "tick_samples")
+	b.ReportMetric(mean*100, "off_mean_pct")
+	b.ReportMetric(stdev*100, "off_stdev_pct")
+	b.ReportMetric(min*100, "off_min_pct")
+	b.ReportMetric(max*100, "off_max_pct")
+	b.ReportMetric(pct(0.50)*100, "off_p50_pct")
+	b.ReportMetric(pct(0.95)*100, "off_p95_pct")
+	b.ReportMetric(pct(0.99)*100, "off_p99_pct")
+}
+
+func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func(), gameSrv *Server) {
 	b.Helper()
 	db, err := openDB(":memory:")
 	if err != nil {
 		b.Fatalf("openDB: %v", err)
 	}
 	s := &Server{
-		players:     map[string]*Player{},
-		ipCount:     map[string]int{},
-		viewClients: map[*websocket.Conn]*viewerSink{},
-		secret:      make([]byte, 32),
-		db:          db,
+		players:      map[string]*Player{},
+		ipCount:      map[string]int{},
+		viewClients:  map[*websocket.Conn]*viewerSink{},
+		secret:       make([]byte, 32),
+		db:           db,
+		tickOffsetCh: make(chan float64, 65536),
 	}
 	s.tickNs.Store(int64(time.Second))
 
@@ -120,7 +178,7 @@ func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func()) {
 		httpLn.Close()
 		db.Close()
 	}
-	return tcpLn.Addr().String(), httpLn.Addr().String(), stop
+	return tcpLn.Addr().String(), httpLn.Addr().String(), stop, s
 }
 
 // runE2EBot drives a real TCP bot that mostly walks up. To survive

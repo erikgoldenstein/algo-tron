@@ -27,6 +27,13 @@ import (
 
 var budgetBuckets = []float64{0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 1.5, 2.0}
 
+// Buckets for tick interval offset, expressed as a fraction of the expected
+// interval ((actual - expected) / expected). 0 = on time, +0.05 = 5% late,
+// -0.05 = 5% early. The expected interval ramps with elapsed game time
+// (rate climbs), so absolute jitter would conflate samples taken under
+// different deadlines — the ratio normalizes that out.
+var tickOffsetBuckets = []float64{-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0}
+
 var (
 	metricGames            = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_games_total", Help: "Total number of games played."})
 	metricTicks            = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_ticks_total", Help: "Total ticks processed across all games."})
@@ -47,6 +54,11 @@ var (
 		Name:    "tron_fanout_budget_used_ratio",
 		Help:    "Viewer fanout time as a fraction of the current tick interval.",
 		Buckets: budgetBuckets,
+	})
+	metricTickOffset = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tron_tick_interval_offset_ratio",
+		Help:    "Offset of actual inter-tick gap from the expected interval, as a fraction ((actual-expected)/expected). 0 = on time, +0.05 = 5% late, -0.05 = 5% early. Normalized so samples are comparable across the tick-rate ramp.",
+		Buckets: tickOffsetBuckets,
 	})
 	metricGameDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "tron_game_duration_seconds",
