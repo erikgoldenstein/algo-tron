@@ -67,7 +67,7 @@ function scoreRow(p, i) {
 }
 
 function chatRow(m) {
-  const date = new Date(m.date).toISOString().replace(/^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+).*$/, '$3.$2.$1 - $4:$5:$6');
+  const date = new Date(m.date).toLocaleString();
   return '<div style="margin:.5rem"><b>' + esc(m.from) + ' (' + date + ')</b><br>' + esc(m.message) + '</div>';
 }
 
