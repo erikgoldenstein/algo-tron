@@ -11,7 +11,7 @@ import (
 // Performance regression benchmarks.
 //
 // Run with:
-//   go test -bench=. -benchmem -run=^$ ./cmd/gpn-tron-go
+//   go test -bench=. -benchmem -run=^$ ./cmd/algo-tron
 //
 // What to track between commits:
 //   - allocs/op, B/op       host-invariant; primary CI regression signal.

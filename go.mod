@@ -1,4 +1,4 @@
-module gpn-tron-go
+module algo-tron
 
 go 1.25.0
 

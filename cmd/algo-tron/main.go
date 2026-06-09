@@ -18,7 +18,7 @@ func main() {
 	publicTCP := flag.String("public-tcp", "play-tron.erik.gdn:443", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "view-tron.erik.gdn:443", "HTTP viewer connection string shown in viewer")
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
-	dataDir := flag.String("data-dir", filepath.Join(os.TempDir(), "gpn-tron-go"), "directory for secret and SQLite DB")
+	dataDir := flag.String("data-dir", filepath.Join(os.TempDir(), "algo-tron"), "directory for secret and SQLite DB")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
 

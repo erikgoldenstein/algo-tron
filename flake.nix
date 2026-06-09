@@ -11,21 +11,21 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         package = pkgs.buildGoModule {
-          pname = "go-tron";
+          pname = "algo-tron";
           version = "0.1.0";
           src = ./.;
           vendorHash = "sha256-DeUBPL/TRJe26VBrEylSkW4uxVuJpJ2yTwSaAYd3dlc=";
-          subPackages = [ "cmd/gpn-tron-go" ];
+          subPackages = [ "cmd/algo-tron" ];
           ldflags = [ "-s" "-w" ];
         };
       in
       {
         packages.default = package;
-        packages.go-tron = package;
+        packages.algo-tron = package;
 
         apps.default = {
           type = "app";
-          program = "${package}/bin/gpn-tron-go";
+          program = "${package}/bin/algo-tron";
         };
 
         devShells.default = pkgs.mkShell {
@@ -34,7 +34,7 @@
       }) // {
       nixosModules.default = { config, lib, pkgs, ... }:
         let
-          cfg = config.services.go-tron;
+          cfg = config.services.algo-tron;
           package = cfg.package;
           parsePort = listen:
             let
@@ -56,31 +56,31 @@
           ];
         in
         {
-          options.services.go-tron = {
+          options.services.algo-tron = {
             enable = lib.mkEnableOption "Go Tron game and viewer server";
 
             package = lib.mkOption {
               type = lib.types.package;
               default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
               defaultText = lib.literalExpression "self.packages.\${pkgs.stdenv.hostPlatform.system}.default";
-              description = "go-tron package to run.";
+              description = "algo-tron package to run.";
             };
 
             user = lib.mkOption {
               type = lib.types.str;
-              default = "go-tron";
+              default = "algo-tron";
               description = "User account for the service.";
             };
 
             group = lib.mkOption {
               type = lib.types.str;
-              default = "go-tron";
+              default = "algo-tron";
               description = "Group account for the service.";
             };
 
             dataDir = lib.mkOption {
               type = lib.types.str;
-              default = "/var/lib/go-tron";
+              default = "/var/lib/algo-tron";
               description = "Directory holding the SQLite player database, HMAC secret, and rotated log files.";
             };
 
@@ -148,11 +148,11 @@
             users.users.${cfg.user} = {
               isSystemUser = true;
               group = cfg.group;
-              home = "/var/lib/go-tron";
+              home = "/var/lib/algo-tron";
               createHome = true;
             };
 
-            systemd.services.go-tron = {
+            systemd.services.algo-tron = {
               description = "Go Tron game and viewer server";
               wantedBy = [ "multi-user.target" ];
               after = [ "network-online.target" ];
@@ -161,8 +161,8 @@
                 Type = "simple";
                 User = cfg.user;
                 Group = cfg.group;
-                StateDirectory = "go-tron";
-                ExecStart = "${package}/bin/gpn-tron-go ${lib.escapeShellArgs args}";
+                StateDirectory = "algo-tron";
+                ExecStart = "${package}/bin/algo-tron ${lib.escapeShellArgs args}";
                 Restart = "on-failure";
                 RestartSec = "5s";
                 NoNewPrivileges = true;

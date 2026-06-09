@@ -8,13 +8,13 @@ It keeps the original TCP bot protocol and serves a public viewer UI over HTTP. 
 ## Build
 
 ```sh
-go build -o go-tron ./cmd/gpn-tron-go
+go build -o algo-tron ./cmd/algo-tron
 ```
 
 ## Run Locally
 
 ```sh
-./go-tron \
+./algo-tron \
   -tcp 127.0.0.1:4000 \
   -public-tcp tron.erik.gdn:4000 \
   -view 127.0.0.1:3000 \
@@ -39,15 +39,15 @@ This repo exposes a package and a NixOS module:
 
 ```nix
 {
-  inputs.go-tron.url = "github:erikgoldenstein/go-tron";
+  inputs.algo-tron.url = "github:erikgoldenstein/algo-tron";
 
-  outputs = { self, nixpkgs, go-tron, ... }: {
+  outputs = { self, nixpkgs, algo-tron, ... }: {
     nixosConfigurations.server = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        go-tron.nixosModules.default
+        algo-tron.nixosModules.default
         {
-          services.go-tron = {
+          services.algo-tron = {
             enable = true;
             tcp.listen = "127.0.0.1:4000";
             view.listen = "127.0.0.1:3000";
@@ -56,7 +56,7 @@ This repo exposes a package and a NixOS module:
             view.publicScheme = "https";
             # Optional:
             # tcp.proxyProtocol = true;
-            # dataDir = "/var/lib/go-tron";
+            # dataDir = "/var/lib/algo-tron";
             # scheduleURL = "https://example.org/schedule.json"; # used for chaos events
           };
         }
@@ -89,13 +89,13 @@ The game endpoint is raw TCP, so route it with nginx `stream {}`:
 
 ```nginx
 stream {
-  upstream go_tron_tcp {
+  upstream algo_tron_tcp {
     server 127.0.0.1:4000;
   }
 
   server {
     listen 4000;
-    proxy_pass go_tron_tcp;
+    proxy_pass algo_tron_tcp;
   }
 }
 ```

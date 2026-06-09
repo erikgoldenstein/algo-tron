@@ -24,7 +24,7 @@ import (
 // Default -benchtime=1s is far too short to observe meaningful tick counts;
 // run with e.g.
 //
-//   go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/gpn-tron-go
+//   go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 //
 // game_tps is a lower-bound estimate of game ticks/sec the server sustained
 // (it underestimates as bots die mid-bench, since signals/tick drop).
