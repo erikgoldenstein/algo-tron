@@ -55,7 +55,7 @@ func (s *Server) statsLoop() {
 
 func newGame(s *Server, players []*Player) *Game {
 	rand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
-	g := &Game{server: s, id: randID(), players: players, width: len(players) * 2, height: len(players) * 2, startTime: time.Now()}
+	g := &Game{server: s, id: randID(), players: players, width: len(players) * 2, height: len(players) * 2, startTime: time.Now(), deathTick: map[*Player]int{}}
 	g.fields = make([][]int, g.width)
 	for x := range g.fields {
 		g.fields[x] = make([]int, g.height)
@@ -108,6 +108,7 @@ func (g *Game) run() {
 }
 
 func (g *Game) tickLocked() bool {
+	defer func() { g.tick++ }()
 	tickStart := time.Now()
 	dead := map[*Player]bool{}
 	g.killDisconnectedLocked(dead)
@@ -160,10 +161,21 @@ func (g *Game) tickLocked() bool {
 func (g *Game) killDisconnectedLocked(dead map[*Player]bool) {
 	for _, p := range g.players {
 		if p.Alive && p.conn == nil {
-			dead[p] = true
-			p.Alive = false
+			g.markDeadLocked(p, dead)
 			g.removeFromFields(p)
 			metricDisconnectKilled.Inc()
+		}
+	}
+}
+
+// markDeadLocked transitions p to dead, recording the tick it died on. Idempotent:
+// only the first death tick per game is kept so order-of-death is preserved.
+func (g *Game) markDeadLocked(p *Player, dead map[*Player]bool) {
+	dead[p] = true
+	p.Alive = false
+	if g.deathTick != nil {
+		if _, ok := g.deathTick[p]; !ok {
+			g.deathTick[p] = g.tick
 		}
 	}
 }
@@ -200,11 +212,9 @@ func (g *Game) applyCollisionsLocked(dead map[*Player]bool) {
 		}
 		other := g.players[occupant]
 		if other != p && other.Pos == p.Pos {
-			dead[other] = true
-			other.Alive = false
+			g.markDeadLocked(other, dead)
 		}
-		dead[p] = true
-		p.Alive = false
+		g.markDeadLocked(p, dead)
 	}
 }
 
@@ -242,13 +252,34 @@ func (g *Game) endLocked() {
 	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", dur.Milliseconds())
 }
 
+// updateEloLocked applies a pairwise ELO update where each player's "place" is
+// derived from how long they survived. Winners share place 1; losers are ranked
+// by their death tick (later death = better place). Players who died on the
+// same tick share a place (head-on collisions, multiple disconnects).
 func (g *Game) updateEloLocked(winners []*Player) {
-	if len(winners) == 0 {
+	if len(g.players) == 0 {
 		return
 	}
 	won := map[*Player]bool{}
 	for _, p := range winners {
 		won[p] = true
+	}
+	place := map[*Player]int{}
+	for _, p := range g.players {
+		if won[p] {
+			place[p] = 1
+			continue
+		}
+		better := 0
+		for _, q := range g.players {
+			if q == p {
+				continue
+			}
+			if won[q] || g.deathTick[q] > g.deathTick[p] {
+				better++
+			}
+		}
+		place[p] = 1 + better
 	}
 	old := map[*Player]float64{}
 	for _, p := range g.players {
@@ -257,12 +288,17 @@ func (g *Game) updateEloLocked(winners []*Player) {
 	for _, p := range g.players {
 		delta := 0.0
 		for _, opponent := range g.players {
-			if opponent == p || won[opponent] == won[p] {
+			if opponent == p {
 				continue
 			}
-			score := 0.0
-			if won[p] {
+			var score float64
+			switch {
+			case place[p] < place[opponent]:
 				score = 1.0
+			case place[p] > place[opponent]:
+				score = 0.0
+			default:
+				score = 0.5
 			}
 			expected := 1.0 / (1.0 + math.Pow(10, (old[opponent]-old[p])/400.0))
 			delta += eloKFactor * (score - expected)

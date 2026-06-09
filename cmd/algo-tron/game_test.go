@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 )
@@ -44,6 +45,35 @@ func TestUpdateEloSymmetric(t *testing.T) {
 
 	if a.Elo+b.Elo != 2200 {
 		t.Errorf("ELO not zero-sum: a=%v b=%v sum=%v", a.Elo, b.Elo, a.Elo+b.Elo)
+	}
+}
+
+func TestUpdateEloRanksLosersByDeathTick(t *testing.T) {
+	// 4 equal-Elo players, one winner; two losers die early (tick 1), one dies
+	// late (tick 5). The late-dying loser must gain Elo relative to the early
+	// dyers (better place), and all must lose relative to the winner.
+	winner := &Player{Username: "w", Elo: 1000}
+	late := &Player{Username: "late", Elo: 1000}
+	early1 := &Player{Username: "e1", Elo: 1000}
+	early2 := &Player{Username: "e2", Elo: 1000}
+	g := &Game{
+		players:   []*Player{winner, late, early1, early2},
+		deathTick: map[*Player]int{late: 5, early1: 1, early2: 1},
+	}
+	g.updateEloLocked([]*Player{winner})
+
+	sum := winner.Elo + late.Elo + early1.Elo + early2.Elo
+	if math.Abs(sum-4000) > 1e-9 {
+		t.Errorf("Elo not zero-sum: sum=%v, want 4000", sum)
+	}
+	if winner.Elo <= 1000 {
+		t.Errorf("winner Elo = %v, should gain", winner.Elo)
+	}
+	if late.Elo <= early1.Elo {
+		t.Errorf("late-dying loser (%v) should beat early-dying (%v)", late.Elo, early1.Elo)
+	}
+	if early1.Elo != early2.Elo {
+		t.Errorf("losers tied on death tick should have equal Elo: %v vs %v", early1.Elo, early2.Elo)
 	}
 }
 

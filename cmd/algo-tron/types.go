@@ -173,4 +173,6 @@ type Game struct {
 	height    int
 	fields    [][]int
 	startTime time.Time
+	tick      int
+	deathTick map[*Player]int
 }
