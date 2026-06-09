@@ -5,6 +5,8 @@ It keeps the original TCP bot protocol and serves a public viewer UI over HTTP. 
 - `tron.erik.gdn:4000` routes to the raw TCP game server.
 - `tron.erik.gdn:443` routes to the HTTP viewer server.
 
+See [`docs/`](docs/README.md) for the bot protocol, viewer protocol, error codes, game mechanics, persistence layout, metrics, and testing/benchmark notes.
+
 ## Build
 
 ```sh
