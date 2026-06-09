@@ -17,6 +17,19 @@ body {
   font-family: serif;
 }
 
+#shutdown-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: .4rem;
+  text-align: center;
+  font-size: .9rem;
+  color: #ff5555;
+  background: rgba(0, 0, 0, .85);
+}
+
 .layout {
   height: 100%;
   width: 100%;

@@ -31,7 +31,7 @@ Options:
 - `-public-tcp`: public TCP endpoint shown in the viewer UI.
 - `-public-view`: public viewer endpoint shown in the viewer UI.
 - `-public-view-scheme`: `http` or `https`, only affects what the viewer UI displays.
-- `-data-dir`: directory holding the SQLite player database, HMAC secret, and rotated log files. Defaults to a temp directory; set this for persistence.
+- `-data-dir`: directory holding the SQLite player database and HMAC secret. Defaults to a temp directory; set this for persistence.
 - `-schedule-url`: URL for an optional talk schedule JSON shown in the viewer (only used at chaos events). Omit to hide the schedule panel.
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
 

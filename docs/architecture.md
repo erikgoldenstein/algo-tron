@@ -67,6 +67,6 @@ The frame is built with `appendPos` directly into a `[]byte` to stay alloc-free;
 3. Open SQLite, load players.
 4. Build the `Server`, populate static `ServerInfo`/`ViewInfo` for the UI.
 5. `registerGauges()` lazily wires Prometheus.
-6. Launch the goroutines above; `listenHTTP` blocks the main goroutine.
+6. Launch the goroutines above via an `errgroup` rooted on a `signal.NotifyContext` (SIGINT/SIGTERM). The first listener error — or a shutdown signal — cancels the context; each listener returns; `g.Wait()` returns and `main` exits.
 
 See [persistence.md](persistence.md) for the data directory contents.

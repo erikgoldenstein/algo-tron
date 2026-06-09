@@ -6,7 +6,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 
 ## Message types
 
-There are four message shapes. `init` is the snapshot; `game` / `tick` / `end` are deltas.
+There are five message shapes. `init` is the snapshot; `game` / `tick` / `end` are gameplay deltas; `misc` is a lifecycle event tagged by `content`.
 
 ### `init` — sent once, on connect
 
@@ -66,6 +66,14 @@ Same shape as `init.game`. Replaces any prior game state in the viewer.
 ```
 
 The server holds the final `Game` reference until the next `Game.run` iteration sets `s.game = nil` inside `endLocked`; the viewer should treat `end` as the signal to clear the game canvas.
+
+### `misc` — lifecycle event
+
+```json
+{ "type": "misc", "content": "shutdown" }
+```
+
+A free-form lifecycle event; the `content` string identifies the event. The only `content` value emitted today is `"shutdown"`, broadcast when the server receives SIGINT/SIGTERM. The viewer shows a small red banner ("A new version is being deployed and will be available shortly.") and the server then waits ~1s before closing listeners, giving the message time to paint. The viewer's existing reconnect loop (`ws.onclose` → retry after 1s) brings it back automatically once the new process is up; receiving a fresh `init` clears the banner.
 
 ## Backpressure
 

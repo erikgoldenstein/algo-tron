@@ -29,13 +29,21 @@ function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(scheme + '://' + location.host + '/ws');
   ws.onmessage = (e) => {
-    applyMessage(JSON.parse(e.data));
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'misc' && msg.content === 'shutdown') { showShutdownBanner(true); return; }
+    if (msg.type === 'init') { showShutdownBanner(false); }
+    applyMessage(msg);
     updateDom();
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();
 }
 connect();
+
+function showShutdownBanner(on) {
+  const el = document.getElementById('shutdown-banner');
+  if (el) el.hidden = !on;
+}
 
 // — DOM (scoreboard, ports, chat) ———————————————————————————————————————
 

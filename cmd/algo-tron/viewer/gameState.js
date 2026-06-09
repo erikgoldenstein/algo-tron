@@ -7,6 +7,7 @@
 //   {type:"game", id, width, height, players:[{id,name,pos,moves,alive,chat?}]}
 //   {type:"tick", positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",  scoreboard, chartData, lastWinners}
+//   {type:"misc", content:"shutdown"} — lifecycle event; "shutdown" → banner.
 //
 // `init` is the snapshot sent on connect. `game` resets per-game state when a
 // new game begins. `tick` appends one move per alive player and updates chat /

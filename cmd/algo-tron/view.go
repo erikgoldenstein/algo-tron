@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -25,7 +27,7 @@ var viewTemplate = template.Must(template.ParseFS(viewerFS, "viewer/index.html")
 // The wire-format message structs live in types.go; the gameplay logic that
 // emits them lives in game.go. See types.go for the message protocol overview.
 
-func (s *Server) listenHTTP(addr string) error {
+func (s *Server) listenHTTP(ctx context.Context, addr string) error {
 	staticFS, err := fs.Sub(viewerFS, "viewer")
 	if err != nil {
 		return err
@@ -34,7 +36,17 @@ func (s *Server) listenHTTP(addr string) error {
 	mux.HandleFunc("/", s.viewPage)
 	mux.HandleFunc("/ws", s.viewWS)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
-	return http.ListenAndServe(addr, mux)
+	srv := &http.Server{Addr: addr, Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +197,14 @@ func (s *Server) broadcastTickLocked(deaths []int) {
 		Deaths:    deaths,
 		Chats:     chats,
 	})
+	s.broadcastViewLocked(data)
+}
+
+func (s *Server) broadcastShutdownLocked() {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(map[string]string{"type": "misc", "content": "shutdown"})
 	s.broadcastViewLocked(data)
 }
 

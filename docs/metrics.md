@@ -46,5 +46,5 @@ These are `GaugeFunc`s that take `s.mu` briefly when Prometheus scrapes, so they
 
 - `rate(tron_viewers_kicked_total[5m]) > 0` — viewers are overloaded.
 - `histogram_quantile(0.99, sum(rate(tron_tick_budget_used_ratio_bucket[5m])) by (le)) >= 1.0` — server is missing tick deadlines at p99.
-- `increase(tron_tcp_panics_total[1h]) > 0` — bug; check stderr/`tron.log`.
+- `increase(tron_tcp_panics_total[1h]) > 0` — bug; check stderr (e.g. `journalctl -u algo-tron`).
 - `rate(tron_db_errors_total[5m]) > 0` — SQLite or disk problem.

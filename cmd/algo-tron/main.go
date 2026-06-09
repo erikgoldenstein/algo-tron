@@ -1,16 +1,30 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"log"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/sync/errgroup"
 )
 
+const shutdownDrain = 1 * time.Second
+
 func main() {
+	if err := run(); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	tcpAddr := flag.String("tcp", ":4000", "TCP game listen address")
 	viewAddr := flag.String("view", ":3000", "HTTP viewer listen address")
 	metricsAddr := flag.String("metrics", "", "Prometheus /metrics listen address (empty to disable). Bind to localhost; this port is unauthenticated.")
@@ -22,21 +36,20 @@ func main() {
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
 
-	setupLogging(filepath.Dir(*dataDir))
-
 	if err := os.MkdirAll(*dataDir, 0755); err != nil {
-		log.Fatalf("data dir: %v", err)
+		return fmt.Errorf("data dir: %w", err)
 	}
 
 	secret, err := loadOrCreateSecret(*dataDir)
 	if err != nil {
-		log.Fatalf("secret: %v", err)
+		return fmt.Errorf("secret: %w", err)
 	}
 
 	db, err := openDB(filepath.Join(*dataDir, "players.db"))
 	if err != nil {
-		log.Fatalf("db: %v", err)
+		return fmt.Errorf("db: %w", err)
 	}
+	defer db.Close()
 
 	s := &Server{
 		players:     map[string]*Player{},
@@ -52,13 +65,34 @@ func main() {
 	s.updateScoreboardLocked()
 	s.registerGauges()
 
+	sigCtx, stopSig := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSig()
+
+	// Listeners shut down when drainCtx cancels — either after the
+	// signal-triggered viewer drain below, or because g.Wait sees a listener
+	// error first (errgroup cancels gctx in that case).
+	drainCtx, cancelDrain := context.WithCancel(context.Background())
+	defer cancelDrain()
+	go func() {
+		<-sigCtx.Done()
+		slog.Info("shutdown signal received; draining viewers", "drain", shutdownDrain)
+		s.mu.Lock()
+		s.broadcastShutdownLocked()
+		s.mu.Unlock()
+		time.Sleep(shutdownDrain)
+		cancelDrain()
+	}()
+
 	go s.gameLoop()
 	go s.statsLoop()
-	go func() { log.Fatal(s.listenTCP(*tcpAddr, *proxyProtocol)) }()
+
+	g, gctx := errgroup.WithContext(drainCtx)
+	g.Go(func() error { return s.listenTCP(gctx, *tcpAddr, *proxyProtocol) })
+	g.Go(func() error { return s.listenHTTP(gctx, *viewAddr) })
 	if *metricsAddr != "" {
-		go func() { log.Fatal(listenMetrics(*metricsAddr)) }()
+		g.Go(func() error { return listenMetrics(gctx, *metricsAddr) })
 	}
 
 	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr)
-	log.Fatal(s.listenHTTP(*viewAddr))
+	return g.Wait()
 }

@@ -7,9 +7,7 @@ The server keeps state in a single directory configured with `-data-dir`. Defaul
 ```
 <data-dir>/
 ├── secret                    # 32 raw bytes, 0600
-├── players.db                # SQLite, modernc.org/sqlite
-├── tron.log                  # current log
-└── tron-YYYY-MM-DD.log       # rotated logs (kept 7 days)
+└── players.db                # SQLite, modernc.org/sqlite
 ```
 
 ## `secret`
@@ -44,8 +42,4 @@ DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server
 
 ## Logs
 
-`tron.log` is opened append-mode and tee'd with stderr via `io.MultiWriter`, so the same lines land in both. slog uses the text handler at info level; `log.*` (used for `log.Fatalf` boot errors) shares the sink.
-
-`rotateLogs` sleeps until midnight (local TZ), renames `tron.log` → `tron-YYYY-MM-DD.log`, opens a fresh `tron.log`, and rebinds the sink. `pruneOldLogs` then removes any `tron-*.log` file older than 7 days.
-
-No rotation by size — daily only. If the disk pressure changes that, switch the helpers in `log.go`, not the config.
+The server writes slog text-handler output to stderr. Persistence and rotation are the operator's job — under the NixOS module this means journald (`journalctl -u algo-tron`).

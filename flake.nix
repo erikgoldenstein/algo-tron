@@ -81,7 +81,7 @@
             dataDir = lib.mkOption {
               type = lib.types.str;
               default = "/var/lib/algo-tron";
-              description = "Directory holding the SQLite player database, HMAC secret, and rotated log files.";
+              description = "Directory holding the SQLite player database and HMAC secret.";
             };
 
             scheduleURL = lib.mkOption {

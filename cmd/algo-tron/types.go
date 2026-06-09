@@ -89,14 +89,15 @@ type ViewState struct {
 
 // — Viewer WebSocket protocol ————————————————————————————————————————————
 //
-// Four JSON message types over /ws. The server builds them in view.go and
+// Five JSON message types over /ws. The server builds them in view.go and
 // view.go's broadcast* helpers fan them out; viewer/gameState.js consumes
 // them.
 //
-//	init  — full snapshot, sent once on connect.
-//	game  — new game starting: id, dimensions, spawns.
-//	tick  — per-tick delta: positions, deaths, chats.
-//	end   — game over: refreshed scoreboard + chart.
+//	init — full snapshot, sent once on connect.
+//	game — new game starting: id, dimensions, spawns.
+//	tick — per-tick delta: positions, deaths, chats.
+//	end  — game over: refreshed scoreboard + chart.
+//	misc — lifecycle event identified by `content`; currently only "shutdown".
 
 type initMsg struct {
 	Type        string            `json:"type"` // "init"

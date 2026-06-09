@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -15,15 +16,23 @@ func isLocalhost(ip string) bool {
 	return ip == "127.0.0.1" || ip == "::1"
 }
 
-func (s *Server) listenTCP(addr string, proxyProtocol bool) error {
+func (s *Server) listenTCP(ctx context.Context, addr string, proxyProtocol bool) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	defer ln.Close()
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
 	var delay time.Duration
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			if delay == 0 {
 				delay = 5 * time.Millisecond
 			} else if delay < time.Second {
