@@ -290,4 +290,3 @@ func (g *Game) removeFromFields(p *Player) {
 		}
 	}
 }
-

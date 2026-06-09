@@ -25,9 +25,9 @@ func TestIsLocalhost(t *testing.T) {
 
 func TestValidateJoin(t *testing.T) {
 	cases := []struct {
-		name              string
+		name                   string
 		username, password, ip string
-		wantErr           string
+		wantErr                string
 	}{
 		{"valid", "alice", "pass", "1.2.3.4", ""},
 		{"empty username", "", "pass", "1.2.3.4", "ERROR_USERNAME_TOO_SHORT"},

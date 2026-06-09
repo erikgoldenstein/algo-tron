@@ -14,7 +14,7 @@
           pname = "go-tron";
           version = "0.1.0";
           src = ./.;
-          vendorHash = "sha256-0Qxw+MUYVgzgWB8vi3HBYtVXSq/btfh4ZfV/m1chNrA=";
+          vendorHash = "sha256-DeUBPL/TRJe26VBrEylSkW4uxVuJpJ2yTwSaAYd3dlc=";
           subPackages = [ "cmd/gpn-tron-go" ];
           ldflags = [ "-s" "-w" ];
         };
