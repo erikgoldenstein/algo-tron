@@ -21,8 +21,6 @@ const (
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 16
 	packetsPerTick      = 4
-	movePacketsPerTick  = 4
-	chatPacketsPerTick  = 3
 
 	// TrueSkill parameters (Herbrich, Minka, Graepel 2007). Defaults match
 	// the original paper: mu0=25, sigma0=25/3, beta=sigma0/2, tau=sigma0/100.
@@ -68,12 +66,10 @@ type Player struct {
 	TsMu         float64
 	TsSigma      float64
 
-	conn             net.Conn
-	writer           *bufio.Writer
-	move             Move
-	lastMove         Move
-	lastMovePacketAt time.Time
-	lastChatPacketAt time.Time
+	conn     net.Conn
+	writer   *bufio.Writer
+	move     Move
+	lastMove Move
 }
 
 type ServerInfo struct {
