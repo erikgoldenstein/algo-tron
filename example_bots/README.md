@@ -15,7 +15,7 @@ The server speaks plain TCP. Start it locally (see the top-level README) and
 then point a bot at it:
 
 ```sh
-python3 bot1_random.py 127.0.0.1 4000 mybot
+python3 bot1_random.py tron.erik.gdn 4000 mybot
 ```
 
 Three positional arguments, all optional: `host port username`. Password is

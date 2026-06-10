@@ -16,6 +16,8 @@ function updateDom() {
   // they share the line. The TCP game host is shown inside the help modal.
   const addr = document.getElementById('addr');
   if (addr && view) addr.textContent = view.host + ':' + view.port;
+  const playAddr = document.getElementById('play-addr');
+  if (playAddr && view) playAddr.textContent = view.host + ':' + view.port;
 
   const modalGame = document.getElementById('modal-game');
   const modalView = document.getElementById('modal-view');

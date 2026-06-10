@@ -37,6 +37,9 @@ func (s *Server) viewerHandler(metricsAuth string) http.Handler {
 	staticFS, _ := fs.Sub(viewerFS, "viewer")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.viewPage)
+	mux.HandleFunc("/play", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://github.com/erikgoldenstein/algo-tron/tree/main/example_bots", http.StatusFound)
+	})
 	mux.HandleFunc("/ws", s.viewWS)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	if metricsAuth != "" {
