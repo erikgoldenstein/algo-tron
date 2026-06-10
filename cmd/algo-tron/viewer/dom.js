@@ -8,6 +8,11 @@
 const chatPanel = [];
 const chatLast = {};
 
+// Last measured character capacity of the scoreboard name column. Used by
+// the row renderer and by the scrolling tick in render.js. Updated after
+// each render once the cell has a layout, and on window resize.
+let scoreNameChars = 0;
+
 function updateDom() {
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
@@ -34,6 +39,22 @@ function updateDom() {
     ? gameState.scoreboard.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
 
+  // The name cell now exists in the DOM, so we can measure its actual width
+  // and reflow the labels if the available space differs from what we used
+  // when building the row above.
+  const firstNameCell = scoreboardEl.querySelector('td.name');
+  if (firstNameCell) {
+    // Reserve 2 chars for the trailing " 🎉" winner marker so it doesn't
+    // get visually clipped by the cell's overflow:hidden.
+    const cap = Math.max(0, fitChars(firstNameCell) - 2);
+    if (cap !== scoreNameChars) {
+      scoreNameChars = cap;
+      scoreboardEl.querySelectorAll('.namestr').forEach((el) => {
+        el.textContent = displayName(el.dataset.name, scoreNameChars);
+      });
+    }
+  }
+
   // Append any new chat lines to the rolling panel. We only render the
   // server's currently-active chats; anything not echoed back has expired.
   for (const p of Object.values(gameState.game?.players || {})) {
@@ -59,7 +80,7 @@ function scoreRow(p, i) {
   const c = playerColor(p.username);
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username)) + '</span>' + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username, scoreNameChars)) + '</span>' + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="wr">' + wr + '</td>'
     + '<td class="sep">|</td>'

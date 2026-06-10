@@ -34,8 +34,10 @@ function renderSwitches() {
   if (!root) return;
   root.innerHTML = SWITCHES.map((s) => {
     const on = getSwitch(s.key);
-    return `<span class="switch-box" data-key="${s.key}">[${on ? 'x' : ' '}]</span>`
-      + `<span class="switch-label" data-key="${s.key}">${s.label}</span>`;
+    return `<span class="switch" data-key="${s.key}">`
+      + `<span class="switch-box">[${on ? 'x' : ' '}]</span>`
+      + `<span class="switch-label">${s.label}</span>`
+      + `</span>`;
   }).join('');
   root.querySelectorAll('[data-key]').forEach((el) => {
     el.addEventListener('click', () => {

@@ -125,6 +125,14 @@ h2 {
   border-collapse: collapse;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+  /* Fixed layout so the name column reliably absorbs leftover space
+     rather than growing/shrinking with its content. */
+  table-layout: fixed;
+}
+
+.scoreboard td.name {
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 .scoreboard th,
@@ -349,19 +357,20 @@ canvas#game { display: block; }
 .scheme .scheme-name { flex: 1; }
 
 /* Options switches (ASCII [x] / [ ] toggles).
-   Same 4-column grid as .kv-2col so the option list visually lines up with
-   the connect/info block at the top of the modal. */
+   Two switches per row; the [x] box sits directly next to its label with
+   no gap so the pair reads as one control. */
 .switches {
   display: grid;
-  grid-template-columns: 140px 1fr 140px 1fr;
+  grid-template-columns: repeat(2, 1fr);
   column-gap: 12px;
   row-gap: 4px;
   font-size: 13px;
 }
-.switch-box, .switch-label { cursor: pointer; user-select: none; }
-.switch-box { color: var(--text-muted); white-space: nowrap; }
+.switch { cursor: pointer; user-select: none; white-space: nowrap; }
+.switch-box { color: var(--text-muted); }
 .switch-label { color: var(--text); }
-.switch-box:hover, .switch-label:hover { color: var(--accent); }
+.switch:hover .switch-box,
+.switch:hover .switch-label { color: var(--accent); }
 
 /* Keys grid */
 .keys-grid {
@@ -429,7 +438,7 @@ canvas#game { display: block; }
   .kv-2col .kv-full { grid-column: 1; }
   .kv-2col .kv-full-val { grid-column: 2; }
 
-  .switches { grid-template-columns: 110px 1fr; }
+  .switches { grid-template-columns: 1fr; }
 
   .schemes { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .scheme { padding: 6px 8px; gap: 6px; font-size: 12px; }

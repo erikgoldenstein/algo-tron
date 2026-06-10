@@ -81,16 +81,35 @@ function getSwitch(key) {
   try { return localStorage.getItem('algotron.switch.' + key) === '1'; } catch (e) { return false; }
 }
 
-// Names longer than NAME_MAX are truncated to keep the scoreboard and the
-// canvas name pills from clashing into neighboring UI. With the
-// "scrollNames" switch on, the visible window scrolls so the full name
-// eventually comes around.
+// Names get truncated to fit their container — the scoreboard cell or the
+// canvas name pill — instead of a fixed character count. NAME_MAX is the
+// fallback used when no measured width is available (canvas pills, or
+// before the scoreboard has laid out). With the "scrollNames" switch on,
+// the visible window scrolls so the full name eventually comes around.
 const NAME_MAX = 20;
 const NAME_GAP = '   ';
-function displayName(name) {
-  if (name.length <= NAME_MAX) return name;
-  if (!getSwitch('scrollNames')) return name.slice(0, NAME_MAX);
+function displayName(name, maxChars) {
+  const max = maxChars > 0 ? maxChars : NAME_MAX;
+  if (name.length <= max) return name;
+  if (!getSwitch('scrollNames')) return name.slice(0, max);
   const padded = name + NAME_GAP;
   const i = Math.floor(Date.now() / 250) % padded.length;
-  return (padded + padded).slice(i, i + NAME_MAX);
+  return (padded + padded).slice(i, i + max);
+}
+
+// Number of monospace characters that fit inside `el` at its computed font,
+// minus horizontal padding. The viewer's font stack is monospace so this is
+// stable across columns. Returns 0 if the element isn't measurable yet.
+const _charCanvas = document.createElement('canvas');
+function fitChars(el) {
+  if (!el) return 0;
+  const style = getComputedStyle(el);
+  const ctx = _charCanvas.getContext('2d');
+  ctx.font = style.font || (style.fontSize + ' ' + style.fontFamily);
+  const cw = ctx.measureText('M').width;
+  if (!cw) return 0;
+  const padL = parseFloat(style.paddingLeft) || 0;
+  const padR = parseFloat(style.paddingRight) || 0;
+  const avail = el.clientWidth - padL - padR;
+  return Math.max(0, Math.floor(avail / cw));
 }
