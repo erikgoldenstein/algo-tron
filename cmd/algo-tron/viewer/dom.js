@@ -30,7 +30,7 @@ function updateDom() {
   const scoreboardEl = document.getElementById('scoreboard');
   scoreboardEl.innerHTML = gameState.scoreboard.length
     ? gameState.scoreboard.map(scoreRow).join('')
-    : '<tr><td colspan="10" class="empty">nobody scored yet :(</td></tr>';
+    : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
 
   // Append any new chat lines to the rolling panel. We only render the
   // server's currently-active chats; anything not echoed back has expired.
@@ -62,6 +62,8 @@ function scoreRow(p, i) {
     + '<td class="wr">' + wr + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="elo">' + p.elo.toFixed(0) + '</td>'
+    + '<td class="sep">|</td>'
+    + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + Math.round(p.tsSigma) + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="wins">' + p.wins + '</td>'
     + '<td class="sep">|</td>'

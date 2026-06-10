@@ -21,6 +21,13 @@ const (
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 16
 	packetsPerTick      = 4
+
+	// TrueSkill parameters (Herbrich, Minka, Graepel 2007). Defaults match
+	// the original paper: mu0=25, sigma0=25/3, beta=sigma0/2, tau=sigma0/100.
+	tsMu0    = 25.0
+	tsSigma0 = 25.0 / 3.0
+	tsBeta   = tsSigma0 / 2.0
+	tsTau    = tsSigma0 / 100.0
 )
 
 type Move int
@@ -56,6 +63,8 @@ type Player struct {
 	lastChatAt   time.Time
 	ScoreHistory []Score
 	Elo          float64
+	TsMu         float64
+	TsSigma      float64
 
 	conn     net.Conn
 	writer   *bufio.Writer
@@ -75,6 +84,8 @@ type ScoreboardEntry struct {
 	Wins     int     `json:"wins"`
 	Losses   int     `json:"losses"`
 	Elo      float64 `json:"elo"`
+	TsMu     float64 `json:"tsMu"`
+	TsSigma  float64 `json:"tsSigma"`
 }
 
 // ViewState caches the slow-changing data the viewer needs (server/view info,

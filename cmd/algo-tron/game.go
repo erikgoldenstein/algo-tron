@@ -261,6 +261,7 @@ func (g *Game) shouldEndLocked() bool {
 func (g *Game) endLocked() {
 	alive := g.aliveLocked()
 	g.updateEloLocked(alive)
+	g.updateTrueSkillLocked(alive)
 	// Losers had their loseLocked() called during the game with the pre-update
 	// elo; snapshot the post-update elo onto their last ScoreHistory entry so
 	// the elo chart plots the value that the scoreboard reads.
@@ -339,6 +340,83 @@ func (g *Game) updateEloLocked(winners []*Player) {
 			delta += eloKFactor * (score - expected)
 		}
 		p.Elo += delta
+	}
+}
+
+// updateTrueSkillLocked applies a free-for-all TrueSkill update using the
+// pairwise approximation from the TrueSkill paper: each player's rating is
+// updated against every opponent based on the FFA ranking (winners share
+// place 1; losers are ranked by death tick). Same-place pairs (co-deaths,
+// joint wins) are skipped — we treat them as no-information matchups rather
+// than ε-draws. Players new to TrueSkill (TsSigma == 0) are initialized to
+// (tsMu0, tsSigma0).
+func (g *Game) updateTrueSkillLocked(winners []*Player) {
+	if len(g.players) == 0 {
+		return
+	}
+	for _, p := range g.players {
+		if p.TsSigma == 0 {
+			p.TsMu = tsMu0
+			p.TsSigma = tsSigma0
+		}
+	}
+	won := map[*Player]bool{}
+	for _, p := range winners {
+		won[p] = true
+	}
+	place := map[*Player]int{}
+	for _, p := range g.players {
+		if won[p] {
+			place[p] = 1
+			continue
+		}
+		better := 0
+		for _, q := range g.players {
+			if q == p {
+				continue
+			}
+			if won[q] || g.deathTick[q] > g.deathTick[p] {
+				better++
+			}
+		}
+		place[p] = 1 + better
+	}
+	type snap struct{ mu, sigma2 float64 }
+	old := map[*Player]snap{}
+	for _, p := range g.players {
+		old[p] = snap{p.TsMu, p.TsSigma * p.TsSigma}
+	}
+	for _, p := range g.players {
+		muP, s2P := old[p].mu, old[p].sigma2
+		muNew, s2New := muP, s2P
+		for _, q := range g.players {
+			if q == p || place[p] == place[q] {
+				continue
+			}
+			muQ, s2Q := old[q].mu, old[q].sigma2
+			c2 := 2*tsBeta*tsBeta + s2P + s2Q
+			c := math.Sqrt(c2)
+			t, sign := (muP-muQ)/c, 1.0
+			if place[p] > place[q] {
+				t, sign = (muQ-muP)/c, -1.0
+			}
+			cdf := 0.5 * (1 + math.Erf(t/math.Sqrt2))
+			if cdf < 1e-12 {
+				cdf = 1e-12
+			}
+			pdf := math.Exp(-t*t/2) / math.Sqrt(2*math.Pi)
+			v := pdf / cdf
+			w := v * (v + t)
+			muNew += sign * (s2P / c) * v
+			s2New *= 1 - (s2P/c2)*w
+		}
+		// Dynamics drift: bump variance so ratings stay responsive over time.
+		s2New += tsTau * tsTau
+		if s2New < 1e-6 {
+			s2New = 1e-6
+		}
+		p.TsMu = muNew
+		p.TsSigma = math.Sqrt(s2New)
 	}
 }
 

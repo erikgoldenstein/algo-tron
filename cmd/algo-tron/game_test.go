@@ -80,6 +80,57 @@ func TestUpdateEloRanksLosersByDeathTick(t *testing.T) {
 	}
 }
 
+// — TrueSkill ——————————————————————————————————————————————————————
+
+func TestUpdateTrueSkillInitializesNewPlayers(t *testing.T) {
+	// Players with zero TsSigma get the (mu0, sigma0) default before any
+	// pairwise update is applied.
+	a := &Player{Username: "a"}
+	b := &Player{Username: "b"}
+	g := &Game{players: []*Player{a, b}}
+	g.updateTrueSkillLocked([]*Player{a})
+
+	if a.TsSigma == 0 || b.TsSigma == 0 {
+		t.Fatalf("TsSigma must be initialized: a=%v b=%v", a.TsSigma, b.TsSigma)
+	}
+}
+
+func TestUpdateTrueSkillWinnerGainsLoserLoses(t *testing.T) {
+	winner := &Player{Username: "w", TsMu: tsMu0, TsSigma: tsSigma0}
+	loser := &Player{Username: "l", TsMu: tsMu0, TsSigma: tsSigma0}
+	g := &Game{players: []*Player{winner, loser}}
+	g.updateTrueSkillLocked([]*Player{winner})
+
+	if winner.TsMu <= tsMu0 {
+		t.Errorf("winner TsMu = %v, should rise above %v", winner.TsMu, tsMu0)
+	}
+	if loser.TsMu >= tsMu0 {
+		t.Errorf("loser TsMu = %v, should fall below %v", loser.TsMu, tsMu0)
+	}
+	// Sigma typically shrinks after an informative match (offset by tau drift).
+	if winner.TsSigma >= tsSigma0 || loser.TsSigma >= tsSigma0 {
+		t.Errorf("TsSigma should shrink after match: w=%v l=%v (start %v)", winner.TsSigma, loser.TsSigma, tsSigma0)
+	}
+}
+
+func TestUpdateTrueSkillRanksLosersByDeathTick(t *testing.T) {
+	winner := &Player{Username: "w", TsMu: tsMu0, TsSigma: tsSigma0}
+	late := &Player{Username: "late", TsMu: tsMu0, TsSigma: tsSigma0}
+	early := &Player{Username: "early", TsMu: tsMu0, TsSigma: tsSigma0}
+	g := &Game{
+		players:   []*Player{winner, late, early},
+		deathTick: map[*Player]int{late: 5, early: 1},
+	}
+	g.updateTrueSkillLocked([]*Player{winner})
+
+	if late.TsMu <= early.TsMu {
+		t.Errorf("late-dying loser (%v) should outrank early-dying (%v)", late.TsMu, early.TsMu)
+	}
+	if winner.TsMu <= late.TsMu {
+		t.Errorf("winner (%v) should outrank both losers (late=%v)", winner.TsMu, late.TsMu)
+	}
+}
+
 // — newGame ——————————————————————————————————————————————————————————
 
 func TestNewGame(t *testing.T) {

@@ -4,7 +4,7 @@
 - [Bot protocol](bot-protocol.md) — TCP wire protocol spoken to bot clients.
 - [Viewer protocol](viewer-protocol.md) — WebSocket JSON protocol spoken to the viewer UI.
 - [Error codes](error-codes.md) — every `ERROR_*` / `WARNING_*` the server emits and when.
-- [Game mechanics](game-mechanics.md) — tick-rate ramp, board sizing, collisions, ELO.
+- [Game mechanics](game-mechanics.md) — tick-rate ramp, board sizing, collisions, ELO, TrueSkill.
 - [Persistence](persistence.md) — `-data-dir` layout, SQLite schema, secret.
 - [Metrics](metrics.md) — Prometheus metric inventory.
 - [Testing](testing.md) — unit tests, e2e tests, benchmarks.

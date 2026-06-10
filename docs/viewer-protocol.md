@@ -15,7 +15,7 @@ There are five message shapes. `init` is the snapshot; `game` / `tick` / `end` a
   "type": "init",
   "serverInfo":  [{"host": "play-tron.erik.gdn", "port": 4000}],
   "viewInfo":    [{"host": "view-tron.erik.gdn", "port": 443, "scheme": "https"}],
-  "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080}],
+  "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":27.4,"tsSigma":6.1}],
   "chartData":   [{"name": 0, "alice": 1024, "bob": 988}],
   "lastWinners": ["alice"],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ] }
@@ -82,6 +82,8 @@ Each viewer has a 16-frame send buffer (`viewSinkBuf`). If `broadcastViewLocked`
 There is no chat or input from the viewer side; the only frames the server reads on `/ws` are control frames (the read loop blocks on `ReadMessage` and returns on any error).
 
 `chartData` is a 20-point series. Each point is `{name: i, [username]: elo, …}` where `elo` is the player's ELO at that historical slot. Players whose `ScoreHistory` predates elo tracking (`Score.Elo == 0`) are simply omitted from those points — the viewer treats a missing key as a gap.
+
+Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [game-mechanics.md § TrueSkill](game-mechanics.md#trueskill) for the update.
 
 ## Client reference implementation
 

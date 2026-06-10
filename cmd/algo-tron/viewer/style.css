@@ -147,6 +147,8 @@ h2 {
 .scoreboard td.wr { width: 3.2em; text-align: right; }
 .scoreboard th.elo,
 .scoreboard td.elo { width: 3.8em; text-align: right; }
+.scoreboard th.ts,
+.scoreboard td.ts { width: 5.5em; text-align: right; }
 .scoreboard th.wins,
 .scoreboard td.wins { width: 4em; text-align: right; }
 .scoreboard th.losses,
@@ -397,6 +399,7 @@ canvas#game { display: block; }
   .scoreboard th.num, .scoreboard td.num { width: 14px; }
   .scoreboard th.wr, .scoreboard td.wr { width: 32px; }
   .scoreboard th.elo, .scoreboard td.elo { width: 38px; }
+  .scoreboard th.ts, .scoreboard td.ts { width: 56px; }
   .scoreboard th.wins, .scoreboard td.wins { width: 32px; }
   .scoreboard th.losses, .scoreboard td.losses { width: 38px; }
   .scoreboard-section { overflow-x: hidden; }

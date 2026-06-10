@@ -55,6 +55,41 @@ New accounts start at 1000. The post-game ELO is snapshotted onto each player's 
 
 `wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
 
+## TrueSkill
+
+| Constant   | Value           | Meaning                                                                   |
+|------------|-----------------|---------------------------------------------------------------------------|
+| `tsMu0`    | $25$            | Default mean skill $\mu_0$ for a new player.                              |
+| `tsSigma0` | $25/3$          | Default skill uncertainty $\sigma_0$.                                     |
+| `tsBeta`   | $\sigma_0 / 2$  | Performance noise $\beta$ — how much per-game performance varies.         |
+| `tsTau`    | $\sigma_0 / 100$ | Dynamics drift $\tau$ added back to $\sigma^2$ each game.                |
+
+Pairwise free-for-all TrueSkill (Herbrich, Minka, Graepel 2007) lives in `Game.updateTrueSkillLocked` and runs alongside `updateEloLocked` from `endLocked`. The `place` assignment is identical to ELO — winners share place $1$; losers rank by death tick.
+
+For every pair $(p, q)$ where $\mathrm{place}(p) \ne \mathrm{place}(q)$ (same-place pairs are skipped rather than treated as $\varepsilon$-draws), the standard 1v1 TrueSkill update is computed and accumulated into $p$'s rating. Let $s = +1$ if $p$ outranks $q$ and $s = -1$ otherwise; then
+
+$$
+c^2 \;=\; 2\beta^2 + \sigma_p^2 + \sigma_q^2,
+\qquad
+t \;=\; s \cdot \frac{\mu_p - \mu_q}{c},
+$$
+
+$$
+v(t) \;=\; \frac{\varphi(t)}{\Phi(t)},
+\qquad
+w(t) \;=\; v(t)\bigl(v(t) + t\bigr),
+$$
+
+$$
+\mu_p \;\leftarrow\; \mu_p + s \cdot \frac{\sigma_p^2}{c}\, v(t),
+\qquad
+\sigma_p^2 \;\leftarrow\; \sigma_p^2 \left(1 - \frac{\sigma_p^2}{c^2}\, w(t)\right),
+$$
+
+where $\varphi$ and $\Phi$ are the standard normal PDF and CDF. After all pairs, $\sigma^2 \leftarrow \sigma^2 + \tau^2$ so ratings stay responsive over time. Players new to TrueSkill ($\sigma = 0$) are initialized to $(\mu_0, \sigma_0)$ before the update runs, so the first game they play is also their first rated game.
+
+The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. ELO remains the primary sort key and chart series; TrueSkill is an additional metric, not a replacement.
+
 ## Chat
 
 - One `chat` per tick interval per player (`WARNING_CHAT_RATE_LIMIT` otherwise).

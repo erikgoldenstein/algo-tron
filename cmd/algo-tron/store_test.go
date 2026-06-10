@@ -121,6 +121,32 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadStoreTrueSkillRoundTrip(t *testing.T) {
+	s := testDB(t)
+	s.players["alice"] = &Player{
+		Username: "alice",
+		PwHash:   hashPassword(s.secret, "pass"),
+		Elo:      1000,
+		TsMu:     27.5,
+		TsSigma:  6.25,
+	}
+	s.store()
+
+	s.players = map[string]*Player{}
+	s.load()
+
+	p := s.players["alice"]
+	if p == nil {
+		t.Fatal("alice not found after load")
+	}
+	if p.TsMu != 27.5 {
+		t.Errorf("TsMu = %v, want 27.5", p.TsMu)
+	}
+	if p.TsSigma != 6.25 {
+		t.Errorf("TsSigma = %v, want 6.25", p.TsSigma)
+	}
+}
+
 func TestLoadStoreMultiplePlayers(t *testing.T) {
 	s := testDB(t)
 	now := time.Now().UnixMilli()

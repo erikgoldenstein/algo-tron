@@ -14,7 +14,7 @@ func (s *Server) updateScoreboardLocked() {
 		if games > 0 {
 			wr = float64(w) / float64(games)
 		}
-		entries = append(entries, ScoreboardEntry{Username: p.Username, WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo})
+		entries = append(entries, ScoreboardEntry{Username: p.Username, WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].WinRatio != entries[j].WinRatio {

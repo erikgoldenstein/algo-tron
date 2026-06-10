@@ -47,11 +47,14 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// TrueSkill columns added later; ignore "duplicate column" on re-open.
+	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_mu REAL NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
 	return db, nil
 }
 
 func (s *Server) load() {
-	rows, err := s.db.Query("SELECT username, pw_hash, elo, score_history FROM players")
+	rows, err := s.db.Query("SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma FROM players")
 	if err != nil {
 		metricDBErrors.WithLabelValues("load").Inc()
 		slog.Error("db load", "err", err)
@@ -60,8 +63,8 @@ func (s *Server) load() {
 	defer rows.Close()
 	for rows.Next() {
 		var username, pwHash, scoresJSON string
-		var elo float64
-		if err := rows.Scan(&username, &pwHash, &elo, &scoresJSON); err != nil {
+		var elo, tsMu, tsSigma float64
+		if err := rows.Scan(&username, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma); err != nil {
 			metricDBErrors.WithLabelValues("load_row").Inc()
 			slog.Error("db load row", "err", err)
 			continue
@@ -71,7 +74,7 @@ func (s *Server) load() {
 		}
 		var scores []Score
 		_ = json.Unmarshal([]byte(scoresJSON), &scores)
-		s.players[username] = &Player{Username: username, PwHash: pwHash, Elo: elo, ScoreHistory: scores}
+		s.players[username] = &Player{Username: username, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, ScoreHistory: scores}
 	}
 }
 
@@ -83,7 +86,7 @@ func (s *Server) store() {
 		return
 	}
 	defer tx.Rollback()
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history) VALUES (?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history, ts_mu, ts_sigma) VALUES (?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_prepare").Inc()
 		slog.Error("db store prepare", "err", err)
@@ -92,7 +95,7 @@ func (s *Server) store() {
 	defer stmt.Close()
 	for _, p := range s.players {
 		scores, _ := json.Marshal(p.ScoreHistory)
-		if _, err := stmt.Exec(p.Username, p.PwHash, p.Elo, string(scores)); err != nil {
+		if _, err := stmt.Exec(p.Username, p.PwHash, p.Elo, string(scores), p.TsMu, p.TsSigma); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()
 			slog.Error("db store row", "user", p.Username, "err", err)
 		}

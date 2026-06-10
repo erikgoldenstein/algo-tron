@@ -34,8 +34,9 @@ The suite leans on small, focused tests rather than full integration runs. Rough
 | Chat                | `TestHandleChatLocked{Valid,Dead,InvalidChars,PipeIsInvalidChar,RateLimit,SetsExpiry}`.    |
 | Game lifecycle      | `TestNewGame`, `TestShouldEndLocked`, `TestKillDisconnectedLocked`, `TestProcessDeadLocked`. |
 | ELO                 | `TestUpdateElo{TwoPlayers,NoWinner,Symmetric}`. The symmetric test guards zero-sum.        |
+| TrueSkill           | `TestUpdateTrueSkill{InitializesNewPlayers,WinnerGainsLoserLoses,RanksLosersByDeathTick}`. FFA pairwise update; new players auto-initialized to `(tsMu0, tsSigma0)`. |
 | Scoreboard / chart  | `TestUpdateScoreboard{Ordering,WinRatio,Top10,ExcludesOldScores,NoPlayers}`, `TestUpdateChartData*`. |
-| Persistence         | `TestLoadStore{RoundTrip,MultiplePlayers}`, `TestStoreIsIdempotent`, `TestLoadSetsDefaultElo`, `TestLoadOrCreateSecret*`. |
+| Persistence         | `TestLoadStore{RoundTrip,MultiplePlayers,TrueSkillRoundTrip}`, `TestStoreIsIdempotent`, `TestLoadSetsDefaultElo`, `TestLoadOrCreateSecret*`. |
 | TCP send path       | `TestSendLocked`, `TestSendLockedNilWriter`, `TestDisconnect`.                             |
 
 The collision tests rely on the deterministic spawns from `makeGame` — when adding a case, prefer the shuffle-free helper over `newGame`.
