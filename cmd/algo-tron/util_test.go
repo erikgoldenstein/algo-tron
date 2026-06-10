@@ -75,7 +75,7 @@ func TestPortOnly(t *testing.T) {
 	}{
 		{"example.com:443", 443},
 		{"host:4000", 4000},
-		{"noport", 4000}, // falls back to default
+		{"noport", 0}, // no port present
 	}
 	for _, c := range cases {
 		if got := portOnly(c.input); got != c.want {

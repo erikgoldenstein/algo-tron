@@ -53,5 +53,5 @@ func portOnly(s string) int {
 		n, _ := strconv.Atoi(p)
 		return n
 	}
-	return 4000
+	return 0
 }

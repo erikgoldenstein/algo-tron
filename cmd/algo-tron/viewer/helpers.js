@@ -2,6 +2,17 @@
 // network. If a helper doesn't depend on the canvas, the websocket, or any
 // in-memory game state, it belongs here.
 
+// Render a viewer ServerInfo {host, port, scheme} for display. Omits the
+// port when it's the scheme default (443/https, 80/http) or absent (0), so
+// inputs like "-public-view tron.erik.gdn" don't display a stray ":0".
+function viewHostPort(v) {
+  const host = v.host || '';
+  const port = v.port || 0;
+  const defaultPort = v.scheme === 'https' ? 443 : v.scheme === 'http' ? 80 : 0;
+  if (!port || port === defaultPort) return host;
+  return host + ':' + port;
+}
+
 // CRC-32 of a string. Used as a deterministic hash for color/palette lookups
 // so a given player always lands on the same color across reloads.
 function crc32(r) {

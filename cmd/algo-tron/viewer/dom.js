@@ -20,14 +20,14 @@ function updateDom() {
   // Tagline shows the *viewer* host so users land on the right web URL when
   // they share the line. The TCP game host is shown inside the help modal.
   const addr = document.getElementById('addr');
-  if (addr && view) addr.textContent = view.host + ':' + view.port;
+  if (addr && view) addr.textContent = viewHostPort(view);
   const playAddr = document.getElementById('play-addr');
-  if (playAddr && view) playAddr.textContent = view.host + ':' + view.port;
+  if (playAddr && view) playAddr.textContent = viewHostPort(view);
 
   const modalGame = document.getElementById('modal-game');
   const modalView = document.getElementById('modal-view');
   if (modalGame && game) modalGame.textContent = game.host + ':' + game.port;
-  if (modalView && view) modalView.textContent = view.host + ':' + view.port;
+  if (modalView && view) modalView.textContent = viewHostPort(view);
 
   const players = gameState.game ? Object.values(gameState.game.players) : [];
   const alive = players.filter((p) => p.alive).length;
