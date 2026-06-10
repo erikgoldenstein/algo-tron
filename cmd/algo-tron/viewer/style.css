@@ -348,6 +348,21 @@ canvas#game { display: block; }
 }
 .scheme .scheme-name { flex: 1; }
 
+/* Options switches (ASCII [x] / [ ] toggles).
+   Same 4-column grid as .kv-2col so the option list visually lines up with
+   the connect/info block at the top of the modal. */
+.switches {
+  display: grid;
+  grid-template-columns: 140px 1fr 140px 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  font-size: 13px;
+}
+.switch-box, .switch-label { cursor: pointer; user-select: none; }
+.switch-box { color: var(--text-muted); white-space: nowrap; }
+.switch-label { color: var(--text); }
+.switch-box:hover, .switch-label:hover { color: var(--accent); }
+
 /* Keys grid */
 .keys-grid {
   display: grid;
@@ -362,7 +377,7 @@ canvas#game { display: block; }
 
 /* — Mobile —————————————————————————————————————————————————————————— */
 
-@media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
+@media (max-width: 1100px), (pointer: coarse) and (max-width: 1100px) {
   html, body {
     height: auto;
     min-height: 100%;
@@ -413,6 +428,8 @@ canvas#game { display: block; }
   .kv-2col { grid-template-columns: 110px 1fr; }
   .kv-2col .kv-full { grid-column: 1; }
   .kv-2col .kv-full-val { grid-column: 2; }
+
+  .switches { grid-template-columns: 110px 1fr; }
 
   .schemes { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .scheme { padding: 6px 8px; gap: 6px; font-size: 12px; }

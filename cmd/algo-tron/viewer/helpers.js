@@ -74,3 +74,23 @@ function contrastText(rgbStr) {
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// Settings toggles persisted in localStorage. The modal renders/owns these;
+// other code just reads via getSwitch(key).
+function getSwitch(key) {
+  try { return localStorage.getItem('algotron.switch.' + key) === '1'; } catch (e) { return false; }
+}
+
+// Names longer than NAME_MAX are truncated to keep the scoreboard and the
+// canvas name pills from clashing into neighboring UI. With the
+// "scrollNames" switch on, the visible window scrolls so the full name
+// eventually comes around.
+const NAME_MAX = 20;
+const NAME_GAP = '   ';
+function displayName(name) {
+  if (name.length <= NAME_MAX) return name;
+  if (!getSwitch('scrollNames')) return name.slice(0, NAME_MAX);
+  const padded = name + NAME_GAP;
+  const i = Math.floor(Date.now() / 250) % padded.length;
+  return (padded + padded).slice(i, i + NAME_MAX);
+}

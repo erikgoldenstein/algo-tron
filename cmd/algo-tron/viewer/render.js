@@ -133,6 +133,7 @@ function renderName(ctx, name, x, y, playerColor) {
   const s = SCHEMES[currentScheme];
   const labelColor = contrastText(playerColor);
   ctx.font = canvasFont(14, 'bold');
+  name = displayName(name);
   const w = ctx.measureText(name).width;
   const padX = 6;
   const boxW = w + padX * 2;
@@ -227,3 +228,12 @@ function renderChart() {
 }
 
 setInterval(() => { render(); renderChart(); }, 1000 / 30);
+
+// Tick scoreboard name cells so scrolling names slide in-place between
+// websocket-driven full re-renders. No-op when the switch is off.
+setInterval(() => {
+  if (!getSwitch('scrollNames')) return;
+  document.querySelectorAll('#scoreboard .namestr').forEach((el) => {
+    el.textContent = displayName(el.dataset.name);
+  });
+}, 250);

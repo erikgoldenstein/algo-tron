@@ -23,12 +23,36 @@ function renderSchemes() {
   });
 }
 
+// Boolean settings rendered as ASCII [x] / [ ] toggles in the options
+// section. Read by other modules via getSwitch(key) in helpers.js.
+const SWITCHES = [
+  { key: 'scrollNames', label: 'scroll long names' },
+];
+
+function renderSwitches() {
+  const root = document.getElementById('switches');
+  if (!root) return;
+  root.innerHTML = SWITCHES.map((s) => {
+    const on = getSwitch(s.key);
+    return `<span class="switch-box" data-key="${s.key}">[${on ? 'x' : ' '}]</span>`
+      + `<span class="switch-label" data-key="${s.key}">${s.label}</span>`;
+  }).join('');
+  root.querySelectorAll('[data-key]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const k = el.dataset.key;
+      const next = !getSwitch(k);
+      try { localStorage.setItem('algotron.switch.' + k, next ? '1' : '0'); } catch (e) {}
+      renderSwitches();
+    });
+  });
+}
+
 function toggleHelp(force) {
   const m = document.getElementById('help-modal');
   if (!m) return;
   const shouldShow = force === undefined ? m.hidden : force;
   m.hidden = !shouldShow;
-  if (shouldShow) renderSchemes();
+  if (shouldShow) { renderSchemes(); renderSwitches(); }
 }
 
 function cycleScheme() {

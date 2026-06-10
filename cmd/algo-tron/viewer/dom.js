@@ -59,7 +59,7 @@ function scoreRow(p, i) {
   const c = playerColor(p.username);
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '">' + esc(p.username) + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username)) + '</span>' + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="wr">' + wr + '</td>'
     + '<td class="sep">|</td>'
