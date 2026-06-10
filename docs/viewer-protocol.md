@@ -16,7 +16,7 @@ There are five message shapes. `init` is the snapshot; `game` / `tick` / `end` a
   "serverInfo":  [{"host": "play-tron.erik.gdn", "port": 4000}],
   "viewInfo":    [{"host": "view-tron.erik.gdn", "port": 443, "scheme": "https"}],
   "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080}],
-  "chartData":   [{"name": 0, "alice": 0.4, "bob": 0.2}],
+  "chartData":   [{"name": 0, "alice": 1024, "bob": 988}],
   "lastWinners": ["alice"],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ] }
 }
@@ -81,6 +81,14 @@ Each viewer has a 16-frame send buffer (`viewSinkBuf`). If `broadcastViewLocked`
 
 There is no chat or input from the viewer side; the only frames the server reads on `/ws` are control frames (the read loop blocks on `ReadMessage` and returns on any error).
 
+`chartData` is a 20-point series. Each point is `{name: i, [username]: elo, …}` where `elo` is the player's ELO at that historical slot. Players whose `ScoreHistory` predates elo tracking (`Score.Elo == 0`) are simply omitted from those points — the viewer treats a missing key as a gap.
+
 ## Client reference implementation
 
-`cmd/algo-tron/viewer/gameState.js` is the in-tree consumer. It mirrors `applyInit` / `applyGame` / `applyTick` / `applyEnd` 1:1 against the message shapes above and is the cleanest place to look when adding a new field.
+The in-tree consumer is split by topic across `cmd/algo-tron/viewer/`:
+
+- `gameState.js` — pure state mutation; mirrors `applyInit` / `applyGame` / `applyTick` / `applyEnd` 1:1 against the message shapes above. The cleanest place to look when adding a new field.
+- `ws.js` — the WebSocket loop. On reconnect after a session has been established, it forces a `location.reload()` so a redeployed server's new static assets come into effect.
+- `dom.js`, `render.js`, `modal.js`, `schedule.js` — pure consumers of `gameState`. They never mutate state.
+
+See [architecture.md § Viewer SPA layout](architecture.md#viewer-spa-layout) for the full file list.

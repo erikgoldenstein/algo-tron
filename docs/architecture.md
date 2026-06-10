@@ -3,8 +3,8 @@
 A single Go binary serves three surfaces from one process:
 
 1. **Bot TCP listener** (`-tcp`, default `:4000`) — line-based wire protocol, one bot per connection. See [bot-protocol.md](bot-protocol.md).
-2. **Viewer HTTP listener** (`-view`, default `:3000`) — serves the embedded viewer SPA and upgrades `/ws` to a WebSocket. See [viewer-protocol.md](viewer-protocol.md).
-3. **Optional Prometheus listener** (`-metrics`, disabled by default) — `/metrics` only. Bind to localhost; unauthenticated. See [metrics.md](metrics.md).
+2. **Viewer HTTP listener** (`-view`, default `:3000`) — serves the embedded viewer SPA and upgrades `/ws` to a WebSocket. See [viewer-protocol.md](viewer-protocol.md). With `-view-metrics-auth user:pass` set, this listener also exposes `/metrics` behind HTTP Basic auth.
+3. **Optional separate Prometheus listener** (`-metrics`, disabled by default) — `/metrics` only. Bind to localhost; unauthenticated. See [metrics.md](metrics.md).
 
 ## Goroutine layout
 
@@ -18,7 +18,7 @@ Started from `main()`:
 | `viewWS` reader × N  | One per viewer connection. Detects disconnect.                   |
 | `viewWriter` × N     | One per viewer. Drains the per-viewer send queue.                |
 | `gameLoop`           | Polls every 1s; starts a new `Game` when none is running.        |
-| `Game.run`           | Sleeps one tick interval, then `tickLocked`. Exits on game end.  |
+| `Game.run`           | Waits on a `time.Ticker` for one tick interval, then `tickLocked`. The ticker is rebuilt each iteration if the tick-rate ramp bumped the interval; exits on game end. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
 | `statsLoop`          | Emits one stats line per minute while a game is active.          |
 | `listenMetrics`      | Prometheus HTTP server, only if `-metrics` is set.               |
 
@@ -57,6 +57,25 @@ The frame is built with `appendPos` directly into a `[]byte` to stay alloc-free;
 ## Viewer fanout
 
 `broadcastViewLocked` push-sends to each `viewerSink.ch`. If the channel is full (`viewSinkBuf = 16`), the viewer is too slow — the server drops them, closes the connection, and increments `tron_viewers_kicked_total`. Each `viewWriter` then writes throttled to half the current tick interval to keep the browser canvas from saturating. See [viewer-protocol.md](viewer-protocol.md).
+
+## Viewer SPA layout
+
+`listenHTTP` is a thin wrapper around `viewerHandler(metricsAuth) http.Handler`. The handler is extracted so e2e tests (`viewer_e2e_test.go`) can wrap it in `httptest.NewServer` without reproducing the routing. Frontend assets live in `cmd/algo-tron/viewer/`, embedded via `//go:embed`:
+
+| File           | Topic                                                       |
+|----------------|-------------------------------------------------------------|
+| `index.html`   | DOM skeleton, modal markup, ordered `<script defer>` chain. |
+| `style.css`    | All UI styling, including per-scheme overrides.             |
+| `helpers.js`   | Pure utilities — crc32, HSL conversions, esc, contrast.     |
+| `schemes.js`   | Color schemes, palette expansion, theme application.        |
+| `gameState.js` | WS message → in-memory `gameState` (no DOM/canvas).         |
+| `dom.js`       | Scoreboard / chat / shutdown-banner DOM updates.            |
+| `render.js`    | Canvas arena + ELO chart on a 30fps loop.                   |
+| `modal.js`     | Help/settings modal + keyboard shortcuts.                   |
+| `ws.js`        | WebSocket entry, auto-reload on reconnect.                  |
+| `schedule.js`  | Optional GPN-style talk schedule pane.                      |
+
+Each `*.js` declares its `Depends on / Provides` globals in the header comment. Script order in `index.html` matches that dependency chain — change it and you'll get `ReferenceError`s.
 
 ## Boot
 

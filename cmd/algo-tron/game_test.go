@@ -16,11 +16,14 @@ func TestUpdateEloTwoPlayers(t *testing.T) {
 
 	g.updateEloLocked([]*Player{winner})
 
-	if winner.Elo != 1016 {
-		t.Fatalf("winner Elo = %v, want 1016", winner.Elo)
+	// With K=16 and equal pre-game elo, the symmetric expected score is 0.5;
+	// the pair result is 1 for the winner and 0 for the loser, so the delta
+	// is ±8.
+	if winner.Elo != 1008 {
+		t.Fatalf("winner Elo = %v, want 1008", winner.Elo)
 	}
-	if loser.Elo != 984 {
-		t.Fatalf("loser Elo = %v, want 984", loser.Elo)
+	if loser.Elo != 992 {
+		t.Fatalf("loser Elo = %v, want 992", loser.Elo)
 	}
 }
 

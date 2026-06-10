@@ -1,8 +1,13 @@
 # Metrics
 
-Prometheus `/metrics`, served from a separate HTTP listener configured with `-metrics` (e.g. `127.0.0.1:9090`). Empty / unset disables it. **Unauthenticated** — bind to localhost.
+Prometheus `/metrics`. Two mounting options, pick one:
 
-All metric definitions and the call sites that update them live in `cmd/algo-tron/metrics.go`. Grep for `metric` to find emit sites.
+- **Separate listener** — `-metrics 127.0.0.1:9090`. **Unauthenticated**, so bind to localhost or anywhere only Prometheus can reach.
+- **On the viewer HTTP server with Basic auth** — `-view-metrics-auth user:pass`. Mounts `/metrics` on the same port as the viewer, protected by HTTP Basic auth. Works with Prometheus' [`basic_auth`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#basic_auth) scrape config and is the simplest path when you're already terminating TLS for the viewer (so the metrics scrape inherits TLS).
+
+Both can be enabled at the same time. Setting neither disables `/metrics` entirely.
+
+All metric definitions and the call sites that update them live in `cmd/algo-tron/metrics.go`. The Basic auth middleware lives in `view.go` (`basicAuth` — uses `subtle.ConstantTimeCompare` so the check doesn't leak via timing). Grep for `metric` to find emit sites.
 
 ## Counters
 
@@ -21,12 +26,14 @@ All metric definitions and the call sites that update them live in `cmd/algo-tro
 ## Histograms
 
 Bucket set for tick/fanout budgets: `0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 1.5, 2.0`.
+Bucket set for the tick-interval offset: `-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0`.
 
-| Name                            | Meaning                                                                                       |
-|---------------------------------|-----------------------------------------------------------------------------------------------|
-| `tron_tick_budget_used_ratio`   | Tick processing time ÷ current tick interval. **`≥ 1.0` means a missed deadline.**            |
-| `tron_fanout_budget_used_ratio` | Viewer fanout time ÷ tick interval.                                                           |
-| `tron_game_duration_seconds`    | Wall-clock duration of completed games. Exponential buckets, 1s base, factor 2, 10 buckets.   |
+| Name                                | Meaning                                                                                                                  |
+|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `tron_tick_budget_used_ratio`       | Tick processing time ÷ current tick interval. **`≥ 1.0` means a missed deadline.**                                       |
+| `tron_fanout_budget_used_ratio`     | Viewer fanout time ÷ tick interval.                                                                                      |
+| `tron_tick_interval_offset_ratio`   | `(actual − expected) / expected` for inter-tick gaps. `0` = on time, `+0.05` = 5% late, `−0.05` = 5% early. Surfaces scheduler/`time.Ticker` jitter independent of tick-build cost. |
+| `tron_game_duration_seconds`        | Wall-clock duration of completed games. Exponential buckets, 1s base, factor 2, 10 buckets.                              |
 
 Why a *ratio* and not absolute time: the tick interval shrinks over the life of a game (`baseTickrate + elapsed/10` tps). Mixing absolute durations across a single histogram would conflate samples taken under different deadlines. The ratio is comparable across the whole game.
 

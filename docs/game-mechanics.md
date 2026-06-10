@@ -36,10 +36,22 @@ So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interv
 
 | Constant     | Value | Meaning                                |
 |--------------|-------|----------------------------------------|
-| `eloKFactor` | 32    | Per-pair K, applied each game.         |
+| `eloKFactor` | 16    | Per-pair K, applied each game.         |
 | `scoreWindow`| 2h    | Rolling window for wins/losses counts. |
 
-Standard ELO, applied to every winner-vs-loser pair in the same game. New accounts start at 1000. The total delta is zero-sum across the game.
+Pairwise ELO where the result of each pair is decided by **survival ranking**, not just winner vs loser. The standard win/draw/loss-by-survival logic lives in `Game.updateEloLocked` (see `game.go`).
+
+Each game-end the server assigns a `place` per player:
+
+- All players still alive share **place 1**.
+- Each loser's place is `1 + count of players who outlived them` (still alive, or died on a later tick — `g.deathTick` records the tick number a player died at).
+- Players who died on the **same tick** share a place (head-on collisions; multiple disconnects landing on one tick).
+
+For every pair `(p, q)` of players in the game, the pair result for `p` is `1.0` if `place[p] < place[q]`, `0.0` if greater, `0.5` if equal. The standard ELO expected score (`expected = 1 / (1 + 10^((q.elo - p.elo)/400))`) is computed against the pre-update ELOs, and `delta += K * (result - expected)` is summed across all opponents. K = 16, so a single game can swing a player by up to ~`16 * (n-1)` in either direction.
+
+A player who outlived another loser claims a partial win against them even though both lost the game — that's the whole point of ranking by survival. Total delta across all players sums to zero (pair scores sum to `nC2`, pair expecteds sum to `nC2`).
+
+New accounts start at 1000. The post-game ELO is snapshotted onto each player's most recent `Score` entry inside `endLocked` so the viewer chart can reconstruct the trajectory (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
 
 `wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
 
@@ -58,4 +70,4 @@ Standard ELO, applied to every winner-vs-loser pair in the same game. New accoun
 2. Sort by win ratio desc, then wins desc, then losses desc.
 3. Truncate to 10.
 
-The chart shows a 20-point win-ratio history per top player, computed by stepping backward through `ScoreHistory`.
+The chart shows a 20-point **ELO** history per top player. Each `Score` record carries the post-game ELO (`Score.Elo`); `updateChartDataLocked` walks `ScoreHistory` backward to find the latest non-zero ELO for each chart slot. Losers in a game get their post-update ELO backfilled into the most recent `Score` entry inside `endLocked`, so winners and losers report a consistent value. `Score` records written before ELO tracking existed (`Elo == 0`) are skipped — the chart simply starts later for those players.

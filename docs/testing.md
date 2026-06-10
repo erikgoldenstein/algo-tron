@@ -10,12 +10,14 @@ go test ./cmd/algo-tron
 
 ## Test helpers
 
-| Helper          | What it builds                                                                     |
-|-----------------|------------------------------------------------------------------------------------|
-| `testServer(t)` | `*Server` with in-memory SQLite (`:memory:`), zeroed secret, 1s tick interval.     |
-| `testPlayer(n)` | `*Player` with a `bytes.Buffer`-backed `bufio.Writer` — capture writes inline.     |
-| `makeGame(s,…)` | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic IDs.     |
-| `mustPipe(t)`   | Two ends of `net.Pipe`, both closed by `t.Cleanup`.                                |
+| Helper            | What it builds                                                                                       |
+|-------------------|------------------------------------------------------------------------------------------------------|
+| `testServer(t)`   | `*Server` with in-memory SQLite (`:memory:`), zeroed secret, 1s tick interval.                       |
+| `testPlayer(n)`   | `*Player` with a `bytes.Buffer`-backed `bufio.Writer` — capture writes inline.                       |
+| `makeGame(s,…)`   | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic IDs.                       |
+| `mustPipe(t)`     | Two ends of `net.Pipe`, both closed by `t.Cleanup`.                                                  |
+| `e2eViewer(t)`    | Boots the real `Server` and serves the viewer over `httptest`. Returns the URL the browser hits.     |
+| `browser(t)`      | Headless Chrome via `chromedp`. Skips the test with `t.Skip` if Chrome isn't installed.              |
 
 The shuffle-free `makeGame` is essential: it pins player IDs to the input slice order so tests can assert on specific board positions without flake.
 
@@ -37,6 +39,27 @@ The suite leans on small, focused tests rather than full integration runs. Rough
 | TCP send path       | `TestSendLocked`, `TestSendLockedNilWriter`, `TestDisconnect`.                             |
 
 The collision tests rely on the deterministic spawns from `makeGame` — when adding a case, prefer the shuffle-free helper over `newGame`.
+
+## End-to-end viewer tests
+
+`viewer_e2e_test.go` drives a real headless Chrome (via `chromedp`) against the real viewer (the in-process `httptest` server returned by `e2eViewer`). The tests assert on observable DOM state — text content, the `hidden` attribute, classes, or a single named global from the viewer scripts (`currentScheme`, `SCHEME_KEYS`, …) — never on private internals.
+
+```sh
+go test ./cmd/algo-tron -run TestE2E -v
+```
+
+Each test takes ~10–15s (Chrome startup dominates). They auto-skip if Chrome isn't on the box, so contributors without it aren't blocked.
+
+Starter coverage (representative, not exhaustive):
+
+| Test                                  | What it checks                                                                |
+|---------------------------------------|-------------------------------------------------------------------------------|
+| `TestE2EHeaderRenders`                | Page boots and the `algo-tron` brand title is visible.                        |
+| `TestE2ESettingsButtonOpensModal`     | Clicking the `settings` tabbar button makes the help modal visible.           |
+| `TestE2ESchemePickerListsAllSchemes`  | The scheme picker renders one button per entry in `SCHEME_KEYS`.              |
+| `TestE2ESchemePersistsAcrossReload`   | `applyScheme('gpn')` survives a `chromedp.Reload()` via `localStorage`.       |
+
+Add a new test by copying any of the four; the pattern is `Navigate → Wait → Click/Evaluate → Assert`. Two helpers cover all setup: `e2eViewer(t)` for the server, `browser(t)` for the Chrome context.
 
 ## Benchmarks
 

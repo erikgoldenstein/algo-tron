@@ -19,7 +19,7 @@ const (
 	viewSinkBuf         = 16 // pending delta messages per viewer before we kick them
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
-	eloKFactor          = 32
+	eloKFactor          = 16
 	packetsPerTick      = 4
 )
 

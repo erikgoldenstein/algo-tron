@@ -25,13 +25,13 @@ CREATE TABLE IF NOT EXISTS players (
   username      TEXT PRIMARY KEY,
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
-  score_history TEXT NOT NULL DEFAULT '[]'  -- JSON: [{type:1|0, time: unix_ms}, …]
+  score_history TEXT NOT NULL DEFAULT '[]'  -- JSON: [{type:1|0, time: unix_ms, elo?: float}, …]
 );
 ```
 
 - `pw_hash` is hex-encoded HMAC-SHA256 of the password with `secret` as key.
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
-- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
+- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo` is the player's ELO after that game; it's `omitempty` for backward compatibility, so records written before ELO tracking lack the field and parse as `0`. The viewer's ELO chart simply skips slots with `Elo == 0`. Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
 
 ### Read/write cadence
 

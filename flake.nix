@@ -53,6 +53,8 @@
             "-schedule-url" cfg.scheduleURL
           ] ++ lib.optionals (cfg.metrics.listen != "") [
             "-metrics" cfg.metrics.listen
+          ] ++ lib.optionals (cfg.view.metricsAuth != "") [
+            "-view-metrics-auth" cfg.view.metricsAuth
           ];
         in
         {
@@ -127,6 +129,18 @@
               type = lib.types.enum [ "http" "https" ];
               default = "https";
               description = "Public viewer scheme shown in the viewer UI.";
+            };
+
+            view.metricsAuth = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              example = "prometheus:s3cret";
+              description = ''
+                If non-empty (`user:pass`), also expose Prometheus `/metrics` on the viewer HTTP listener,
+                protected by HTTP Basic auth (Prometheus-compatible).
+                The literal value ends up in the world-readable Nix store and in `systemctl show` —
+                use `lib.fileContents` with sops-nix / agenix if that matters for your threat model.
+              '';
             };
 
             metrics.listen = lib.mkOption {

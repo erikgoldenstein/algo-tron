@@ -34,6 +34,8 @@ Options:
 - `-data-dir`: directory holding the SQLite player database and HMAC secret. Defaults to a temp directory; set this for persistence.
 - `-schedule-url`: URL for an optional talk schedule JSON shown in the viewer (only used at chaos events). Omit to hide the schedule panel.
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
+- `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.
+- `-view-metrics-auth`: if set (`user:pass`), also expose `/metrics` on the viewer HTTP server protected by HTTP Basic auth (Prometheus-compatible). Useful when you'd rather scrape over the same TLS-terminated host as the viewer.
 
 ## NixOS Flake Deployment
 
@@ -60,6 +62,10 @@ This repo exposes a package and a NixOS module:
             # tcp.proxyProtocol = true;
             # dataDir = "/var/lib/algo-tron";
             # scheduleURL = "https://example.org/schedule.json"; # used for chaos events
+            # metrics.listen = "127.0.0.1:9090";                 # separate unauthenticated /metrics listener
+            # view.metricsAuth = "prometheus:s3cret";            # OR expose /metrics on the viewer port with Basic auth
+            #                                                    # (consider lib.fileContents + sops-nix / agenix in production)
+            # openFirewall = true;                               # open the tcp.listen / view.listen ports
           };
         }
       ];
