@@ -1,0 +1,65 @@
+#!/usr/bin/env sh
+set -eu
+
+# Only run when dependency/package files are staged.
+if ! git diff --cached --name-only | grep -Eq '^(go\.mod|go\.sum|flake\.nix)$'; then
+  exit 0
+fi
+
+if [ ! -f flake.nix ] || [ ! -f go.mod ]; then
+  echo "error: run commit from repo root containing flake.nix and go.mod" >&2
+  exit 1
+fi
+
+# Do not mix unstaged edits into the commit.
+if ! git diff --quiet -- flake.nix go.mod go.sum 2>/dev/null; then
+  echo "error: unstaged changes exist in flake.nix/go.mod/go.sum" >&2
+  echo "stage them first, then commit again" >&2
+  exit 1
+fi
+
+rm -rf vendor
+
+old_flake="$(mktemp)"
+log="$(mktemp)"
+trap 'rm -f "$old_flake" "$log"' EXIT
+
+cp flake.nix "$old_flake"
+
+echo "pre-commit: refreshing vendorHash"
+
+sed -i -E 's#vendorHash = .*;#vendorHash = pkgs.lib.fakeHash;#' flake.nix
+
+set +e
+nix build .# 2>&1 | tee "$log"
+set -e
+
+hash="$(
+  grep -Eo 'got:[[:space:]]+sha256-[A-Za-z0-9+/=]+' "$log" \
+    | tail -n1 \
+    | sed -E 's/got:[[:space:]]+//'
+)"
+
+if [ -z "$hash" ]; then
+  hash="$(
+    grep -Eo 'sha256-[A-Za-z0-9+/=]+' "$log" \
+      | tail -n1
+  )"
+fi
+
+if [ -z "$hash" ]; then
+  echo "error: could not extract vendorHash from nix output" >&2
+  cp "$old_flake" flake.nix
+  exit 1
+fi
+
+sed -i -E "s#vendorHash = .*;#vendorHash = \"$hash\";#" flake.nix
+
+rm -rf vendor
+
+echo "pre-commit: verifying build"
+nix build .#
+
+git add flake.nix
+
+echo "pre-commit: vendorHash refreshed: $hash"

@@ -1,3 +1,4 @@
 /algo-tron
 *.pyc
 vendor/
+/result
