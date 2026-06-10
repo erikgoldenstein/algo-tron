@@ -14,7 +14,7 @@
           pname = "algo-tron";
           version = "0.1.0";
           src = ./.;
-          vendorHash = null; # non reproducible but currently better for quick deployment
+          vendorHash = "sha-xxxxx";
           subPackages = [ "cmd/algo-tron" ];
           ldflags = [ "-s" "-w" ];
         };
