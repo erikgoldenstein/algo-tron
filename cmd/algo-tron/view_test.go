@@ -136,15 +136,15 @@ func TestUpdateChartDataLength(t *testing.T) {
 	}
 }
 
-func TestUpdateChartDataLastPointHasCurrentWR(t *testing.T) {
+func TestUpdateChartDataLastPointHasCurrentElo(t *testing.T) {
 	s := testServer(t)
 	now := time.Now().UnixMilli()
 	s.players = map[string]*Player{
-		"alice": {Username: "alice", Elo: 1000, ScoreHistory: []Score{
-			{Type: 1, Time: now},
+		"alice": {Username: "alice", Elo: 1042, ScoreHistory: []Score{
+			{Type: 1, Time: now, Elo: 1042},
 		}},
 	}
-	entries := []ScoreboardEntry{{Username: "alice", WinRatio: 1.0, Wins: 1, Losses: 0, Elo: 1000}}
+	entries := []ScoreboardEntry{{Username: "alice", WinRatio: 1.0, Wins: 1, Losses: 0, Elo: 1042}}
 
 	s.updateChartDataLocked(entries)
 
@@ -153,8 +153,8 @@ func TestUpdateChartDataLastPointHasCurrentWR(t *testing.T) {
 	if !ok {
 		t.Fatal("last chart point should include alice")
 	}
-	if v.(float64) != 1.0 {
-		t.Errorf("last WR = %v, want 1.0", v)
+	if v.(float64) != 1042 {
+		t.Errorf("last elo = %v, want 1042", v)
 	}
 }
 

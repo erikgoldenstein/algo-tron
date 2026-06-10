@@ -9,6 +9,10 @@
 //   {type:"end",  scoreboard, chartData, lastWinners}
 //   {type:"misc", content:"shutdown"} — lifecycle event; "shutdown" → banner.
 //
+// chartData is a 20-point series; each point is { name: i, [username]: elo, ... }.
+// Players whose ScoreHistory predates elo tracking will be missing from the
+// earlier points until enough new games have been played.
+//
 // `init` is the snapshot sent on connect. `game` resets per-game state when a
 // new game begins. `tick` appends one move per alive player and updates chat /
 // deaths. `end` refreshes scoreboard + chart at game-over.

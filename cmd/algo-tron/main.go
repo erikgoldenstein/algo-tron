@@ -28,6 +28,7 @@ func run() error {
 	tcpAddr := flag.String("tcp", ":4000", "TCP game listen address")
 	viewAddr := flag.String("view", ":3000", "HTTP viewer listen address")
 	metricsAddr := flag.String("metrics", "", "Prometheus /metrics listen address (empty to disable). Bind to localhost; this port is unauthenticated.")
+	viewMetricsAuth := flag.String("view-metrics-auth", "", "if set (\"user:pass\"), also expose /metrics on the view HTTP server protected by HTTP Basic auth (Prometheus-compatible)")
 	proxyProtocol := flag.Bool("proxy-protocol", false, "Expect HAProxy PROXY protocol v1 headers on TCP game connections")
 	publicTCP := flag.String("public-tcp", "play-tron.erik.gdn:443", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "view-tron.erik.gdn:443", "HTTP viewer connection string shown in viewer")
@@ -88,11 +89,11 @@ func run() error {
 
 	g, gctx := errgroup.WithContext(drainCtx)
 	g.Go(func() error { return s.listenTCP(gctx, *tcpAddr, *proxyProtocol) })
-	g.Go(func() error { return s.listenHTTP(gctx, *viewAddr) })
+	g.Go(func() error { return s.listenHTTP(gctx, *viewAddr, *viewMetricsAuth) })
 	if *metricsAddr != "" {
 		g.Go(func() error { return listenMetrics(gctx, *metricsAddr) })
 	}
 
-	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr)
+	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr, "view_metrics", *viewMetricsAuth != "")
 	return g.Wait()
 }

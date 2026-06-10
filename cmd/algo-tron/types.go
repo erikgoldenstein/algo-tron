@@ -39,8 +39,9 @@ type Vec2 struct {
 }
 
 type Score struct {
-	Type int   `json:"type"`
-	Time int64 `json:"time"`
+	Type int     `json:"type"`
+	Time int64   `json:"time"`
+	Elo  float64 `json:"elo,omitempty"`
 }
 
 type Player struct {

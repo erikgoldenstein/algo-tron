@@ -35,13 +35,13 @@ func (p *Player) readMoveLocked() Move {
 }
 
 func (p *Player) winLocked() {
-	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 1, Time: time.Now().UnixMilli()})
+	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 1, Time: time.Now().UnixMilli(), Elo: p.Elo})
 	w, l := p.winsLosses()
 	p.sendLocked("win", w, l)
 }
 
 func (p *Player) loseLocked() {
-	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: time.Now().UnixMilli()})
+	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: time.Now().UnixMilli(), Elo: p.Elo})
 	w, l := p.winsLosses()
 	p.sendLocked("lose", w, l)
 }

@@ -1,10 +1,20 @@
-html,
-body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: black;
-  color: white;
+/*
+ * Color scheme variables (--bg, --text, etc.) are set on :root by ui.js based
+ * on the chosen colorscheme (default "catppuccin"). The body also gets a
+ * scheme-* class so a scheme can override structural things like font-family
+ * (the gpn scheme switches the UI to serif).
+ */
+:root {
+  --bg: #1e1e2e;
+  --bg-elevated: #313244;
+  --border: #45475a;
+  --grid: rgba(205, 214, 244, 0.15);
+  --text: #cdd6f4;
+  --text-muted: #7f849c;
+  --text-dim: #45475a;
+  --accent: #f5c2e7;
+  --live: #a6e3a1;
+  --font-ui: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -13,9 +23,26 @@ body {
   box-sizing: border-box;
 }
 
+html,
 body {
-  font-family: serif;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
+
+body.scheme-gpn {
+  --font-ui: 'Times New Roman', Georgia, serif;
+  font-weight: 700;
+}
+body.low-fatigue { filter: saturate(0.65) brightness(0.85); }
+
+a { color: var(--accent); }
+a:hover { opacity: 0.85; }
 
 #shutdown-banner {
   position: fixed;
@@ -25,122 +52,366 @@ body {
   z-index: 1000;
   padding: .4rem;
   text-align: center;
-  font-size: .9rem;
+  font-size: .85rem;
   color: #ff5555;
   background: rgba(0, 0, 0, .85);
 }
 
+/* — Desktop grid ————————————————————————————————————————————————————— */
+
 .layout {
-  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(340px, 40%) 1fr;
+  grid-template-rows: auto auto auto 1fr;
+  column-gap: 24px;
+  row-gap: 16px;
+  height: 100vh;
+  padding: 14px 18px;
+}
+
+.brand              { grid-column: 1; grid-row: 1; }
+.scoreboard-section { grid-column: 1; grid-row: 2; }
+.chart-section      { grid-column: 1; grid-row: 3; }
+.chat-section       { grid-column: 1; grid-row: 4; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.arena-section      { grid-column: 2; grid-row: 1 / 5; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.schedule-section   { display: none; }
+
+/* — Brand ——————————————————————————————————————————————————————————— */
+
+.brand-link { text-decoration: none; color: inherit; display: inline-block; }
+.brand-link:hover h1 { opacity: 0.85; }
+
+.brand h1 {
+  font-size: 28px;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.brand .tagline {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* — Section headers —————————————————————————————————————————————————— */
+
+h2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.section-header h2 { margin-bottom: 0; }
+
+.muted {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* — Scoreboard ——————————————————————————————————————————————————————— */
+
+.scoreboard {
   width: 100%;
-  position: relative;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
-.pane {
-  position: absolute;
-  overflow: hidden;
-  padding: .5rem;
-}
-
-.plain {
-  padding: 0;
-}
-
-.info { top: 0; left: 0; width: 25%; height: 25%; }
-.connection { top: 25%; left: 0; width: 25%; height: 25%; }
-.scoreboard-pane { top: 50%; left: 0; width: 25%; height: 25%; }
-.chart-pane { top: 75%; left: 0; width: 25%; height: 25%; font-size: .8rem; }
-.game-pane { top: 0; left: 50%; width: 50%; height: 100%; font-size: .8rem; }
-.schedule-pane { top: 0; left: 25%; width: 25%; height: 50%; font-size: .8rem; }
-.chat-pane { top: 50%; left: 25%; width: 25%; height: 50%; font-size: .8rem; }
-
-.score-title {
-  margin-bottom: .5em;
-}
-
-table {
-  width: 100%;
+.scoreboard th,
+.scoreboard td {
+  padding: 1px 5px;
   text-align: left;
-  line-height: .8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-canvas {
-  margin: auto;
+.scoreboard thead th { font-weight: 400; padding-bottom: 2px; }
+.scoreboard td.name { color: var(--text); }
+.scoreboard th.sep,
+.scoreboard td.sep { color: var(--text-dim); padding: 0; }
+.scoreboard th.num,
+.scoreboard td.num { width: 1.5em; }
+.scoreboard th.name { width: auto; }
+.scoreboard th.wr,
+.scoreboard td.wr { width: 3.2em; text-align: right; }
+.scoreboard th.elo,
+.scoreboard td.elo { width: 3.8em; text-align: right; }
+.scoreboard th.wins,
+.scoreboard td.wins { width: 4em; text-align: right; }
+.scoreboard th.losses,
+.scoreboard td.losses { width: 4.5em; text-align: right; }
+.scoreboard .empty { color: var(--text-muted); text-align: center; padding: 8px 0; }
+
+/* — Chart ——————————————————————————————————————————————————————————— */
+
+.chart-wrap {
+  height: 84px;
+  width: 100%;
+  margin: 2px 0;
+}
+
+.chart-wrap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* — Chat ——————————————————————————————————————————————————————————— */
+
+.chat-section { padding-bottom: 8px; }
+
+#chat {
+  font-size: 12.5px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+#chat .msg { margin-bottom: 10px; }
+#chat .msg .from { color: var(--text); font-weight: 500; }
+#chat .msg .time { color: var(--text-muted); margin-left: 4px; }
+#chat .msg .body { color: var(--text-muted); display: block; margin-top: 1px; }
+#chat .chat-empty { color: var(--text-muted); font-style: italic; }
+
+/* — Arena ——————————————————————————————————————————————————————————— */
+
+.arena {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 
 .gamewrap {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+canvas#game { display: block; }
+
+/* — Tab bar (sits under the arena, not the whole screen) ———————————————— */
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  background: var(--bg-elevated);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabbar .tab { color: var(--text-muted); }
+.tabbar .tab.active { color: var(--text); }
+.tabbar .help {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  padding: 0 2px;
+}
+.tabbar .help:hover { opacity: 0.7; }
+
+/* — Modal ——————————————————————————————————————————————————————————— */
+
+.modal[hidden] { display: none; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.modal-window {
+  position: relative;
+  width: 100%;
+  max-width: 700px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px 20px 20px 20px;
+  font-size: 13px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.modal-title { color: var(--text); font-size: 14px; }
+.modal-title b { color: var(--text); font-weight: 700; }
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.modal-close:hover { color: var(--text); }
+.modal-close .kbd { color: var(--text-muted); margin-right: 4px; }
+
+.modal-section { margin-top: 14px; }
+.modal-section:first-child { margin-top: 0; }
+.modal-section-title { color: var(--accent); margin-bottom: 8px; font-weight: 500; }
+
+.kv {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  row-gap: 4px;
+  column-gap: 12px;
+  font-size: 13px;
+}
+.kv dt { color: var(--text-muted); }
+.kv dd { color: var(--text); word-break: break-all; }
+.kv dd a { color: var(--text); text-decoration: underline; }
+.kv dd a:hover { color: var(--accent); }
+
+.kv-2col {
+  grid-template-columns: 140px 1fr 140px 1fr;
+}
+.kv-2col dt { white-space: nowrap; }
+.kv-2col .kv-full { grid-column: 1; }
+.kv-2col .kv-full-val { grid-column: 2 / -1; }
+
+/* Scheme picker grid */
+.schemes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.scheme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--scheme-bg, var(--bg-elevated));
+  color: var(--scheme-text, var(--text));
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--scheme-font, inherit);
+  font-size: 12.5px;
+  text-align: left;
+}
+.scheme:hover { border-color: var(--text-muted); }
+.scheme.active { border-color: var(--accent); }
+.scheme .swatches { display: inline-flex; gap: 2px; }
+.scheme .swatch {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+}
+.scheme .scheme-name { flex: 1; }
+
+/* Keys grid */
+.keys-grid {
+  display: grid;
+  grid-template-columns: 70px 1fr 70px 1fr;
+  row-gap: 6px;
+  column-gap: 16px;
+  align-items: center;
+  font-size: 13px;
+}
+.kbd { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.kd { color: var(--text); }
+
+/* — Mobile —————————————————————————————————————————————————————————— */
+
 @media (max-width: 700px), (pointer: coarse) and (max-width: 900px) {
-  html,
-  body {
+  html, body {
     height: auto;
     min-height: 100%;
-    overflow: auto;
-  }
-
-  body {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    -webkit-text-size-adjust: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .layout {
     display: flex;
     flex-direction: column;
-    gap: .75rem;
+    height: auto;
     min-height: 100dvh;
-    height: auto;
-    padding: .75rem;
-    padding-top: max(.75rem, env(safe-area-inset-top));
-    padding-right: max(.75rem, env(safe-area-inset-right));
-    padding-bottom: max(.75rem, env(safe-area-inset-bottom));
-    padding-left: max(.75rem, env(safe-area-inset-left));
-    position: static;
+    padding: 12px 14px;
+    gap: 14px;
   }
 
-  .pane {
-    position: static;
-    width: 100%;
-    height: auto;
-    overflow: visible;
-    padding: .75rem;
-    border: 1px solid #23265d;
-    border-radius: .75rem;
-    background: #06071d;
-  }
+  .layout > * { min-width: 0; max-width: 100%; }
 
-  .plain {
-    padding: .75rem;
-  }
+  .arena { width: 100%; aspect-ratio: 1; }
 
-  .game-pane {
-    order: 1;
-    aspect-ratio: 1;
-    min-height: 0;
-    padding: .25rem;
-  }
+  .chat-section { overflow: visible; }
+  #chat { overflow: visible; }
+  #chat .msg { margin-bottom: 4px; }
+  #chat .msg .body { display: inline; margin-left: 4px; }
 
-  .scoreboard-pane { order: 2; }
-  .chat-pane { order: 3; }
-  .info { order: 4; }
-  .connection { order: 5; }
-  .chart-pane { order: 6; height: 7rem; }
+  .schedule-section { display: block; }
 
-  .schedule-pane {
-    display: none;
+  .scoreboard { table-layout: fixed; font-size: 11px; width: 100%; }
+  .scoreboard th, .scoreboard td { padding: 1px 2px; }
+  /* Collapse the visual pipe separators on narrow screens to free space. */
+  .scoreboard th.sep, .scoreboard td.sep {
+    width: 0; padding: 0; font-size: 0; color: transparent;
   }
+  .scoreboard th.num, .scoreboard td.num { width: 14px; }
+  .scoreboard th.wr, .scoreboard td.wr { width: 32px; }
+  .scoreboard th.elo, .scoreboard td.elo { width: 38px; }
+  .scoreboard th.wins, .scoreboard td.wins { width: 32px; }
+  .scoreboard th.losses, .scoreboard td.losses { width: 38px; }
+  .scoreboard-section { overflow-x: hidden; }
 
-  table {
-    font-size: .85rem;
-    line-height: 1.25;
-  }
+  .keys-section { display: none; }
 
-  th,
-  td {
-    padding: .15rem .25rem;
-  }
+  .modal { padding: 12px; }
+  .modal-window { padding: 14px; font-size: 12.5px; }
+
+  .kv { grid-template-columns: 110px 1fr; }
+  .kv-2col { grid-template-columns: 110px 1fr; }
+  .kv-2col .kv-full { grid-column: 1; }
+  .kv-2col .kv-full-val { grid-column: 2; }
+
+  .schemes { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .scheme { padding: 6px 8px; gap: 6px; font-size: 12px; }
+  .scheme .swatch { width: 9px; height: 9px; }
 }

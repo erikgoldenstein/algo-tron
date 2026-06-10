@@ -32,8 +32,11 @@ func (s *Server) updateScoreboardLocked() {
 	s.updateChartDataLocked(entries)
 }
 
-// updateChartDataLocked computes a 20-point win-ratio history per top player
-// from their ScoreHistory. Plotted by viewer/ui.js.
+// updateChartDataLocked computes a 20-point elo history per top player by
+// reading the elo snapshot saved on each ScoreHistory entry. Plotted by
+// viewer/ui.js. Score entries written before elo tracking existed have
+// Elo == 0; those points are omitted so the chart shows a partial series
+// rather than a misleading zero.
 func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 	const chartPoints = 20
 	data := make([]map[string]any, chartPoints)
@@ -45,20 +48,12 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 			if end < 0 {
 				end = 0
 			}
-
-			wins, loses := 0, 0
-			for _, score := range p.ScoreHistory[:end] {
-				if score.Type == 1 {
-					wins++
-				} else {
-					loses++
+			for j := end - 1; j >= 0; j-- {
+				if p.ScoreHistory[j].Elo != 0 {
+					point[entry.Username] = p.ScoreHistory[j].Elo
+					break
 				}
 			}
-			wr := 0.0
-			if games := wins + loses; games > 0 {
-				wr = float64(wins) / float64(games)
-			}
-			point[entry.Username] = wr
 		}
 		data[i] = point
 	}

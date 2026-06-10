@@ -3,56 +3,130 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>GPN Tron</title>
+  <title>algo-tron</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="/static/style.css">
+  <!-- Viewer scripts. Order matters because each file declares globals the
+       later files consume. Add a short header to any new file noting its
+       Depends on / Provides. -->
+  <script defer src="/static/helpers.js"></script>
+  <script defer src="/static/schemes.js"></script>
   <script defer src="/static/gameState.js"></script>
-  <script defer src="/static/ui.js"></script>
+  <script defer src="/static/dom.js"></script>
+  <script defer src="/static/render.js"></script>
+  <script defer src="/static/modal.js"></script>
+  <script defer src="/static/ws.js"></script>
+  <script defer src="/static/schedule.js"></script>
 </head>
 <body>
   <div id="shutdown-banner" hidden>A new version is being deployed and will be available shortly.</div>
   <div class="layout">
-    <div class="pane plain info">
-      <h1>GPN Tron</h1>
-      Connect via TCP and join the fun :)<br>
-      You can also watch the current game via the viewer port.<br><br>
-      <b>Wanna share your bot code? Upload to Github with #gpn-tron</b>
-    </div>
 
-    <div class="pane plain connection">
-      <h3>Ports:</h3>
-      <ul id="ports"></ul>
-      <h3>Hostnames:</h3>
-      <ul id="hosts"></ul>
-    </div>
+    <header class="brand">
+      <a class="brand-link" href="https://github.com/erikgoldenstein/algo-tron" target="_blank" rel="noopener">
+        <h1>algo-tron</h1>
+      </a>
+      <div class="tagline">last bot alive wins · <span id="addr">localhost:3000</span></div>
+    </header>
 
-    <div class="pane scoreboard-pane">
-      <h3 class="score-title">Scoreboard (Last 2 Hours)</h3>
-      <table>
+    <section class="arena-section">
+      <div class="arena">
+        <div class="gamewrap"><canvas id="game"></canvas></div>
+      </div>
+      <div class="tabbar">
+        <span class="tab active">0:arena-0*</span>
+        <button id="help-btn" class="help" aria-label="open settings">settings</button>
+      </div>
+    </section>
+
+    <section class="scoreboard-section">
+      <div class="section-header">
+        <h2>scoreboard <span class="muted" id="alive-count"></span></h2>
+        <span class="muted">last 2h</span>
+      </div>
+      <table class="scoreboard">
         <thead>
-          <tr><th></th><th>Name</th><th>WR</th><th>ELO</th><th>Wins</th><th>Losses</th></tr>
+          <tr>
+            <th class="num">#</th>
+            <th class="name">name</th>
+            <th class="sep">|</th>
+            <th class="wr">wr</th>
+            <th class="sep">|</th>
+            <th class="elo">elo</th>
+            <th class="sep">|</th>
+            <th class="wins">wins</th>
+            <th class="sep">|</th>
+            <th class="losses">losses</th>
+          </tr>
         </thead>
-        <tbody id="scoreboard"><tr><td colspan="6">Nobody scored yet :(</td></tr></tbody>
+        <tbody id="scoreboard"><tr><td colspan="10" class="empty">nobody scored yet :(</td></tr></tbody>
       </table>
-    </div>
+    </section>
 
-    <div class="pane chart-pane"><canvas id="chart"></canvas></div>
+    <section class="chart-section">
+      <h2>elo</h2>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="chart-axis"><span>-2h</span><span>now</span></div>
+    </section>
 
-    <div class="pane game-pane">
-      <div class="gamewrap"><canvas id="game"></canvas></div>
-    </div>
+    <section class="chat-section">
+      <h2>chat</h2>
+      <div id="chat"><div class="chat-empty">no messages yet</div></div>
+    </section>
 
     {{if .ScheduleURL}}
-    <div class="pane schedule-pane" id="schedule-pane" data-url="{{.ScheduleURL}}">
-      <h2>Current talks</h2><br>
-      <div id="currentTalks"></div><br>
-      <h2>Next talks</h2>
+    <section class="schedule-section" id="schedule-pane" data-url="{{.ScheduleURL}}">
+      <h2>current talks</h2>
+      <div id="currentTalks"></div>
+      <h2>next talks</h2>
       <div id="nextTalks"></div>
-    </div>
+    </section>
     {{end}}
+  </div>
 
-    <div class="pane chat-pane">
-      <h2>Chat</h2>
-      <div id="chat"></div>
+  <div id="help-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="modal-header">
+        <span class="modal-title" id="help-title"><b>algo-tron</b> · help</span>
+        <button class="modal-close" data-close><span class="kbd">[q]</span> close</button>
+      </div>
+
+      <div class="modal-body">
+        <section class="modal-section">
+          <div class="modal-section-title">connect</div>
+          <dl class="kv kv-2col">
+            <dt>game</dt><dd id="modal-game">—</dd>
+            <dt>view</dt><dd id="modal-view">—</dd>
+            <dt>rules</dt><dd>last bot alive wins</dd>
+            <dt>board</dt><dd>(2 · players)² cells</dd>
+            <dt>share</dt><dd>#algo-tron</dd>
+            <dt>tutorial</dt><dd><a href="https://github.com/erikgoldenstein/algo-tron/tree/main/example_bots" target="_blank" rel="noopener">bot-examples</a></dd>
+            <dt>community</dt><dd><a href="https://discord.gg/EYTuZ7M5" target="_blank" rel="noopener">discord</a></dd>
+          </dl>
+        </section>
+
+        <section class="modal-section">
+          <div class="modal-section-title">colorscheme</div>
+          <div class="schemes" id="schemes"></div>
+        </section>
+
+        <section class="modal-section keys-section">
+          <div class="modal-section-title">keys</div>
+          <div class="keys-grid">
+            <span class="kbd">h / l</span><span class="kd">prev / next board</span>
+            <span class="kbd">1 … 4</span><span class="kd">jump to board</span>
+            <span class="kbd">f</span><span class="kd">follow leader</span>
+            <span class="kbd">j / k</span><span class="kd">follow prev / next</span>
+            <span class="kbd">c</span><span class="kd">cycle colorscheme</span>
+            <span class="kbd">z</span><span class="kd">low-fatigue mode</span>
+            <span class="kbd">?</span><span class="kd">toggle this help</span>
+            <span class="kbd">q esc</span><span class="kd">close</span>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 </body>

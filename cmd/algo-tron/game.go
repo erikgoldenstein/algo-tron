@@ -261,6 +261,16 @@ func (g *Game) shouldEndLocked() bool {
 func (g *Game) endLocked() {
 	alive := g.aliveLocked()
 	g.updateEloLocked(alive)
+	// Losers had their loseLocked() called during the game with the pre-update
+	// elo; snapshot the post-update elo onto their last ScoreHistory entry so
+	// the elo chart plots the value that the scoreboard reads.
+	for _, p := range g.players {
+		if !p.Alive {
+			if n := len(p.ScoreHistory); n > 0 {
+				p.ScoreHistory[n-1].Elo = p.Elo
+			}
+		}
+	}
 	names := []string{}
 	for _, p := range alive {
 		p.winLocked()
