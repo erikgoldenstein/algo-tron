@@ -123,21 +123,30 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		metricTCPRejected.WithLabelValues("wrong_password").Inc()
 		writePacket(w, "error", "ERROR_WRONG_PASSWORD")
 		return
+	} else if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
+		s.mu.Unlock()
+		metricTCPRejected.WithLabelValues("reconnect_penalty").Inc()
+		// Round up so the client never sees "0" while still penalized.
+		writePacket(w, "error", fmt.Sprintf("ERROR_RECONNECT_PENALTY|%d", int(remaining/time.Second)+1))
+		return
 	} else if p.conn != nil {
 		p.sendLocked("error", "ERROR_ALREADY_CONNECTED")
 		p.disconnect()
 	}
 	p.conn, p.writer = conn, w
+	// Per-connection rate-limit state is reset for each new TCP
+	// connection. reconnectPenalty intentionally is not reset — that's
+	// what makes the penalty grow across reconnects.
+	p.lastPacketAt = time.Time{}
+	p.lastMovePacketAt = time.Time{}
+	p.lastChatPacketAt = time.Time{}
+	p.rateLimitStrikes = 0
 	s.mu.Unlock()
 
-	lastPacket := time.Now()
 	for scanner.Scan() {
-		minInterval := s.tickInterval() / packetsPerTick
-		if elapsed := time.Since(lastPacket); elapsed < minInterval {
-			time.Sleep(minInterval - elapsed)
+		if !s.handlePacket(p, scanner.Text()) {
+			break
 		}
-		lastPacket = time.Now()
-		s.handlePacket(p, scanner.Text())
 	}
 
 	s.mu.Lock()
@@ -170,18 +179,85 @@ func readProxyProtocolIP(r *bufio.Reader) (string, error) {
 	return ip, nil
 }
 
-func (s *Server) handlePacket(p *Player, packet string) {
+// handlePacket returns false when the TCP connection should be closed.
+func (s *Server) handlePacket(p *Player, packet string) bool {
 	parts := strings.Split(packet, "|")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Global per-connection limiter runs first so unknown-packet spam
+	// is bounded too, not just move/chat.
+	if !s.allowPacketLocked(&p.lastPacketAt, totalPacketsPerTick) {
+		return s.handleRateLimitLocked(p)
+	}
+
 	switch parts[0] {
 	case "move":
+		// Dead players can't move; drop early but still credit the
+		// packet (global limiter already counted it).
+		if !p.Alive {
+			p.rateLimitStrikes = 0
+			return true
+		}
+		if !s.allowPacketLocked(&p.lastMovePacketAt, movePacketsPerTick) {
+			return s.handleRateLimitLocked(p)
+		}
 		s.handleMoveLocked(p, parts)
+		p.rateLimitStrikes = 0
+		return true
 	case "chat":
+		if !s.allowPacketLocked(&p.lastChatPacketAt, chatPacketsPerTick) {
+			metricChatRateLimited.Inc()
+			return s.handleRateLimitLocked(p)
+		}
 		s.handleChatLocked(p, parts)
+		p.rateLimitStrikes = 0
+		return true
 	default:
 		p.sendLocked("error", "ERROR_UNKNOWN_PACKET")
+		p.rateLimitStrikes = 0
+		return true
+	}
+}
+
+func (s *Server) allowPacketLocked(lastPacketAt *time.Time, packetsPerTick int) bool {
+	if packetsPerTick <= 0 {
+		return false
+	}
+	now := time.Now()
+	minInterval := s.tickInterval() / time.Duration(packetsPerTick)
+	if !lastPacketAt.IsZero() && now.Sub(*lastPacketAt) < minInterval {
+		return false
+	}
+	*lastPacketAt = now
+	return true
+}
+
+// handleRateLimitLocked is called on every over-budget packet. It
+// returns false when the connection should be closed; on disconnect it
+// also bumps the per-player reconnect penalty (doubling, capped at
+// reconnectPenaltyMax) which is enforced on the next join attempt.
+func (s *Server) handleRateLimitLocked(p *Player) bool {
+	p.rateLimitStrikes++
+	switch {
+	case p.rateLimitStrikes >= rateLimitErrorStrikes:
+		if p.reconnectPenalty == 0 {
+			p.reconnectPenalty = reconnectPenaltyBase
+		} else {
+			p.reconnectPenalty *= 2
+			if p.reconnectPenalty > reconnectPenaltyMax {
+				p.reconnectPenalty = reconnectPenaltyMax
+			}
+		}
+		p.reconnectAllowedAt = time.Now().Add(p.reconnectPenalty)
+		p.sendLocked("error", "ERROR_RATE_LIMIT")
+		p.disconnect()
+		return false
+	case p.rateLimitStrikes == rateLimitWarnStrikes:
+		p.sendLocked("error", "WARNING_RATE_LIMIT")
+		return true
+	default:
+		return true
 	}
 }
 

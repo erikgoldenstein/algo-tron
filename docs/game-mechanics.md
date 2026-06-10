@@ -92,10 +92,28 @@ The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. EL
 
 ## Chat
 
-- One `chat` per tick interval per player (`WARNING_CHAT_RATE_LIMIT` otherwise).
+- One `chat` per tick interval per player actually posts (`WARNING_CHAT_RATE_LIMIT` otherwise — the chat packet was *accepted* at the TCP layer but the message itself was suppressed because the previous one was too recent).
 - Same character class as usernames.
 - Dead players can't chat (`ERROR_DEAD_CANNOT_CHAT`).
 - Accepted chats expire after 5 seconds. While live, they ride along on the next tick's viewer `chats` map and trigger an immediate `message|<id>|<text>` broadcast to alive bots.
+- Chat packets also pass through the global packet-rate limiter — see § Rate limits & abuse policy below.
+
+## Rate limits & abuse policy
+
+Three per-connection budgets are enforced inside `handlePacket`. Limits and constants live in `types.go`; the [bot protocol page](bot-protocol.md#rate-limits) has the full table.
+
+| What's allowed                                                                                      | What's not                                                                                                          |
+|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| Up to `totalPacketsPerTick` (10) packets per tick interval, any mix of `move` / `chat` / unknown.   | More than 10 packets per tick — extras are dropped silently and a strike is added.                                  |
+| Up to `movePacketsPerTick` (5) `move` packets per tick interval from an alive player.               | More than 5 `move` packets per tick — drop + strike.                                                                |
+| Up to `chatPacketsPerTick` (3) `chat` packets per tick at the TCP layer, but only one *posts*.      | More than 3 `chat` packets per tick — drop + strike. (Posting beyond one per tick gets `WARNING_CHAT_RATE_LIMIT` instead — no strike.) |
+| Dead players may send `move` packets; they're accepted as no-ops (still count against the global limit). | Spamming any packet type at >2× rate for any sustained period — strikes accumulate and the connection gets killed. |
+| Reconnecting cleanly after a normal disconnect or kick from `ERROR_ALREADY_CONNECTED`.              | Reconnecting inside the penalty window after a rate-limit kick — `ERROR_RECONNECT_PENALTY\|<seconds>`.              |
+| Unknown packet types (you'll get `ERROR_UNKNOWN_PACKET` per packet, but the connection stays).      | Flooding unknown packets to avoid the move/chat budgets — caught by the global limiter, same strike track.          |
+
+**Strike track.** Each over-budget packet adds one strike. At `rateLimitWarnStrikes` (1) the bot gets `WARNING_RATE_LIMIT`; at `rateLimitErrorStrikes` (3) the bot gets `ERROR_RATE_LIMIT` and the connection is closed. Any allowed packet resets the strike counter to 0 — short, accidental bursts are forgiven.
+
+**Reconnect penalty.** When the strike cap kicks a connection, the account's `reconnectPenalty` doubles (start `reconnectPenaltyBase = 1s`, cap `reconnectPenaltyMax = 60s`). The next `join` for that username inside the window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>`. The penalty is keyed by account (username), held in memory, and survives reconnects but not a server restart. It only grows — once you've been kicked twice, you stay at ≥2s minimum cool-off until the process restarts.
 
 ## Scoreboard
 

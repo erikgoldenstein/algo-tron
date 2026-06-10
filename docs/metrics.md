@@ -18,7 +18,7 @@ All metric definitions and the call sites that update them live in `cmd/algo-tro
 | `tron_viewers_kicked_total`                 | —           | Viewers dropped because their 16-frame send buffer overflowed. **Overload signal.**       |
 | `tron_tcp_accept_errors_total`              | —           | Errors from the TCP `Accept` loop (retried with exponential backoff up to 1s).            |
 | `tron_tcp_panics_total`                     | —           | Panics recovered in per-connection bot handlers.                                          |
-| `tron_tcp_rejected_total`                   | `reason`    | Bots rejected pre-game. `reason` is one of: `proxy_protocol`, `max_connections`, `join_timeout`, `expected_join`, `invalid_join`, `wrong_password`. |
+| `tron_tcp_rejected_total`                   | `reason`    | Bots rejected pre-game. `reason` is one of: `proxy_protocol`, `max_connections`, `join_timeout`, `expected_join`, `invalid_join`, `wrong_password`, `reconnect_penalty`. |
 | `tron_db_errors_total`                      | `op`        | SQLite errors. `op` ∈ `load`, `load_row`, `store_begin`, `store_prepare`, `store_row`, `store_commit`. |
 | `tron_chat_rate_limited_total`              | —           | Chat packets refused by the per-tick rate limit.                                          |
 | `tron_player_disconnect_mid_game_total`     | —           | Players killed mid-game because their TCP connection went away.                           |

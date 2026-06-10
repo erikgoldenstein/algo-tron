@@ -65,12 +65,53 @@ The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` pa
 | Packet | Args               | Notes                                                                                       |
 |--------|--------------------|---------------------------------------------------------------------------------------------|
 | `join` | `username\|password` | First packet. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
-| `move` | `up\|right\|down\|left` | One per tick. The server queues the most recent move and consumes it on the next tick.  |
-| `chat` | `text`             | Same character class as username, ≤ scanner limit. Max one per tick interval per bot.       |
+| `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. Dead players' `move` packets are accepted but ignored. |
+| `chat` | `text`             | Same character class as username, ≤ scanner limit. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
 
-## Per-bot throttling
+## Rate limits
 
-After `join`, every subsequent packet is enforced to be ≥ `tickInterval / packetsPerTick` apart (`packetsPerTick = 4`). The server *sleeps* the connection's read goroutine to enforce the minimum, rather than disconnecting — this is what stands in for upstream's `ERROR_SPAM`. A flood from one bot stalls only that bot's handler, never the game.
+Three per-connection budgets, enforced inside `handlePacket`. Each over-budget packet is dropped and adds a strike against the connection.
+
+| Budget                  | Limit                       | What it covers                                                                |
+|-------------------------|-----------------------------|-------------------------------------------------------------------------------|
+| `totalPacketsPerTick`   | 10 per tick interval        | Every packet, regardless of type. Caps unknown/malformed packets too.         |
+| `movePacketsPerTick`    | 5 per tick interval         | Just `move` packets (alive players).                                          |
+| `chatPacketsPerTick`    | 3 per tick interval         | Just `chat` packets at the TCP layer; chat-message posting is still 1/tick.   |
+
+A packet must clear the global budget *and* its per-type budget. If either fails, the packet is dropped and a strike is added.
+
+### Strikes → warn → disconnect → reconnect penalty
+
+| Strike count                 | Effect                                                                                          |
+|------------------------------|-------------------------------------------------------------------------------------------------|
+| `rateLimitWarnStrikes` (1)   | Server sends `WARNING_RATE_LIMIT`. Connection stays open.                                       |
+| `rateLimitErrorStrikes` (3)  | Server sends `ERROR_RATE_LIMIT`, then closes the connection.                                    |
+
+Strikes reset to 0 on **the next allowed packet** — a brief burst is forgiven. Strikes only matter when they pile up without any well-behaved packet between them.
+
+When a connection is closed for hitting the strike cap, the account's **reconnect penalty** doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives across reconnects — it only stops growing when the bot stops getting kicked.
+
+Sequence example:
+
+```
+spam → 3 strikes → ERROR_RATE_LIMIT, kick, penalty = 1s
+reconnect after 1s → spam → kick, penalty = 2s
+reconnect after 2s → spam → kick, penalty = 4s
+…
+spam after 6 kicks → kick, penalty = 60s (capped)
+```
+
+The penalty is per-account (keyed by username), in-memory only — it does not survive a server restart.
+
+## What's allowed / what's not
+
+| Allowed                                                                                          | Not allowed                                                                                       |
+|--------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| Sending one `move` per tick (or a few — server keeps the latest).                                | Sending more than `movePacketsPerTick` (5) `move`s in a single tick interval.                     |
+| Sending a `chat` once per tick interval while alive.                                             | Sending more than `chatPacketsPerTick` (3) `chat` packets per tick at TCP — silent drop + strike. |
+| Sending an unknown packet type once in a while (you'll get `ERROR_UNKNOWN_PACKET` but stay on).  | Spamming unknown/malformed packets — counts against the global limit, same strike track.          |
+| Reconnecting after a clean disconnect.                                                           | Reconnecting inside the penalty window — rejected with `ERROR_RECONNECT_PENALTY`.                 |
+| Same username + password from a new TCP connection — old one is kicked with `ERROR_ALREADY_CONNECTED`. | Holding > `maxConnections` (1) simultaneous TCP connections from the same IP (localhost exempt). |
 
 ## "bot*" usernames
 
@@ -94,8 +135,8 @@ PROXY TCP4 <client_ip> <proxy_ip> <client_port> <proxy_port>\n
 
 | Upstream                                  | algo-tron                                                                                  |
 |-------------------------------------------|--------------------------------------------------------------------------------------------|
-| `ERROR_SPAM` for too-fast bots            | Silent sleep-throttle (`packetsPerTick = 4`). No `ERROR_SPAM` is emitted.                  |
+| `ERROR_SPAM` for too-fast bots            | Strike-based limiter: `WARNING_RATE_LIMIT` then `ERROR_RATE_LIMIT` + kick. No `ERROR_SPAM`. |
 | `ERROR_PACKET_OVERFLOW` at 1024 bytes     | Same 1024-byte cap, but the connection is dropped without an error packet.                 |
 | `ERROR_INVALID_USERNAME` (non-string)     | Not emitted; the protocol is text, so non-string usernames are not representable.          |
 | `ERROR_INVALID_PASSWORD` (non-string)     | Same as above.                                                                              |
-| —                                         | `ERROR_PROXY_PROTOCOL` and `WARNING_CHAT_RATE_LIMIT` added.                                |
+| —                                         | `ERROR_PROXY_PROTOCOL`, `WARNING_CHAT_RATE_LIMIT`, `WARNING_RATE_LIMIT`, `ERROR_RATE_LIMIT`, `ERROR_RECONNECT_PENALTY` added. |

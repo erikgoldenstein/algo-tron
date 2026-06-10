@@ -19,6 +19,7 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | `ERROR_PASSWORD_TOO_LONG`  | Password > 128 chars.                                                                                 |
 | `ERROR_NO_PERMISSION`      | Username matches `^bot\d*$` (`bot`, `bot1`, …) and connection isn't from `127.0.0.1` / `::1`.         |
 | `ERROR_WRONG_PASSWORD`     | Account exists but HMAC of password doesn't match the stored hash.                                    |
+| `ERROR_RECONNECT_PENALTY`  | Account is inside its reconnect-penalty window from a previous rate-limit kick. Carries `\|<seconds_remaining>`. *algo-tron-specific.* See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits). |
 
 ## Post-join
 
@@ -31,12 +32,16 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | `ERROR_DEAD_CANNOT_CHAT`     | `chat` from a player who is dead this game.                                                         |
 | `WARNING_CHAT_RATE_LIMIT`    | `chat` arrived less than one tick interval after the last accepted chat. *algo-tron-specific.*      |
 | `ERROR_INVALID_CHAT_MESSAGE` | Chat fails the same character-class regex used for usernames.                                       |
+| `WARNING_RATE_LIMIT`         | Packet was dropped for exceeding a per-connection budget; first strike. Connection stays open. *algo-tron-specific.* |
+| `ERROR_RATE_LIMIT`           | Strike count reached `rateLimitErrorStrikes` (3). Connection is closed and the account's reconnect penalty doubles. *algo-tron-specific.* |
+
+See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits) for the full strike → warn → kick → penalty flow.
 
 ## Upstream codes not emitted
 
 The following appear in upstream `ERRORCODES.md` but are never sent by this server:
 
-- `ERROR_SPAM` — replaced by silent per-packet sleep-throttle (`packetsPerTick = 4`).
+- `ERROR_SPAM` — replaced by the strike-based limiter (`WARNING_RATE_LIMIT` → `ERROR_RATE_LIMIT` + kick + reconnect penalty).
 - `ERROR_PACKET_OVERFLOW` — line > 1024 bytes drops the connection without an error packet.
 - `ERROR_INVALID_USERNAME` / `ERROR_INVALID_PASSWORD` — not representable in a text protocol.
 

@@ -20,7 +20,21 @@ const (
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 16
-	packetsPerTick      = 4
+
+	// TCP per-connection rate limits. Each packet must pass the global
+	// totalPacketsPerTick budget; "move" and "chat" then have their own
+	// per-type budgets on top. Every over-budget packet adds a strike;
+	// strikes reset on the next allowed packet. At rateLimitWarnStrikes
+	// the client gets a WARNING; at rateLimitErrorStrikes it's
+	// disconnected and the per-player reconnectPenalty doubles (capped
+	// at reconnectPenaltyMax), enforced on the next join.
+	totalPacketsPerTick   = 10
+	movePacketsPerTick    = 5
+	chatPacketsPerTick    = 3
+	rateLimitWarnStrikes  = 1
+	rateLimitErrorStrikes = 3
+	reconnectPenaltyBase  = 1 * time.Second
+	reconnectPenaltyMax   = 60 * time.Second
 
 	// TrueSkill parameters (Herbrich, Minka, Graepel 2007). The paper's defaults
 	// are mu0=25, sigma0=25/3, beta=sigma0/2, tau=sigma0/100; we scale by 10x so
@@ -71,6 +85,19 @@ type Player struct {
 	writer   *bufio.Writer
 	move     Move
 	lastMove Move
+
+	// Per-connection TCP rate-limit state. Reset on each new TCP
+	// connection in handleConn; see the constant block above.
+	lastPacketAt     time.Time
+	lastMovePacketAt time.Time
+	lastChatPacketAt time.Time
+	rateLimitStrikes int
+
+	// Cross-connection reconnect penalty. Survives disconnect so a bot
+	// that gets killed for spam, reconnects, and spams again pays a
+	// longer cool-off the next time.
+	reconnectPenalty   time.Duration
+	reconnectAllowedAt time.Time
 }
 
 type ServerInfo struct {
