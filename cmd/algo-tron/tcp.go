@@ -127,16 +127,18 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		p.sendLocked("error", "ERROR_ALREADY_CONNECTED")
 		p.disconnect()
 	}
-	p.conn, p.writer = conn, w
+
+	p.conn = conn
+	p.writer = w
+
+	// Reset per-connection packet rate state.
+	// Otherwise a reconnect can inherit recent timestamps from the previous connection.
+	p.lastMovePacketAt = time.Time{}
+	p.lastChatPacketAt = time.Time{}
+
 	s.mu.Unlock()
 
-	lastPacket := time.Now()
 	for scanner.Scan() {
-		minInterval := s.tickInterval() / packetsPerTick
-		if elapsed := time.Since(lastPacket); elapsed < minInterval {
-			time.Sleep(minInterval - elapsed)
-		}
-		lastPacket = time.Now()
 		s.handlePacket(p, scanner.Text())
 	}
 
@@ -172,17 +174,48 @@ func readProxyProtocolIP(r *bufio.Reader) (string, error) {
 
 func (s *Server) handlePacket(p *Player, packet string) {
 	parts := strings.Split(packet, "|")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	switch parts[0] {
 	case "move":
+		limit := movePacketsPerTick
+		if !p.Alive {
+			return
+		}
+		if !s.allowPacketLocked(&p.lastMovePacketAt, limit) {
+			return
+		}
 		s.handleMoveLocked(p, parts)
+
 	case "chat":
+		if !s.allowPacketLocked(&p.lastChatPacketAt, chatPacketsPerTick) {
+			metricChatRateLimited.Inc()
+			p.sendLocked("error", "WARNING_CHAT_RATE_LIMIT")
+			return
+		}
 		s.handleChatLocked(p, parts)
+
 	default:
 		p.sendLocked("error", "ERROR_UNKNOWN_PACKET")
 	}
+}
+
+func (s *Server) allowPacketLocked(lastPacketAt *time.Time, packetsPerTick int) bool {
+	if packetsPerTick <= 0 {
+		return false
+	}
+
+	now := time.Now()
+	minInterval := s.tickInterval() / time.Duration(packetsPerTick)
+
+	if !lastPacketAt.IsZero() && now.Sub(*lastPacketAt) < minInterval {
+		return false
+	}
+
+	*lastPacketAt = now
+	return true
 }
 
 func (s *Server) handleMoveLocked(p *Player, parts []string) {
