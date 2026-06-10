@@ -237,10 +237,28 @@ func (s *Server) allowPacketLocked(lastPacketAt *time.Time, packetsPerTick int) 
 // returns false when the connection should be closed; on disconnect it
 // also bumps the per-player reconnect penalty (doubling, capped at
 // reconnectPenaltyMax) which is enforced on the next join attempt.
+// Saved-up penalty decays with good behavior — see the redemption
+// block below and reconnectPenaltyRedemption in types.go.
 func (s *Server) handleRateLimitLocked(p *Player) bool {
 	p.rateLimitStrikes++
 	switch {
 	case p.rateLimitStrikes >= rateLimitErrorStrikes:
+		// Redemption: time spent behaving since the previous ban expired
+		// decays the saved-up penalty at 1/reconnectPenaltyRedemption.
+		// After reconnectPenaltyRedemption × the previous ban time, the
+		// penalty is fully forgiven and the next ban starts at base.
+		if p.reconnectPenalty > 0 && reconnectPenaltyRedemption > 0 {
+			elapsed := time.Since(p.reconnectAllowedAt)
+			if elapsed < 0 {
+				elapsed = 0
+			}
+			decay := elapsed / reconnectPenaltyRedemption
+			if decay >= p.reconnectPenalty {
+				p.reconnectPenalty = 0
+			} else {
+				p.reconnectPenalty -= decay
+			}
+		}
 		if p.reconnectPenalty == 0 {
 			p.reconnectPenalty = reconnectPenaltyBase
 		} else {

@@ -27,14 +27,18 @@ const (
 	// strikes reset on the next allowed packet. At rateLimitWarnStrikes
 	// the client gets a WARNING; at rateLimitErrorStrikes it's
 	// disconnected and the per-player reconnectPenalty doubles (capped
-	// at reconnectPenaltyMax), enforced on the next join.
-	totalPacketsPerTick   = 10
-	movePacketsPerTick    = 5
-	chatPacketsPerTick    = 3
-	rateLimitWarnStrikes  = 1
-	rateLimitErrorStrikes = 3
-	reconnectPenaltyBase  = 1 * time.Second
-	reconnectPenaltyMax   = 60 * time.Second
+	// at reconnectPenaltyMax), enforced on the next join. The saved-up
+	// penalty decays linearly with good behavior: after
+	// reconnectPenaltyRedemption × the previous ban time has elapsed
+	// without another strike-out, the next ban starts at the base again.
+	totalPacketsPerTick        = 10
+	movePacketsPerTick         = 5
+	chatPacketsPerTick         = 3
+	rateLimitWarnStrikes       = 1
+	rateLimitErrorStrikes      = 3
+	reconnectPenaltyBase       = 1 * time.Second
+	reconnectPenaltyMax        = 60 * time.Second
+	reconnectPenaltyRedemption = 5
 
 	// TrueSkill parameters (Herbrich, Minka, Graepel 2007). The paper's defaults
 	// are mu0=25, sigma0=25/3, beta=sigma0/2, tau=sigma0/100; we scale by 10x so
