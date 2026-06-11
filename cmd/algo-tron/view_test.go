@@ -111,6 +111,30 @@ func TestUpdateScoreboardWinRatio(t *testing.T) {
 	}
 }
 
+func TestBuildGameMsgIncludesBoardScoreboard(t *testing.T) {
+	s := testServer(t)
+	now := time.Now().UnixMilli()
+	alice := &Player{Username: "alice", Elo: 1100, ScoreHistory: []Score{{Type: 1, Time: now}}}
+	bob := &Player{Username: "bob", Elo: 1000, ScoreHistory: []Score{{Type: 0, Time: now}}}
+	carol := &Player{Username: "carol", Elo: 1200, ScoreHistory: []Score{{Type: 1, Time: now}}}
+	s.players = map[string]*Player{"alice": alice, "bob": bob, "carol": carol}
+	g := makeGame(s, []*Player{alice, bob})
+
+	msg := buildGameMsgLocked(g)
+
+	if len(msg.BoardScoreboard) != 2 {
+		t.Fatalf("BoardScoreboard len = %d, want 2", len(msg.BoardScoreboard))
+	}
+	for _, entry := range msg.BoardScoreboard {
+		if entry.Username == "carol" {
+			t.Fatal("BoardScoreboard included player from another board/global pool")
+		}
+	}
+	if msg.BoardScoreboard[0].Username != "alice" {
+		t.Errorf("rank 1 = %q, want alice", msg.BoardScoreboard[0].Username)
+	}
+}
+
 // — updateChartDataLocked —————————————————————————————————————————————
 
 func TestUpdateChartDataLength(t *testing.T) {

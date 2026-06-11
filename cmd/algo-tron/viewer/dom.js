@@ -35,10 +35,12 @@ function updateDom() {
   if (aliveEl) aliveEl.textContent = players.length ? `(${alive}/${players.length} alive)` : '';
 
   updateTabs();
+  updateScoreboardScope();
 
   const scoreboardEl = document.getElementById('scoreboard');
-  scoreboardEl.innerHTML = gameState.scoreboard.length
-    ? gameState.scoreboard.map(scoreRow).join('')
+  const scoreboard = currentScoreboard();
+  scoreboardEl.innerHTML = scoreboard.length
+    ? scoreboard.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
 
   // The name cell now exists in the DOM, so we can measure its actual width
@@ -74,6 +76,28 @@ function updateDom() {
   chat.innerHTML = chatPanel.length
     ? [...chatPanel].reverse().map(chatRow).join('')
     : '<div class="chat-empty">no messages yet</div>';
+}
+
+function currentScoreboard() {
+  if (gameState.boards.length > 1 && gameState.scoreboardScope === 'board') {
+    return gameState.boardScoreboard;
+  }
+  return gameState.scoreboard;
+}
+
+function updateScoreboardScope() {
+  const el = document.getElementById('scoreboard-scope');
+  if (!el) return;
+  el.hidden = gameState.boards.length <= 1;
+  if (el.hidden) return;
+  el.querySelectorAll('.scope-option').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.scope === gameState.scoreboardScope);
+    btn.onclick = () => {
+      if (gameState.scoreboardScope === btn.dataset.scope) return;
+      gameState.scoreboardScope = btn.dataset.scope;
+      updateDom();
+    };
+  });
 }
 
 // One tmux-style tab per running board; the subscribed one carries the `*`.

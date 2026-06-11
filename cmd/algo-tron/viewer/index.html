@@ -42,7 +42,14 @@
 
     <section class="scoreboard-section">
       <div class="section-header">
-        <h2>scoreboard <span class="muted" id="alive-count"></span></h2>
+        <div class="scoreboard-heading">
+          <h2>scoreboard <span class="muted" id="alive-count"></span></h2>
+          <div class="muted scoreboard-scope" id="scoreboard-scope" hidden>
+            (<button class="scope-option active" data-scope="board">board</button>
+            <span>/</span>
+            <button class="scope-option" data-scope="global">global</button>)
+          </div>
+        </div>
         <span class="muted">last 2h</span>
       </div>
       <table class="scoreboard">

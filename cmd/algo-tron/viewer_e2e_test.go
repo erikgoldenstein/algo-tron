@@ -135,10 +135,12 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 
 	ctx := browser(t)
 
-	var first, second string
+	var first, second, scope string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#tabs .tab.active`),
+		chromedp.WaitVisible(`#scoreboard-scope:not([hidden])`),
+		chromedp.Text(`#scoreboard-scope`, &scope),
 		chromedp.Text(`#tabs .tab.active`, &first),
 		chromedp.Click(`#tabs .tab[data-id]:nth-child(2)`),
 		chromedp.WaitVisible(`#tabs .tab.active:nth-child(2)`),
@@ -148,6 +150,9 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	}
 	if first != "1:arena-1*" {
 		t.Errorf("initial active tab = %q, want %q", first, "1:arena-1*")
+	}
+	if scope != "(board / global)" {
+		t.Errorf("scoreboard scope = %q, want %q", scope, "(board / global)")
 	}
 	if second != "2:arena-2*" {
 		t.Errorf("active tab after click = %q, want %q", second, "2:arena-2*")

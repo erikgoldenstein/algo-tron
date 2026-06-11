@@ -120,6 +120,35 @@ h2 {
 
 .section-header h2 { margin-bottom: 0; }
 
+.scoreboard-heading { line-height: 1.2; }
+
+.scoreboard-scope {
+  margin-top: 1px;
+  font-size: 12px;
+}
+
+.scoreboard-scope .scope-option {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.scoreboard-scope .scope-option.active {
+  color: var(--text);
+  font-weight: 400;
+  cursor: default;
+}
+
+.scoreboard-scope .scope-option:not(.active) {
+  color: var(--text-dim);
+  font-weight: 300;
+}
+
+.scoreboard-scope .scope-option:not(.active):hover { color: var(--text-muted); }
+
 .muted {
   color: var(--text-muted);
   font-size: 12px;

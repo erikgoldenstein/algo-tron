@@ -10,7 +10,7 @@
 // Wire protocol — see view.go for the canonical definition.
 //   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
 //   {type:"boards", boards:[{id,players,alive}...]} — a board started or ended
-//   {type:"game",   id, width, height, players:[{id,name,pos,moves,alive,chat?}]}
+//   {type:"game",   id, width, height, boardScoreboard, players:[{id,name,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
 //   {type:"misc",   content:"shutdown"} — lifecycle event; "shutdown" → banner.
@@ -23,6 +23,8 @@ const gameState = {
   serverInfo: [],
   viewInfo: [],
   scoreboard: [],
+  boardScoreboard: [],
+  scoreboardScope: 'board',
   chartData: [],
   lastWinners: [],
   boards: [], // [{ id, players, alive }] — all running boards, tab bar order
@@ -32,7 +34,7 @@ const gameState = {
 function applyMessage(msg) {
   switch (msg.type) {
     case 'init':   applyInit(msg);  break;
-    case 'boards': gameState.boards = msg.boards || []; break;
+    case 'boards': applyBoards(msg); break;
     case 'game':   applyGame(msg);  break;
     case 'tick':   applyTick(msg);  break;
     case 'end':    applyEnd(msg);   break;
@@ -43,6 +45,7 @@ function applyInit(msg) {
   gameState.serverInfo  = msg.serverInfo  || [];
   gameState.viewInfo    = msg.viewInfo    || [];
   gameState.scoreboard  = msg.scoreboard  || [];
+  gameState.boardScoreboard = msg.game?.boardScoreboard || [];
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
   gameState.boards      = msg.boards      || [];
@@ -50,7 +53,16 @@ function applyInit(msg) {
 }
 
 function applyGame(msg) {
+  gameState.boardScoreboard = msg.boardScoreboard || [];
   gameState.game = buildGame(msg);
+}
+
+function applyBoards(msg) {
+  gameState.boards = msg.boards || [];
+  if (gameState.game && !gameState.boards.some((b) => b.id === gameState.game.id)) {
+    gameState.game = null;
+    gameState.boardScoreboard = [];
+  }
 }
 
 function applyTick(msg) {

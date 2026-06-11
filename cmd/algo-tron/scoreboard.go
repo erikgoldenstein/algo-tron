@@ -6,8 +6,20 @@ import "sort"
 // the rolling chart) into s.viewState. Called from main.go at startup and
 // from endLocked when a game finishes — both holding s.mu.
 func (s *Server) updateScoreboardLocked() {
-	entries := []ScoreboardEntry{}
+	players := make([]*Player, 0, len(s.players))
 	for _, p := range s.players {
+		players = append(players, p)
+	}
+	entries := buildScoreboardEntriesLocked(players)
+	s.viewState.Scoreboard = entries
+	s.updateChartDataLocked(entries)
+}
+
+// buildScoreboardEntriesLocked applies the same ordering/cap to any player
+// subset. Caller holds Server.mu because winsLosses trims ScoreHistory.
+func buildScoreboardEntriesLocked(players []*Player) []ScoreboardEntry {
+	entries := []ScoreboardEntry{}
+	for _, p := range players {
 		w, l := p.winsLosses()
 		games := w + l
 		wr := 0.0
@@ -28,8 +40,7 @@ func (s *Server) updateScoreboardLocked() {
 	if len(entries) > 10 {
 		entries = entries[:10]
 	}
-	s.viewState.Scoreboard = entries
-	s.updateChartDataLocked(entries)
+	return entries
 }
 
 // updateChartDataLocked computes a 20-point elo history per top player by

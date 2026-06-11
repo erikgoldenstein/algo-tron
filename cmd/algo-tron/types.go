@@ -189,7 +189,7 @@ type ViewState struct {
 //
 //	init   — full snapshot, sent once on connect; auto-subscribes the first board.
 //	boards — broadcast to all viewers whenever a board starts or ends.
-//	game   — full snapshot of one board, sent on subscribe.
+//	game   — full snapshot of one board, sent on subscribe; includes that board's scoreboard.
 //	tick   — per-tick delta for the subscribed board: positions, deaths, chats.
 //	end    — a board finished: refreshed scoreboard + chart, broadcast to all.
 //	misc   — lifecycle event identified by `content`; currently only "shutdown".
@@ -218,11 +218,12 @@ type boardsMsg struct {
 }
 
 type gameMsg struct {
-	Type    string      `json:"type,omitempty"` // "game" when sent as its own message, "" when nested in init
-	ID      string      `json:"id"`
-	Width   int         `json:"width"`
-	Height  int         `json:"height"`
-	Players []playerMsg `json:"players"`
+	Type            string            `json:"type,omitempty"` // "game" when sent as its own message, "" when nested in init
+	ID              string            `json:"id"`
+	Width           int               `json:"width"`
+	Height          int               `json:"height"`
+	Players         []playerMsg       `json:"players"`
+	BoardScoreboard []ScoreboardEntry `json:"boardScoreboard"`
 }
 
 type playerMsg struct {
