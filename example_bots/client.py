@@ -24,6 +24,7 @@ See bot1_random.py for the smallest possible example.
 
 import socket
 import sys
+import time
 
 
 # A few constants. The board is a grid; (0,0) is the top-left corner.
@@ -54,20 +55,9 @@ class Client:
         self.username = username
         self.password = password
 
-        # Open the TCP connection right away. If the server isn't running
-        # this will raise an exception, which is fine - we want to fail loud.
-        self.sock = socket.create_connection((host, port))
-
-        # Disable Nagle's algorithm. Move packets are tiny; without this
-        # the OS may hold them back waiting for more data, which (combined
-        # with delayed ACKs) can add tens of milliseconds per move - easily
-        # the difference between making a tick deadline and missing it.
-        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-        # A byte buffer for partial lines. The server can send several
-        # packets in one TCP chunk, or split one packet across chunks, so
-        # we accumulate bytes here and pull out complete lines as we go.
+        self.sock: socket.socket | None = None
         self.buf = b""
+        self.stop_reconnecting = False
 
         # --- Game state. All of this is filled in by `_handle_packet`. ---
 
@@ -92,28 +82,70 @@ class Client:
         # (x, y) tuples.
         self.trails: dict[int, set[tuple[int, int]]] = {}
 
+        self._connect()
+
     # ------------------------------------------------------------------
     # Low-level: sending and receiving lines from the socket.
     # ------------------------------------------------------------------
 
+    def _connect(self) -> None:
+        """Open the TCP connection and reset per-connection state."""
+        if self.sock is not None:
+            self.sock.close()
+
+        self.sock = socket.create_connection((self.host, self.port))
+
+        # Disable Nagle's algorithm. Move packets are tiny; without this
+        # the OS may hold them back waiting for more data, which (combined
+        # with delayed ACKs) can add tens of milliseconds per move - easily
+        # the difference between making a tick deadline and missing it.
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        # A byte buffer for partial lines. The server can send several
+        # packets in one TCP chunk, or split one packet across chunks, so
+        # we accumulate bytes here and pull out complete lines as we go.
+        self.buf = b""
+
+        # After reconnecting we do not know our old game state anymore.
+        self.width = 0
+        self.height = 0
+        self.my_id = -1
+        self.heads.clear()
+        self.alive.clear()
+        self.trails.clear()
+
+        self._send("join", self.username, self.password)
+
+    def _reconnect(self) -> None:
+        while True:
+            try:
+                self._connect()
+                return
+            except OSError as err:
+                print(f"reconnect failed: {err}; retrying in 1 second", file=sys.stderr)
+                time.sleep(1)
+
     def _send(self, *fields: str) -> None:
         """Send one packet. We join the fields with '|' and add '\n'."""
+        if self.sock is None:
+            raise ConnectionError("not connected")
         line = "|".join(fields) + "\n"
         self.sock.sendall(line.encode())
 
-    def _read_line(self) -> str | None:
+    def _read_line(self) -> str:
         """Read exactly one packet from the server.
 
-        Returns the line as a string (without the trailing newline), or
-        `None` if the server closed the connection.
+        Returns the line as a string, without the trailing newline.
         """
         # Keep pulling bytes from the socket until we have at least one
         # full line in the buffer.
         while b"\n" not in self.buf:
+            if self.sock is None:
+                raise ConnectionError("not connected")
             chunk = self.sock.recv(4096)
             if not chunk:
                 # Empty chunk means the server hung up on us.
-                return None
+                raise ConnectionError("server closed the connection")
             self.buf += chunk
 
         # Split off the first line; keep the rest in the buffer for later.
@@ -187,7 +219,14 @@ class Client:
             self.trails.clear()
             return False
 
-        # Anything else (e.g. "message", "error") we just ignore here.
+        if kind == "error":
+            code = parts[1] if len(parts) > 1 else ""
+            print("server error:", "|".join(parts[1:]), file=sys.stderr)
+            if code in ("ERROR_RATE_LIMIT", "ERROR_RECONNECT_PENALTY"):
+                self.stop_reconnecting = True
+            return False
+
+        # Anything else (e.g. "message") we just ignore here.
         return False
 
     # ------------------------------------------------------------------
@@ -200,25 +239,29 @@ class Client:
         `decide` is a function that takes this Client and returns a
         direction string ("up" / "right" / "down" / "left").
         """
-        # Step 1: send our login packet. Must happen within 5 seconds of
-        # connecting, otherwise the server kicks us.
-        self._send("join", self.username, self.password)
-
-        # Step 2: read packets forever.
+        # Read packets forever. If the TCP connection drops (for example,
+        # during a server restart), reconnect and join again. Do not reconnect
+        # after rate-limit errors: those are bugs in the bot that should be
+        # fixed instead of hidden by a reconnect loop.
         while True:
-            line = self._read_line()
-            if line is None:
-                print("server closed the connection", file=sys.stderr)
-                return
+            try:
+                line = self._read_line()
 
-            parts = line.split("|")
-            is_tick = self._handle_packet(parts)
+                parts = line.split("|")
+                is_tick = self._handle_packet(parts)
 
-            # If a tick just ended AND we're still alive, choose a move
-            # and send it. If we're dead we just wait for the next game.
-            if is_tick and self.my_id in self.alive:
-                direction = decide(self)
-                self._send("move", direction)
+                # If a tick just ended AND we're still alive, choose a move
+                # and send it. If we're dead we just wait for the next game.
+                if is_tick and self.my_id in self.alive:
+                    direction = decide(self)
+                    self._send("move", direction)
+            except OSError:
+                if self.stop_reconnecting:
+                    print("server closed the connection", file=sys.stderr)
+                    return
+                print("connection lost; reconnecting in 1 second", file=sys.stderr)
+                time.sleep(1)
+                self._reconnect()
 
 
 # ----------------------------------------------------------------------
