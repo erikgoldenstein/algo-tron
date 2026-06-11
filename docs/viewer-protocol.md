@@ -19,8 +19,8 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 ```json
 {
   "type": "init",
-  "serverInfo":  [{"host": "play-tron.erik.gdn", "port": 4000}],
-  "viewInfo":    [{"host": "view-tron.erik.gdn", "port": 443, "scheme": "https"}],
+  "serverInfo":  [{"host": "tron.erik.gdn", "port": 4000}],
+  "viewInfo":    [{"host": "tron.erik.gdn", "port": 443, "scheme": "https"}],
   "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61}],
   "chartData":   [{"name": 0, "alice": 1024, "bob": 988}],
   "lastWinners": ["alice"],

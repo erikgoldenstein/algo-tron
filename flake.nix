@@ -102,7 +102,7 @@
 
             tcp.publicAddress = lib.mkOption {
               type = lib.types.str;
-              default = "play-tron.erik.gdn:443";
+              default = "tron.erik.gdn:4000";
               description = "Public TCP game endpoint shown in the viewer UI.";
             };
 
@@ -121,7 +121,7 @@
 
             view.publicAddress = lib.mkOption {
               type = lib.types.str;
-              default = "view-tron.erik.gdn:443";
+              default = "tron.erik.gdn";
               description = "Public viewer endpoint shown in the viewer UI.";
             };
 

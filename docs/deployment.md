@@ -32,10 +32,10 @@ Options:
 - `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.
 - `-view-metrics-auth`: if set (`user:pass`), also expose `/metrics` on the viewer HTTP server protected by HTTP Basic auth (Prometheus-compatible). Useful when you'd rather scrape over the same TLS-terminated host as the viewer.
 
-The intended deployment model is to run the Go service on localhost and put nginx in front of it:
+The intended deployment model is to run the Go service on localhost behind nginx on a single hostname:
 
-- `tron.erik.gdn:4000` routes to the raw TCP game server.
 - `tron.erik.gdn:443` routes to the HTTP viewer server.
+- `tron.erik.gdn:4000` routes to the raw TCP game server.
 
 ## NixOS flake
 
@@ -108,4 +108,4 @@ stream {
 }
 ```
 
-If the same nginx instance terminates HTTPS for the viewer on `443`, the raw TCP game endpoint needs a different IP, a different port, or a TLS/SNI-aware stream setup that can separate `play-tron.erik.gdn` from `view-tron.erik.gdn`.
+Both endpoints live on the same hostname (`tron.erik.gdn`): the viewer on `443` (HTTPS, terminated by nginx) and the raw TCP game server on `4000`. Make sure nothing else on the box is bound to `4000`, and open it in any upstream firewall.
