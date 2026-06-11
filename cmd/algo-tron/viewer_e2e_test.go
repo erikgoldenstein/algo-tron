@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -115,6 +116,41 @@ func TestE2ESchemePickerListsAllSchemes(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("scheme picker rendered %d buttons, want %d (SCHEME_KEYS.length)", got, want)
+	}
+}
+
+func TestE2EBoardTabsAndSwitching(t *testing.T) {
+	url, s := e2eViewer(t)
+
+	// Two boards, no tick loops — the init snapshot alone must render tabs,
+	// and clicking a tab must subscribe to that board ("game" snapshot →
+	// active tab moves).
+	s.mu.Lock()
+	for i := 0; i < 2; i++ {
+		a, _ := testPlayer(fmt.Sprintf("a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("b%d", i))
+		s.games = append(s.games, newGame(s, []*Player{a, b}))
+	}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+
+	var first, second string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active`),
+		chromedp.Text(`#tabs .tab.active`, &first),
+		chromedp.Click(`#tabs .tab[data-id]:nth-child(2)`),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(2)`),
+		chromedp.Text(`#tabs .tab.active`, &second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if first != "1:arena-1*" {
+		t.Errorf("initial active tab = %q, want %q", first, "1:arena-1*")
+	}
+	if second != "2:arena-2*" {
+		t.Errorf("active tab after click = %q, want %q", second, "2:arena-2*")
 	}
 }
 

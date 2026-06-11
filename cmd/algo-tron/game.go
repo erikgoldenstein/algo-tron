@@ -8,26 +8,11 @@ import (
 	"time"
 )
 
-func (s *Server) gameLoop() {
-	for {
-		time.Sleep(time.Second)
-		s.mu.Lock()
-		if s.game == nil {
-			players := s.connectedPlayersLocked()
-			if len(players) > 0 {
-				s.game = newGame(s, players)
-				s.game.startLocked()
-			}
-		}
-		s.mu.Unlock()
-	}
-}
-
 // statsLoop emits one slog.Info line per minute summarizing live load: the
-// per-IP connected player count, viewer count, and the last tick's build +
-// fanout durations (from tickLocked atomics). Cheap to add, and the only
-// way to spot per-tick regressions on the live server without rerunning the
-// benchmarks. Skips emitting while idle (no game) to keep logs quiet.
+// connected player count, viewer count, running boards, and the last tick's
+// build + fanout durations (from tickLocked atomics). Cheap to add, and the
+// only way to spot per-tick regressions on the live server without rerunning
+// the benchmarks. Skips emitting while idle (no game) to keep logs quiet.
 func (s *Server) statsLoop() {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
@@ -35,16 +20,13 @@ func (s *Server) statsLoop() {
 		s.mu.Lock()
 		players := len(s.players)
 		viewers := len(s.viewClients)
-		gameID := ""
-		if s.game != nil {
-			gameID = s.game.id
-		}
+		boards := len(s.games)
 		s.mu.Unlock()
-		if gameID == "" {
+		if boards == 0 {
 			continue
 		}
 		slog.Info("stats",
-			"game", gameID,
+			"boards", boards,
 			"players", players,
 			"viewers", viewers,
 			"tick_ms", time.Duration(s.tickDurNs.Load()).Milliseconds(),
@@ -55,7 +37,7 @@ func (s *Server) statsLoop() {
 
 func newGame(s *Server, players []*Player) *Game {
 	rand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
-	g := &Game{server: s, id: randID(), players: players, width: len(players) * 2, height: len(players) * 2, startTime: time.Now(), deathTick: map[*Player]int{}}
+	g := &Game{server: s, id: randID(), width: len(players) * 2, height: len(players) * 2, startTime: time.Now(), deathTick: map[*Seat]int{}}
 	g.fields = make([][]int, g.width)
 	for x := range g.fields {
 		g.fields[x] = make([]int, g.height)
@@ -64,31 +46,33 @@ func newGame(s *Server, players []*Player) *Game {
 		}
 	}
 	for i, p := range players {
-		p.spawn(i, i*2, i*2)
+		st := newSeat(g, p, i, i*2, i*2)
+		g.seats = append(g.seats, st)
+		p.seat = st
 		g.fields[i*2][i*2] = i
 	}
 	return g
 }
 
 func (g *Game) startLocked() {
-	slog.Info("game start", "id", g.id, "players", len(g.players), "width", g.width, "height", g.height)
-	for _, p := range g.players {
-		p.sendLocked("game", g.width, g.height, p.ID)
+	slog.Info("game start", "id", g.id, "players", len(g.seats), "width", g.width, "height", g.height)
+	for _, st := range g.seats {
+		st.player.sendLocked("game", g.width, g.height, st.id)
 	}
-	frame := make([]byte, 0, len(g.players)*32)
-	for _, p := range g.players {
-		if p.Alive {
-			frame = appendPlayer(frame, p.ID, p.Username)
+	frame := make([]byte, 0, len(g.seats)*32)
+	for _, st := range g.seats {
+		if st.alive {
+			frame = appendPlayer(frame, st.id, st.player.Username)
 		}
 	}
-	for _, p := range g.players {
-		if p.Alive {
-			frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
+	for _, st := range g.seats {
+		if st.alive {
+			frame = appendPos(frame, st.id, st.pos.X, st.pos.Y)
 		}
 	}
 	frame = append(frame, "tick\n"...)
-	g.server.broadcastAliveLocked(string(frame))
-	g.server.broadcastGameLocked()
+	g.broadcastAliveLocked(string(frame))
+	g.server.broadcastBoardsLocked()
 	go g.run()
 }
 
@@ -104,7 +88,7 @@ func (g *Game) run() {
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
 		interval := time.Second / time.Duration(rate)
-		g.server.tickNs.Store(int64(interval))
+		g.tickNs.Store(int64(interval))
 		if rate != curRate {
 			if ticker != nil {
 				ticker.Stop()
@@ -137,7 +121,7 @@ func (g *Game) run() {
 func (g *Game) tickLocked() bool {
 	defer func() { g.tick++ }()
 	tickStart := time.Now()
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.killDisconnectedLocked(dead)
 	g.movePlayersLocked()
 	g.applyCollisionsLocked(dead)
@@ -145,7 +129,7 @@ func (g *Game) tickLocked() bool {
 	g.server.clearExpiredChatsLocked()
 
 	ending := g.shouldEndLocked()
-	frame := make([]byte, 0, len(g.players)*16)
+	frame := make([]byte, 0, len(g.seats)*16)
 	if len(deathIDs) > 0 {
 		frame = append(frame, "die|"...)
 		for i, id := range deathIDs {
@@ -156,24 +140,24 @@ func (g *Game) tickLocked() bool {
 		}
 		frame = append(frame, '\n')
 	}
-	for _, p := range g.players {
-		if p.Alive {
-			frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
+	for _, st := range g.seats {
+		if st.alive {
+			frame = appendPos(frame, st.id, st.pos.X, st.pos.Y)
 		}
 	}
 	if !ending {
 		frame = append(frame, "tick\n"...)
 	}
 	fanoutStart := time.Now()
-	g.server.broadcastAliveLocked(string(frame))
-	g.server.broadcastTickLocked(deathIDs)
+	g.broadcastAliveLocked(string(frame))
+	g.server.broadcastTickLocked(g, deathIDs)
 	end := time.Now()
 	tickDur := end.Sub(tickStart)
 	fanoutDur := end.Sub(fanoutStart)
 	g.server.fanoutDurNs.Store(int64(fanoutDur))
 	g.server.tickDurNs.Store(int64(tickDur))
 	metricTicks.Inc()
-	if interval := g.server.tickInterval(); interval > 0 {
+	if interval := time.Duration(g.tickNs.Load()); interval > 0 {
 		metricTickBudget.Observe(tickDur.Seconds() / interval.Seconds())
 		metricFanoutBudget.Observe(fanoutDur.Seconds() / interval.Seconds())
 	}
@@ -185,33 +169,50 @@ func (g *Game) tickLocked() bool {
 	return false
 }
 
-func (g *Game) killDisconnectedLocked(dead map[*Player]bool) {
-	for _, p := range g.players {
-		if p.Alive && p.conn == nil {
-			g.markDeadLocked(p, dead)
-			g.removeFromFields(p)
+// broadcastAliveLocked sends one wire frame to every alive bot on this board.
+func (g *Game) broadcastAliveLocked(packet string) {
+	for _, st := range g.seats {
+		if st.alive && st.player.writer != nil {
+			st.player.writer.WriteString(packet)
+			st.player.writer.Flush()
+		}
+	}
+}
+
+func (g *Game) killDisconnectedLocked(dead map[*Seat]bool) {
+	for _, st := range g.seats {
+		if st.alive && st.player.conn == nil {
+			g.markDeadLocked(st, dead)
+			g.removeFromFields(st)
 			metricDisconnectKilled.Inc()
 		}
 	}
 }
 
-func (g *Game) markDeadLocked(p *Player, dead map[*Player]bool) {
-	dead[p] = true
-	p.Alive = false
-	if g.deathTick != nil {
-		if _, ok := g.deathTick[p]; !ok {
-			g.deathTick[p] = g.tick
+// markDeadLocked kills the seat and immediately releases the player back to
+// the matchmaking queue — they can be seated on a new board while this game
+// plays out. The seat itself stays in the game for death-rank/rating math.
+func (g *Game) markDeadLocked(st *Seat, dead map[*Seat]bool) {
+	dead[st] = true
+	st.alive = false
+	if _, ok := g.deathTick[st]; !ok {
+		g.deathTick[st] = g.tick
+	}
+	if st.player.seat == st {
+		st.player.seat = nil
+		if st.player.conn != nil {
+			g.server.enqueueLocked(st.player)
 		}
 	}
 }
 
 func (g *Game) movePlayersLocked() {
-	for _, p := range g.players {
-		if !p.Alive {
+	for _, st := range g.seats {
+		if !st.alive {
 			continue
 		}
-		x, y := p.Pos.X, p.Pos.Y
-		switch p.readMoveLocked() {
+		x, y := st.pos.X, st.pos.Y
+		switch st.readMoveLocked() {
 		case MoveUp:
 			y = (y + g.height - 1) % g.height
 		case MoveRight:
@@ -221,126 +222,148 @@ func (g *Game) movePlayersLocked() {
 		case MoveLeft:
 			x = (x + g.width - 1) % g.width
 		}
-		p.setPos(x, y)
+		st.setPos(x, y)
 	}
 }
 
-func (g *Game) applyCollisionsLocked(dead map[*Player]bool) {
-	for _, p := range g.players {
-		if !p.Alive {
+func (g *Game) applyCollisionsLocked(dead map[*Seat]bool) {
+	for _, st := range g.seats {
+		if !st.alive {
 			continue
 		}
-		occupant := g.fields[p.Pos.X][p.Pos.Y]
+		occupant := g.fields[st.pos.X][st.pos.Y]
 		if occupant < 0 {
-			g.fields[p.Pos.X][p.Pos.Y] = p.ID
+			g.fields[st.pos.X][st.pos.Y] = st.id
 			continue
 		}
-		other := g.players[occupant]
-		if other != p && other.Pos == p.Pos {
+		other := g.seats[occupant]
+		if other != st && other.pos == st.pos {
 			g.markDeadLocked(other, dead)
 		}
-		g.markDeadLocked(p, dead)
+		g.markDeadLocked(st, dead)
 	}
 }
 
-func (g *Game) processDeadLocked(dead map[*Player]bool) []int {
+func (g *Game) processDeadLocked(dead map[*Seat]bool) []int {
 	ids := []int{}
-	for p := range dead {
-		g.removeFromFields(p)
-		p.loseLocked()
-		ids = append(ids, p.ID)
+	for st := range dead {
+		g.removeFromFields(st)
+		st.loseLocked()
+		ids = append(ids, st.id)
 	}
 	return ids
 }
 
 func (g *Game) shouldEndLocked() bool {
 	alive := g.aliveLocked()
-	return (len(g.players) == 1 && len(alive) == 0) || (len(g.players) > 1 && len(alive) <= 1)
+	return (len(g.seats) == 1 && len(alive) == 0) || (len(g.seats) > 1 && len(alive) <= 1)
 }
 
 func (g *Game) endLocked() {
 	alive := g.aliveLocked()
 	g.updateEloLocked(alive)
 	g.updateTrueSkillLocked(alive)
-	// Losers had their loseLocked() called during the game with the pre-update
-	// elo; snapshot the post-update elo onto their last ScoreHistory entry so
-	// the elo chart plots the value that the scoreboard reads.
-	for _, p := range g.players {
-		if !p.Alive {
-			if n := len(p.ScoreHistory); n > 0 {
-				p.ScoreHistory[n-1].Elo = p.Elo
+	names := []string{}
+	for _, st := range alive {
+		st.winLocked()
+		names = append(names, st.player.Username)
+	}
+	// Losers recorded their ScoreHistory entry at death with the pre-update
+	// elo; patch the post-update value onto exactly that entry so the chart
+	// plots what the scoreboard reads.
+	for _, st := range g.seats {
+		st.patchScoreEloLocked()
+	}
+	// Release survivors back to the queue (the dead re-queued at death).
+	for _, st := range g.seats {
+		if st.player.seat == st {
+			st.player.seat = nil
+			if st.player.conn != nil {
+				g.server.enqueueLocked(st.player)
 			}
 		}
 	}
-	names := []string{}
-	for _, p := range alive {
-		p.winLocked()
-		names = append(names, p.Username)
-	}
-	g.server.game = nil
+	g.server.removeGameLocked(g)
 	g.server.viewState.LastWinners = names
 	g.server.store()
 	g.server.updateScoreboardLocked()
-	g.server.broadcastEndLocked()
+	g.server.broadcastEndLocked(g.id)
+	g.server.broadcastBoardsLocked()
 	dur := time.Since(g.startTime)
 	metricGames.Inc()
 	metricGameDuration.Observe(dur.Seconds())
 	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", dur.Milliseconds())
 }
 
-// updateEloLocked applies a pairwise ELO update where each player's "place" is
-// derived from how long they survived. Winners share place 1; losers are ranked
-// by their death tick (later death = better place). Players who died on the
+func (s *Server) removeGameLocked(g *Game) {
+	for i, other := range s.games {
+		if other == g {
+			s.games = append(s.games[:i], s.games[i+1:]...)
+			return
+		}
+	}
+}
+
+// updateEloLocked applies a pairwise ELO update where each seat's "place" is
+// derived from how long it survived. Winners share place 1; losers are ranked
+// by their death tick (later death = better place). Seats that died on the
 // same tick share a place (head-on collisions, multiple disconnects).
-func (g *Game) updateEloLocked(winners []*Player) {
-	if len(g.players) == 0 {
+func (g *Game) updateEloLocked(winners []*Seat) {
+	if len(g.seats) == 0 {
 		return
 	}
-	won := map[*Player]bool{}
-	for _, p := range winners {
-		won[p] = true
+	place := g.placesLocked(winners)
+	old := map[*Seat]float64{}
+	for _, st := range g.seats {
+		old[st] = st.player.Elo
 	}
-	place := map[*Player]int{}
-	for _, p := range g.players {
-		if won[p] {
-			place[p] = 1
-			continue
-		}
-		better := 0
-		for _, q := range g.players {
-			if q == p {
-				continue
-			}
-			if won[q] || g.deathTick[q] > g.deathTick[p] {
-				better++
-			}
-		}
-		place[p] = 1 + better
-	}
-	old := map[*Player]float64{}
-	for _, p := range g.players {
-		old[p] = p.Elo
-	}
-	for _, p := range g.players {
+	for _, st := range g.seats {
 		delta := 0.0
-		for _, opponent := range g.players {
-			if opponent == p {
+		for _, opponent := range g.seats {
+			if opponent == st {
 				continue
 			}
 			var score float64
 			switch {
-			case place[p] < place[opponent]:
+			case place[st] < place[opponent]:
 				score = 1.0
-			case place[p] > place[opponent]:
+			case place[st] > place[opponent]:
 				score = 0.0
 			default:
 				score = 0.5
 			}
-			expected := 1.0 / (1.0 + math.Pow(10, (old[opponent]-old[p])/400.0))
+			expected := 1.0 / (1.0 + math.Pow(10, (old[opponent]-old[st])/400.0))
 			delta += eloKFactor * (score - expected)
 		}
-		p.Elo += delta
+		st.player.Elo += delta
 	}
+}
+
+// placesLocked ranks every seat: winners share place 1, losers are ordered
+// by death tick (later death = better place), same-tick deaths share a place.
+func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
+	won := map[*Seat]bool{}
+	for _, st := range winners {
+		won[st] = true
+	}
+	place := map[*Seat]int{}
+	for _, st := range g.seats {
+		if won[st] {
+			place[st] = 1
+			continue
+		}
+		better := 0
+		for _, other := range g.seats {
+			if other == st {
+				continue
+			}
+			if won[other] || g.deathTick[other] > g.deathTick[st] {
+				better++
+			}
+		}
+		place[st] = 1 + better
+	}
+	return place
 }
 
 // updateTrueSkillLocked applies a free-for-all TrueSkill update using the
@@ -348,56 +371,29 @@ func (g *Game) updateEloLocked(winners []*Player) {
 // updated against every opponent based on the FFA ranking (winners share
 // place 1; losers are ranked by death tick). Same-place pairs (co-deaths,
 // joint wins) are skipped — we treat them as no-information matchups rather
-// than ε-draws. Players new to TrueSkill (TsSigma == 0) are initialized to
-// (tsMu0, tsSigma0).
-func (g *Game) updateTrueSkillLocked(winners []*Player) {
-	if len(g.players) == 0 {
+// than ε-draws.
+func (g *Game) updateTrueSkillLocked(winners []*Seat) {
+	if len(g.seats) == 0 {
 		return
 	}
-	for _, p := range g.players {
-		if p.TsSigma == 0 {
-			p.TsMu = tsMu0
-			p.TsSigma = tsSigma0
-		}
-	}
-	won := map[*Player]bool{}
-	for _, p := range winners {
-		won[p] = true
-	}
-	place := map[*Player]int{}
-	for _, p := range g.players {
-		if won[p] {
-			place[p] = 1
-			continue
-		}
-		better := 0
-		for _, q := range g.players {
-			if q == p {
-				continue
-			}
-			if won[q] || g.deathTick[q] > g.deathTick[p] {
-				better++
-			}
-		}
-		place[p] = 1 + better
-	}
+	place := g.placesLocked(winners)
 	type snap struct{ mu, sigma2 float64 }
-	old := map[*Player]snap{}
-	for _, p := range g.players {
-		old[p] = snap{p.TsMu, p.TsSigma * p.TsSigma}
+	old := map[*Seat]snap{}
+	for _, st := range g.seats {
+		old[st] = snap{st.player.TsMu, st.player.TsSigma * st.player.TsSigma}
 	}
-	for _, p := range g.players {
-		muP, s2P := old[p].mu, old[p].sigma2
+	for _, st := range g.seats {
+		muP, s2P := old[st].mu, old[st].sigma2
 		muNew, s2New := muP, s2P
-		for _, q := range g.players {
-			if q == p || place[p] == place[q] {
+		for _, other := range g.seats {
+			if other == st || place[st] == place[other] {
 				continue
 			}
-			muQ, s2Q := old[q].mu, old[q].sigma2
+			muQ, s2Q := old[other].mu, old[other].sigma2
 			c2 := 2*tsBeta*tsBeta + s2P + s2Q
 			c := math.Sqrt(c2)
 			t, sign := (muP-muQ)/c, 1.0
-			if place[p] > place[q] {
+			if place[st] > place[other] {
 				t, sign = (muQ-muP)/c, -1.0
 			}
 			cdf := 0.5 * (1 + math.Erf(t/math.Sqrt2))
@@ -415,26 +411,27 @@ func (g *Game) updateTrueSkillLocked(winners []*Player) {
 		if s2New < 1e-6 {
 			s2New = 1e-6
 		}
-		p.TsMu = muNew
-		p.TsSigma = math.Sqrt(s2New)
+		st.player.TsMu = muNew
+		st.player.TsSigma = math.Sqrt(s2New)
 	}
 }
 
-func (g *Game) aliveLocked() []*Player {
-	out := []*Player{}
-	for _, p := range g.players {
-		if p.Alive {
-			out = append(out, p)
+func (g *Game) aliveLocked() []*Seat {
+	out := []*Seat{}
+	for _, st := range g.seats {
+		if st.alive {
+			out = append(out, st)
 		}
 	}
 	return out
 }
 
-// removeFromFields clears only cells still owned by p, avoiding double-clear races
-// when another player has already claimed a cell in the same tick.
-func (g *Game) removeFromFields(p *Player) {
-	for _, m := range p.Moves {
-		if g.fields[m.X][m.Y] == p.ID {
+// removeFromFields clears only cells still owned by the seat, avoiding
+// double-clear races when another player has already claimed a cell in the
+// same tick.
+func (g *Game) removeFromFields(st *Seat) {
+	for _, m := range st.trail {
+		if g.fields[m.X][m.Y] == st.id {
 			g.fields[m.X][m.Y] = -1
 		}
 	}

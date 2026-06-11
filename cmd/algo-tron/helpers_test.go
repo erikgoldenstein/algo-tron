@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -37,7 +36,6 @@ func testServer(t *testing.T) *Server {
 		secret:      make([]byte, 32),
 		db:          db,
 	}
-	s.tickNs.Store(int64(time.Second))
 	return s
 }
 
@@ -49,6 +47,8 @@ func testPlayer(username string) (*Player, *bytes.Buffer) {
 		Username: username,
 		PwHash:   "hash",
 		Elo:      1000,
+		TsMu:     tsMu0,
+		TsSigma:  tsSigma0,
 		writer:   bufio.NewWriter(buf),
 	}, buf
 }
@@ -57,18 +57,42 @@ func testPlayer(username string) (*Player, *bytes.Buffer) {
 // (no shuffle), mirroring the newGame setup without randomness.
 func makeGame(s *Server, players []*Player) *Game {
 	g := &Game{
-		server:  s,
-		id:      "test",
-		players: players,
-		width:   len(players) * 2,
-		height:  len(players) * 2,
-		fields:  makeFields(len(players)*2, len(players)*2),
+		server:    s,
+		id:        "test",
+		width:     len(players) * 2,
+		height:    len(players) * 2,
+		fields:    makeFields(len(players)*2, len(players)*2),
+		deathTick: map[*Seat]int{},
 	}
 	for i, p := range players {
-		p.spawn(i, i*2, i*2)
+		st := newSeat(g, p, i, i*2, i*2)
+		g.seats = append(g.seats, st)
+		p.seat = st
 		g.fields[i*2][i*2] = i
 	}
 	return g
+}
+
+// bareGame constructs a Game with one seat per player but no board (fields,
+// positions). For tests of rating math and other grid-free functions.
+func bareGame(s *Server, players ...*Player) *Game {
+	g := &Game{server: s, id: "test", deathTick: map[*Seat]int{}}
+	for i, p := range players {
+		st := &Seat{player: p, game: g, id: i, alive: true}
+		g.seats = append(g.seats, st)
+		p.seat = st
+	}
+	return g
+}
+
+// addSeat creates a fresh player seated at (x,y) on g. The player's packets
+// are discarded (nil writer would no-op; we keep one for sendLocked output).
+func addSeat(g *Game, username string, x, y int) *Seat {
+	p, _ := testPlayer(username)
+	st := &Seat{player: p, game: g, id: len(g.seats), alive: true, pos: Vec2{x, y}, trail: []Vec2{{x, y}}}
+	g.seats = append(g.seats, st)
+	p.seat = st
+	return st
 }
 
 // mustPipe returns the two ends of a net.Pipe, closing both on test cleanup.

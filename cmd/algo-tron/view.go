@@ -95,23 +95,26 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	}
 	c.SetReadLimit(512)
 
-	s.mu.Lock()
-	init, _ := json.Marshal(s.buildInitLocked())
-	s.mu.Unlock()
-	if !writeViewMessage(c, init) {
-		c.Close()
-		return
-	}
-
 	sink := &viewerSink{ch: make(chan []byte, viewSinkBuf), done: make(chan struct{})}
 	go s.viewWriter(c, sink)
 
+	// Register the sink and enqueue the init message under one lock so no
+	// tick can slip between snapshot and registration. The viewer is
+	// auto-subscribed to the first running board.
 	s.mu.Lock()
+	if len(s.games) > 0 {
+		sink.gameID = s.games[0].id
+	}
+	init, _ := json.Marshal(s.buildInitLocked(sink.gameID))
 	s.viewClients[c] = sink
+	sink.ch <- init // fresh sink, buffer can't be full
 	s.mu.Unlock()
 
+	// Read loop: detects disconnect and handles {"watch":"<gameId>"}
+	// subscription switches.
 	for {
-		if _, _, err := c.ReadMessage(); err != nil {
+		_, data, err := c.ReadMessage()
+		if err != nil {
 			s.mu.Lock()
 			delete(s.viewClients, c)
 			s.mu.Unlock()
@@ -119,53 +122,71 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			c.Close()
 			return
 		}
+		var req struct {
+			Watch string `json:"watch"`
+		}
+		if json.Unmarshal(data, &req) != nil || req.Watch == "" {
+			continue
+		}
+		s.mu.Lock()
+		// Ignore unknown ids: the board may have ended while the request
+		// was in flight; the client will re-pick from the next boards
+		// message.
+		for _, g := range s.games {
+			if g.id == req.Watch {
+				sink.gameID = g.id
+				m := buildGameMsgLocked(g)
+				m.Type = "game"
+				snapshot, _ := json.Marshal(m)
+				s.sendToSinkLocked(c, sink, snapshot)
+				break
+			}
+		}
+		s.mu.Unlock()
 	}
 }
 
-// viewWriter drains sink.ch and writes frames to c, throttled to 2× the
-// current game tick rate. Deltas can't be dropped (each tick is incremental),
-// so a slow writer blocks; sink.ch buffer absorbs short hiccups, and
-// broadcastViewLocked kicks viewers whose buffer overflows. sink.ch is never
-// closed (would race with broadcastViewLocked sends).
+// viewWriter drains sink.ch and writes frames to c. Deltas can't be dropped
+// (each tick is incremental), so a slow writer blocks; sink.ch's buffer
+// absorbs short hiccups, and sendToSinkLocked kicks viewers whose buffer
+// overflows. sink.ch is never closed (would race with concurrent sends).
 func (s *Server) viewWriter(c *websocket.Conn, sink *viewerSink) {
-	var last time.Time
 	for {
 		select {
 		case <-sink.done:
 			return
 		case data := <-sink.ch:
-			if interval := s.tickInterval() / 2; interval > 0 {
-				if d := time.Since(last); d < interval {
-					time.Sleep(interval - d)
-				}
-			}
 			if !writeViewMessage(c, data) {
 				c.Close()
 				<-sink.done
 				return
 			}
-			last = time.Now()
 		}
+	}
+}
+
+// sendToSinkLocked enqueues data for one viewer. If the sink's buffer is
+// full the viewer is too slow — we kick them and let them reconnect (their
+// next WS connect gets a fresh init).
+func (s *Server) sendToSinkLocked(c *websocket.Conn, sink *viewerSink, data []byte) {
+	select {
+	case sink.ch <- data:
+	default:
+		delete(s.viewClients, c)
+		close(sink.done)
+		c.Close()
+		metricViewersKicked.Inc()
 	}
 }
 
 // broadcastViewLocked fans a marshaled message out to every viewer sink.
-// If a sink's buffer is full the viewer is too slow — we kick them and let
-// them reconnect (their next WS connect gets a fresh init).
 func (s *Server) broadcastViewLocked(data []byte) {
 	for c, sink := range s.viewClients {
-		select {
-		case sink.ch <- data:
-		default:
-			delete(s.viewClients, c)
-			close(sink.done)
-			c.Close()
-			metricViewersKicked.Inc()
-		}
+		s.sendToSinkLocked(c, sink, data)
 	}
 }
 
-func (s *Server) buildInitLocked() *initMsg {
+func (s *Server) buildInitLocked(watchID string) *initMsg {
 	m := &initMsg{
 		Type:        "init",
 		ServerInfo:  s.viewState.ServerInfoList,
@@ -173,62 +194,90 @@ func (s *Server) buildInitLocked() *initMsg {
 		Scoreboard:  s.viewState.Scoreboard,
 		ChartData:   s.viewState.ChartData,
 		LastWinners: s.viewState.LastWinners,
+		Boards:      s.boardListLocked(),
 	}
-	if s.game != nil {
-		m.Game = buildGameMsgLocked(s.game)
+	for _, g := range s.games {
+		if g.id == watchID {
+			m.Game = buildGameMsgLocked(g)
+			break
+		}
 	}
 	return m
 }
 
-// buildGameMsgLocked snapshots the current game including full trails. Sent
-// on connect ("init") and on game start ("game"); per-tick deltas update from
-// there. This is the only message that scales with trail length.
+func (s *Server) boardListLocked() []boardMsg {
+	boards := []boardMsg{}
+	for _, g := range s.games {
+		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked())})
+	}
+	return boards
+}
+
+// broadcastBoardsLocked tells every viewer the current board list. Sent
+// whenever a board starts or ends; clients use it to render tabs and to
+// re-subscribe when their board disappears.
+func (s *Server) broadcastBoardsLocked() {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(boardsMsg{Type: "boards", Boards: s.boardListLocked()})
+	s.broadcastViewLocked(data)
+}
+
+// buildGameMsgLocked snapshots one board including full trails. Sent inside
+// "init" and as a "game" message whenever a viewer subscribes; per-tick
+// deltas update from there. This is the only message that scales with trail
+// length.
 func buildGameMsgLocked(g *Game) *gameMsg {
 	m := &gameMsg{ID: g.id, Width: g.width, Height: g.height}
-	for _, p := range g.players {
+	for _, st := range g.seats {
 		m.Players = append(m.Players, playerMsg{
-			ID: p.ID, Name: p.Username, Pos: p.Pos,
-			Moves: append([]Vec2(nil), p.Moves...),
-			Alive: p.Alive, Chat: p.Chat,
+			ID: st.id, Name: st.player.Username, Pos: st.pos,
+			Moves: append([]Vec2(nil), st.trail...),
+			Alive: st.alive, Chat: st.player.Chat,
 		})
 	}
 	return m
 }
 
-func (s *Server) broadcastGameLocked() {
-	if len(s.viewClients) == 0 || s.game == nil {
-		return
-	}
-	m := buildGameMsgLocked(s.game)
-	m.Type = "game"
-	data, _ := json.Marshal(m)
-	s.broadcastViewLocked(data)
-}
-
-func (s *Server) broadcastTickLocked(deaths []int) {
-	if len(s.viewClients) == 0 || s.game == nil {
-		return
-	}
-	positions := make([][3]int, 0, len(s.game.players))
-	var chats map[int]string
-	for _, p := range s.game.players {
-		if p.Alive {
-			positions = append(positions, [3]int{p.ID, p.Pos.X, p.Pos.Y})
+// broadcastTickLocked sends one board's tick delta to the viewers subscribed
+// to that board.
+func (s *Server) broadcastTickLocked(g *Game, deaths []int) {
+	subscribed := false
+	for _, sink := range s.viewClients {
+		if sink.gameID == g.id {
+			subscribed = true
+			break
 		}
-		if p.Chat != "" {
+	}
+	if !subscribed {
+		return
+	}
+	positions := make([][3]int, 0, len(g.seats))
+	var chats map[int]string
+	for _, st := range g.seats {
+		if st.alive {
+			positions = append(positions, [3]int{st.id, st.pos.X, st.pos.Y})
+		}
+		if st.player.Chat != "" {
 			if chats == nil {
 				chats = map[int]string{}
 			}
-			chats[p.ID] = p.Chat
+			chats[st.id] = st.player.Chat
 		}
 	}
 	data, _ := json.Marshal(tickMsg{
 		Type:      "tick",
+		GameID:    g.id,
 		Positions: positions,
 		Deaths:    deaths,
 		Chats:     chats,
 	})
-	s.broadcastViewLocked(data)
+	for c, sink := range s.viewClients {
+		if sink.gameID == g.id {
+			s.sendToSinkLocked(c, sink, data)
+		}
+	}
 }
 
 func (s *Server) broadcastShutdownLocked() {
@@ -239,12 +288,13 @@ func (s *Server) broadcastShutdownLocked() {
 	s.broadcastViewLocked(data)
 }
 
-func (s *Server) broadcastEndLocked() {
+func (s *Server) broadcastEndLocked(gameID string) {
 	if len(s.viewClients) == 0 {
 		return
 	}
 	data, _ := json.Marshal(endMsg{
 		Type:        "end",
+		GameID:      gameID,
 		Scoreboard:  s.viewState.Scoreboard,
 		ChartData:   s.viewState.ChartData,
 		LastWinners: s.viewState.LastWinners,

@@ -34,6 +34,8 @@ function updateDom() {
   const aliveEl = document.getElementById('alive-count');
   if (aliveEl) aliveEl.textContent = players.length ? `(${alive}/${players.length} alive)` : '';
 
+  updateTabs();
+
   const scoreboardEl = document.getElementById('scoreboard');
   scoreboardEl.innerHTML = gameState.scoreboard.length
     ? gameState.scoreboard.map(scoreRow).join('')
@@ -72,6 +74,24 @@ function updateDom() {
   chat.innerHTML = chatPanel.length
     ? [...chatPanel].reverse().map(chatRow).join('')
     : '<div class="chat-empty">no messages yet</div>';
+}
+
+// One tmux-style tab per running board; the subscribed one carries the `*`.
+// Click a tab (or use h / l / 1…9, wired in modal.js) to switch — switching
+// just asks the server for that board's stream via watchBoard (ws.js).
+function updateTabs() {
+  const tabsEl = document.getElementById('tabs');
+  if (!tabsEl) return;
+  const current = gameState.game?.id;
+  tabsEl.innerHTML = gameState.boards.length
+    ? gameState.boards.map((b, i) => {
+        const active = b.id === current;
+        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:arena-${i + 1}${active ? '*' : ''}</span>`;
+      }).join('')
+    : '<span class="tab">no games</span>';
+  tabsEl.querySelectorAll('.tab[data-id]').forEach((el) => {
+    el.addEventListener('click', () => watchBoard(el.dataset.id));
+  });
 }
 
 function scoreRow(p, i) {

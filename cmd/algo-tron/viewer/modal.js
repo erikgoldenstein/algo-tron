@@ -1,8 +1,10 @@
 // Help/settings modal: opens via the "settings" button or "?" key, closes
 // with q/Esc. Also wires the keyboard shortcuts shown in the modal's "keys"
-// section (c cycles colorscheme, z toggles low-fatigue mode).
+// section (c cycles colorscheme, z toggles low-fatigue mode, h/l and 1…9
+// switch boards).
 //
-// Depends on: schemes.js (SCHEMES, SCHEME_KEYS, applyScheme, currentScheme).
+// Depends on: schemes.js (SCHEMES, SCHEME_KEYS, applyScheme, currentScheme),
+// ws.js (watchBoard, stepBoard — resolved at event time), gameState.js.
 // Provides: toggleHelp, cycleScheme.
 
 function renderSchemes() {
@@ -96,5 +98,21 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       document.body.classList.toggle('low-fatigue');
       return;
+    case 'h':
+      e.preventDefault();
+      stepBoard(-1);
+      return;
+    case 'l':
+      e.preventDefault();
+      stepBoard(1);
+      return;
+    default:
+      if (e.key >= '1' && e.key <= '9') {
+        const board = gameState.boards[Number(e.key) - 1];
+        if (board) {
+          e.preventDefault();
+          watchBoard(board.id);
+        }
+      }
   }
 });

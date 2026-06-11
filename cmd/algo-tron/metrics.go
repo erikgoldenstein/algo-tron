@@ -65,6 +65,11 @@ var (
 		Help:    "Wall-clock duration of completed games.",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
 	})
+	metricQueueWait = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tron_queue_wait_seconds",
+		Help:    "Time players spent in the matchmaking queue before being seated.",
+		Buckets: prometheus.ExponentialBuckets(0.5, 2, 8),
+	})
 )
 
 // registerGauges registers lazy gauges that read live server state. Each
@@ -87,24 +92,35 @@ func (s *Server) registerGauges() {
 		defer s.mu.Unlock()
 		return float64(len(s.viewClients))
 	})
-	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_game_active", Help: "1 if a game is currently in progress, 0 otherwise."}, func() float64 {
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_game_active", Help: "Number of boards currently in progress."}, func() float64 {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.game == nil {
-			return 0
-		}
-		return 1
+		return float64(len(s.games))
 	})
-	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_game_players", Help: "Players in the currently running game."}, func() float64 {
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_game_players", Help: "Players seated across all running boards."}, func() float64 {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.game == nil {
-			return 0
+		n := 0
+		for _, g := range s.games {
+			n += len(g.seats)
 		}
-		return float64(len(s.game.players))
+		return float64(n)
 	})
-	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_tick_rate", Help: "Current ticks per second."}, func() float64 {
-		if ns := s.tickNs.Load(); ns > 0 {
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_players_queued", Help: "Connected bots waiting in the matchmaking queue."}, func() float64 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		n := 0
+		for _, p := range s.players {
+			if p.conn != nil && p.seat == nil {
+				n++
+			}
+		}
+		return float64(n)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_tick_rate", Help: "Ticks per second of the fastest running board."}, func() float64 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if ns := s.tickIntervalLocked(); len(s.games) > 0 && ns > 0 {
 			return float64(time.Second) / float64(ns)
 		}
 		return 0

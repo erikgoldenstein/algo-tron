@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"runtime/debug"
-	"sort"
 	"strings"
 	"time"
 )
@@ -116,7 +115,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.mu.Lock()
 	p := s.players[username]
 	if p == nil {
-		p = &Player{Username: username, PwHash: hashPassword(s.secret, password), Elo: 1000}
+		p = &Player{Username: username, PwHash: hashPassword(s.secret, password), Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
 		s.players[username] = p
 	} else if p.PwHash != hashPassword(s.secret, password) {
 		s.mu.Unlock()
@@ -141,6 +140,11 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	p.lastMovePacketAt = time.Time{}
 	p.lastChatPacketAt = time.Time{}
 	p.rateLimitStrikes = 0
+	// A reconnecting player whose seat is still alive resumes playing;
+	// everyone else enters the matchmaking queue.
+	if p.seat == nil {
+		s.enqueueLocked(p)
+	}
 	s.mu.Unlock()
 
 	for scanner.Scan() {
@@ -193,9 +197,9 @@ func (s *Server) handlePacket(p *Player, packet string) bool {
 
 	switch parts[0] {
 	case "move":
-		// Dead players can't move; drop early but still credit the
-		// packet (global limiter already counted it).
-		if !p.Alive {
+		// Players without a live seat can't move; drop early but still
+		// credit the packet (global limiter already counted it).
+		if p.seat == nil || !p.seat.alive {
 			p.rateLimitStrikes = 0
 			return true
 		}
@@ -225,7 +229,7 @@ func (s *Server) allowPacketLocked(lastPacketAt *time.Time, packetsPerTick int) 
 		return false
 	}
 	now := time.Now()
-	minInterval := s.tickInterval() / time.Duration(packetsPerTick)
+	minInterval := s.tickIntervalLocked() / time.Duration(packetsPerTick)
 	if !lastPacketAt.IsZero() && now.Sub(*lastPacketAt) < minInterval {
 		return false
 	}
@@ -286,13 +290,13 @@ func (s *Server) handleMoveLocked(p *Player, parts []string) {
 	}
 	switch parts[1] {
 	case "up":
-		p.move = MoveUp
+		p.seat.move = MoveUp
 	case "right":
-		p.move = MoveRight
+		p.seat.move = MoveRight
 	case "down":
-		p.move = MoveDown
+		p.seat.move = MoveDown
 	case "left":
-		p.move = MoveLeft
+		p.seat.move = MoveLeft
 	default:
 		p.sendLocked("error", "WARNING_UNKNOWN_MOVE")
 	}
@@ -305,9 +309,9 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 	}
 	msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\n", ""), "\r", "")
 	switch {
-	case !p.Alive:
+	case p.seat == nil || !p.seat.alive:
 		p.sendLocked("error", "ERROR_DEAD_CANNOT_CHAT")
-	case time.Since(p.lastChatAt) < s.tickInterval():
+	case time.Since(p.lastChatAt) < s.tickIntervalLocked():
 		metricChatRateLimited.Inc()
 		p.sendLocked("error", "WARNING_CHAT_RATE_LIMIT")
 	case !validString.MatchString(msg):
@@ -316,7 +320,7 @@ func (s *Server) handleChatLocked(p *Player, parts []string) {
 		p.Chat = msg
 		p.chatExpiry = time.Now().Add(5 * time.Second)
 		p.lastChatAt = time.Now()
-		s.broadcastAliveLocked(fmt.Sprintf("message|%d|%s\n", p.ID, msg))
+		p.seat.game.broadcastAliveLocked(fmt.Sprintf("message|%d|%s\n", p.seat.id, msg))
 	}
 }
 
@@ -329,29 +333,14 @@ func (s *Server) clearExpiredChatsLocked() {
 	}
 }
 
-func (s *Server) tickInterval() time.Duration {
-	if ns := s.tickNs.Load(); ns > 0 {
-		return time.Duration(ns)
-	}
-	return time.Second
-}
-
-func (s *Server) connectedPlayersLocked() []*Player {
-	out := make([]*Player, 0, len(s.players))
-	for _, p := range s.players {
-		if p.conn != nil {
-			out = append(out, p)
+// tickIntervalLocked returns the fastest tick interval across running
+// boards (used for packet rate limiting), or 1s while no game runs.
+func (s *Server) tickIntervalLocked() time.Duration {
+	interval := time.Second
+	for _, g := range s.games {
+		if ns := g.tickNs.Load(); ns > 0 && time.Duration(ns) < interval {
+			interval = time.Duration(ns)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
-	return out
-}
-
-func (s *Server) broadcastAliveLocked(packet string) {
-	for _, p := range s.players {
-		if p.Alive && p.writer != nil {
-			p.writer.WriteString(packet)
-			p.writer.Flush()
-		}
-	}
+	return interval
 }

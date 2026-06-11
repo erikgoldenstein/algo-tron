@@ -72,6 +72,10 @@ func (s *Server) load() {
 		if elo == 0 {
 			elo = 1000
 		}
+		// Rows from before TrueSkill tracking have ts_sigma == 0.
+		if tsSigma == 0 {
+			tsMu, tsSigma = tsMu0, tsSigma0
+		}
 		var scores []Score
 		_ = json.Unmarshal([]byte(scoresJSON), &scores)
 		s.players[username] = &Player{Username: username, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, ScoreHistory: scores}

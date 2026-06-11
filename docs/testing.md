@@ -12,14 +12,16 @@ go test ./cmd/algo-tron
 
 | Helper            | What it builds                                                                                       |
 |-------------------|------------------------------------------------------------------------------------------------------|
-| `testServer(t)`   | `*Server` with in-memory SQLite (`:memory:`), zeroed secret, 1s tick interval.                       |
+| `testServer(t)`   | `*Server` with in-memory SQLite (`:memory:`), zeroed secret.                                         |
 | `testPlayer(n)`   | `*Player` with a `bytes.Buffer`-backed `bufio.Writer` — capture writes inline.                       |
-| `makeGame(s,…)`   | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic IDs.                       |
+| `makeGame(s,…)`   | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic seat ids.                  |
+| `bareGame(s,…)`   | `*Game` with one seat per player but no board/fields — for rating math and other grid-free tests.    |
+| `addSeat(g,…)`    | Fresh player seated at an explicit position on `g` — for movement/collision setups.                  |
 | `mustPipe(t)`     | Two ends of `net.Pipe`, both closed by `t.Cleanup`.                                                  |
 | `e2eViewer(t)`    | Boots the real `Server` and serves the viewer over `httptest`. Returns the URL the browser hits.     |
 | `browser(t)`      | Headless Chrome via `chromedp`. Skips the test with `t.Skip` if Chrome isn't installed.              |
 
-The shuffle-free `makeGame` is essential: it pins player IDs to the input slice order so tests can assert on specific board positions without flake.
+The shuffle-free `makeGame` is essential: it pins seat ids to the input slice order so tests can assert on specific board positions without flake.
 
 ## What's covered
 

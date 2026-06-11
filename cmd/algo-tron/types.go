@@ -47,6 +47,18 @@ const (
 	tsSigma0 = 250.0 / 3.0
 	tsBeta   = tsSigma0 / 2.0
 	tsTau    = tsSigma0 / 100.0
+
+	// Matchmaking. See matchmaker.go for how these interact; the short
+	// version: boards hold 4–32 players, we never run more than
+	// connected/boardBudgetDivisor boards at once, and the matchmaker
+	// gathers queued players for up to matchWaitCap before starting
+	// whatever it has.
+	maxBoardSize       = 32
+	minBoardSize       = 4 // waived while fewer than minBoardSize bots are connected
+	boardBudgetDivisor = 12
+	matchWaitCap       = 20 * time.Second
+	matchForecast      = 5 * time.Second // "start now vs gather" lookahead
+	arrivalRateAlpha   = 0.05            // EMA weight for the queue arrival rate, per 1s matchmaker tick
 )
 
 type Move int
@@ -70,13 +82,14 @@ type Score struct {
 	Elo  float64 `json:"elo,omitempty"`
 }
 
+// Player is a registered bot: identity, ratings, connection. Everything tied
+// to one particular game (position, trail, aliveness) lives in a Seat — a
+// player who dies leaves their Seat behind in the old game and immediately
+// re-enters the matchmaking queue, so they can be seated in a new game while
+// the old one is still running.
 type Player struct {
-	ID           int
 	Username     string
 	PwHash       string
-	Alive        bool
-	Pos          Vec2
-	Moves        []Vec2
 	Chat         string
 	chatExpiry   time.Time
 	lastChatAt   time.Time
@@ -85,10 +98,14 @@ type Player struct {
 	TsMu         float64
 	TsSigma      float64
 
-	conn     net.Conn
-	writer   *bufio.Writer
-	move     Move
-	lastMove Move
+	conn   net.Conn
+	writer *bufio.Writer
+
+	// seat is the player's participation in the game they are currently
+	// playing; nil while idle/queued. queuedSince feeds the matchmaker's
+	// wait-time accounting (only meaningful while seat == nil).
+	seat        *Seat
+	queuedSince time.Time
 
 	// Per-connection TCP rate-limit state. Reset on each new TCP
 	// connection in handleConn; see the constant block above.
@@ -102,6 +119,28 @@ type Player struct {
 	// longer cool-off the next time.
 	reconnectPenalty   time.Duration
 	reconnectAllowedAt time.Time
+}
+
+// Seat is one player's participation in one game. The id doubles as the
+// wire-protocol player id (index into Game.seats and Game.fields). A Seat
+// outlives the player's interest in it: after death the player re-queues
+// (Player.seat goes nil) but the Seat stays in its game so the death rank
+// feeds the rating update at game end.
+type Seat struct {
+	player *Player
+	game   *Game
+	id     int
+	alive  bool
+	pos    Vec2
+	trail  []Vec2 // every cell visited in order; trail[len-1] == pos
+
+	move     Move
+	lastMove Move
+
+	// UnixMilli of the ScoreHistory entry written when this seat won/lost,
+	// so endLocked can patch the post-game elo onto exactly that entry —
+	// the player may have entries from other games by then.
+	scoreTime int64
 }
 
 type ServerInfo struct {
@@ -133,15 +172,21 @@ type ViewState struct {
 
 // — Viewer WebSocket protocol ————————————————————————————————————————————
 //
-// Five JSON message types over /ws. The server builds them in view.go and
-// view.go's broadcast* helpers fan them out; viewer/gameState.js consumes
-// them.
+// JSON messages over /ws. The server builds them in view.go and view.go's
+// broadcast* helpers fan them out; viewer/gameState.js consumes them.
 //
-//	init — full snapshot, sent once on connect.
-//	game — new game starting: id, dimensions, spawns.
-//	tick — per-tick delta: positions, deaths, chats.
-//	end  — game over: refreshed scoreboard + chart.
-//	misc — lifecycle event identified by `content`; currently only "shutdown".
+// Several boards can run at once. Every viewer gets the lightweight global
+// messages (boards, end, misc); the full game snapshot and per-tick stream
+// go only to viewers subscribed to that board. The client subscribes by
+// sending {"watch":"<gameId>"} and the server answers with a "game"
+// snapshot followed by that board's ticks.
+//
+//	init   — full snapshot, sent once on connect; auto-subscribes the first board.
+//	boards — broadcast to all viewers whenever a board starts or ends.
+//	game   — full snapshot of one board, sent on subscribe.
+//	tick   — per-tick delta for the subscribed board: positions, deaths, chats.
+//	end    — a board finished: refreshed scoreboard + chart, broadcast to all.
+//	misc   — lifecycle event identified by `content`; currently only "shutdown".
 
 type initMsg struct {
 	Type        string            `json:"type"` // "init"
@@ -150,7 +195,20 @@ type initMsg struct {
 	Scoreboard  []ScoreboardEntry `json:"scoreboard"`
 	ChartData   []map[string]any  `json:"chartData"`
 	LastWinners []string          `json:"lastWinners"`
-	Game        *gameMsg          `json:"game,omitempty"`
+	Boards      []boardMsg        `json:"boards"`
+	Game        *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
+}
+
+// boardMsg is one entry in the board list shown as tabs in the viewer.
+type boardMsg struct {
+	ID      string `json:"id"`
+	Players int    `json:"players"`
+	Alive   int    `json:"alive"`
+}
+
+type boardsMsg struct {
+	Type   string     `json:"type"` // "boards"
+	Boards []boardMsg `json:"boards"`
 }
 
 type gameMsg struct {
@@ -172,6 +230,7 @@ type playerMsg struct {
 
 type tickMsg struct {
 	Type      string         `json:"type"` // "tick"
+	GameID    string         `json:"gameId"`
 	Positions [][3]int       `json:"positions"`
 	Deaths    []int          `json:"deaths,omitempty"`
 	Chats     map[int]string `json:"chats,omitempty"`
@@ -179,6 +238,7 @@ type tickMsg struct {
 
 type endMsg struct {
 	Type        string            `json:"type"` // "end"
+	GameID      string            `json:"gameId"`
 	Scoreboard  []ScoreboardEntry `json:"scoreboard"`
 	ChartData   []map[string]any  `json:"chartData"`
 	LastWinners []string          `json:"lastWinners"`
@@ -188,14 +248,19 @@ type Server struct {
 	mu          sync.Mutex
 	players     map[string]*Player
 	ipCount     map[string]int
-	game        *Game
+	games       []*Game
 	viewState   ViewState
 	viewClients map[*websocket.Conn]*viewerSink
+
+	// Matchmaker state: players entering the queue since the last
+	// matchmaker tick, and the EMA arrival rate (players/sec) derived
+	// from it. See matchmaker.go.
+	mmArrivals int
+	mmRate     float64
 
 	secret      []byte
 	db          *sql.DB
 	scheduleURL string
-	tickNs      atomic.Int64 // current tick interval in nanoseconds
 	tickDurNs   atomic.Int64 // last tick build+broadcast duration, for stats log
 	fanoutDurNs atomic.Int64 // last viewer fanout duration, for stats log
 
@@ -210,19 +275,23 @@ type Server struct {
 // drained by a dedicated writer goroutine and never closed (would race with
 // broadcastViewLocked sends); done is closed by viewWS / broadcastViewLocked
 // when the viewer disconnects or falls too far behind, so the writer exits.
+// gameID is the board this viewer is subscribed to (guarded by Server.mu);
+// only that board's tick stream is sent to them.
 type viewerSink struct {
-	ch   chan []byte
-	done chan struct{}
+	ch     chan []byte
+	done   chan struct{}
+	gameID string
 }
 
 type Game struct {
 	server    *Server
 	id        string
-	players   []*Player
+	seats     []*Seat
 	width     int
 	height    int
 	fields    [][]int
 	startTime time.Time
 	tick      int
-	deathTick map[*Player]int
+	deathTick map[*Seat]int
+	tickNs    atomic.Int64 // current tick interval in nanoseconds
 }

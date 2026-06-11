@@ -6,57 +6,48 @@ import (
 	"time"
 )
 
-func TestSpawn(t *testing.T) {
+func TestNewSeat(t *testing.T) {
 	p, _ := testPlayer("alice")
-	p.Alive = false
-	p.Chat = "old"
-	p.move = MoveLeft
-	p.lastMove = MoveRight
-	p.Moves = []Vec2{{1, 1}, {2, 2}}
+	g := &Game{deathTick: map[*Seat]int{}}
 
-	p.spawn(3, 5, 7)
+	st := newSeat(g, p, 3, 5, 7)
 
-	if p.ID != 3 {
-		t.Errorf("ID = %d, want 3", p.ID)
+	if st.id != 3 {
+		t.Errorf("id = %d, want 3", st.id)
 	}
-	if !p.Alive {
-		t.Error("should be alive after spawn")
+	if !st.alive {
+		t.Error("should be alive after newSeat")
 	}
-	if p.Chat != "" {
-		t.Errorf("Chat = %q, want empty", p.Chat)
+	if st.move != MoveNone || st.lastMove != MoveNone {
+		t.Error("moves should start as None")
 	}
-	if p.move != MoveNone || p.lastMove != MoveNone {
-		t.Error("moves should be reset to None")
+	if st.pos != (Vec2{5, 7}) {
+		t.Errorf("pos = %v, want {5,7}", st.pos)
 	}
-	if p.Pos != (Vec2{5, 7}) {
-		t.Errorf("Pos = %v, want {5,7}", p.Pos)
-	}
-	if len(p.Moves) != 1 || p.Moves[0] != (Vec2{5, 7}) {
-		t.Errorf("Moves = %v, want [{5,7}]", p.Moves)
+	if len(st.trail) != 1 || st.trail[0] != (Vec2{5, 7}) {
+		t.Errorf("trail = %v, want [{5,7}]", st.trail)
 	}
 }
 
 func TestSetPos(t *testing.T) {
-	p, _ := testPlayer("alice")
-	p.Moves = nil
+	st := &Seat{}
 
-	p.setPos(3, 7)
-	p.setPos(4, 7)
+	st.setPos(3, 7)
+	st.setPos(4, 7)
 
-	if p.Pos != (Vec2{4, 7}) {
-		t.Errorf("Pos = %v, want {4,7}", p.Pos)
+	if st.pos != (Vec2{4, 7}) {
+		t.Errorf("pos = %v, want {4,7}", st.pos)
 	}
-	if len(p.Moves) != 2 || p.Moves[0] != (Vec2{3, 7}) || p.Moves[1] != (Vec2{4, 7}) {
-		t.Errorf("Moves = %v, want [{3,7},{4,7}]", p.Moves)
+	if len(st.trail) != 2 || st.trail[0] != (Vec2{3, 7}) || st.trail[1] != (Vec2{4, 7}) {
+		t.Errorf("trail = %v, want [{3,7},{4,7}]", st.trail)
 	}
 }
 
 func TestReadMoveLocked(t *testing.T) {
 	t.Run("no move and no lastMove defaults to MoveUp", func(t *testing.T) {
 		p, buf := testPlayer("a")
-		p.move = MoveNone
-		p.lastMove = MoveNone
-		got := p.readMoveLocked()
+		st := &Seat{player: p, move: MoveNone, lastMove: MoveNone}
+		got := st.readMoveLocked()
 		if got != MoveUp {
 			t.Errorf("got %v, want MoveUp", got)
 		}
@@ -67,25 +58,23 @@ func TestReadMoveLocked(t *testing.T) {
 
 	t.Run("no pending move falls back to lastMove", func(t *testing.T) {
 		p, _ := testPlayer("a")
-		p.move = MoveNone
-		p.lastMove = MoveLeft
-		if got := p.readMoveLocked(); got != MoveLeft {
+		st := &Seat{player: p, move: MoveNone, lastMove: MoveLeft}
+		if got := st.readMoveLocked(); got != MoveLeft {
 			t.Errorf("got %v, want MoveLeft", got)
 		}
 	})
 
 	t.Run("pending move is consumed and stored as lastMove", func(t *testing.T) {
 		p, _ := testPlayer("a")
-		p.move = MoveRight
-		p.lastMove = MoveNone
-		got := p.readMoveLocked()
+		st := &Seat{player: p, move: MoveRight, lastMove: MoveNone}
+		got := st.readMoveLocked()
 		if got != MoveRight {
 			t.Errorf("got %v, want MoveRight", got)
 		}
-		if p.move != MoveNone {
+		if st.move != MoveNone {
 			t.Error("move should be cleared after read")
 		}
-		if p.lastMove != MoveRight {
+		if st.lastMove != MoveRight {
 			t.Error("lastMove should be updated to the consumed move")
 		}
 	})
@@ -147,11 +136,15 @@ func TestWinLocked(t *testing.T) {
 	p, buf := testPlayer("alice")
 	now := time.Now().UnixMilli()
 	p.ScoreHistory = []Score{{Type: 1, Time: now}} // 1 existing win
+	st := &Seat{player: p}
 
-	p.winLocked()
+	st.winLocked()
 
 	if len(p.ScoreHistory) != 2 || p.ScoreHistory[1].Type != 1 {
 		t.Error("winLocked should append a win score")
+	}
+	if st.scoreTime != p.ScoreHistory[1].Time {
+		t.Error("seat should remember the timestamp of its score entry")
 	}
 	if !strings.HasPrefix(buf.String(), "win|") {
 		t.Errorf("expected 'win|...' message, got %q", buf.String())
@@ -160,14 +153,34 @@ func TestWinLocked(t *testing.T) {
 
 func TestLoseLocked(t *testing.T) {
 	p, buf := testPlayer("alice")
+	st := &Seat{player: p}
 
-	p.loseLocked()
+	st.loseLocked()
 
 	if len(p.ScoreHistory) != 1 || p.ScoreHistory[0].Type != 0 {
 		t.Error("loseLocked should append a loss score")
 	}
 	if !strings.HasPrefix(buf.String(), "lose|") {
 		t.Errorf("expected 'lose|...' message, got %q", buf.String())
+	}
+}
+
+// patchScoreEloLocked must update the entry this seat recorded — not a newer
+// one the player picked up in another game afterwards.
+func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
+	p, _ := testPlayer("alice")
+	st := &Seat{player: p}
+	st.loseLocked() // entry 0, recorded by this seat
+	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: st.scoreTime + 5})
+
+	p.Elo = 990
+	st.patchScoreEloLocked()
+
+	if p.ScoreHistory[0].Elo != 990 {
+		t.Errorf("entry 0 Elo = %v, want 990", p.ScoreHistory[0].Elo)
+	}
+	if p.ScoreHistory[1].Elo != 0 {
+		t.Errorf("entry 1 Elo = %v, must stay untouched", p.ScoreHistory[1].Elo)
 	}
 }
 

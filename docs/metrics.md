@@ -34,6 +34,7 @@ Bucket set for the tick-interval offset: `-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1
 | `tron_fanout_budget_used_ratio`     | Viewer fanout time ÷ tick interval.                                                                                      |
 | `tron_tick_interval_offset_ratio`   | `(actual − expected) / expected` for inter-tick gaps. `0` = on time, `+0.05` = 5% late, `−0.05` = 5% early. Surfaces scheduler/`time.Ticker` jitter independent of tick-build cost. |
 | `tron_game_duration_seconds`        | Wall-clock duration of completed games. Exponential buckets, 1s base, factor 2, 10 buckets.                              |
+| `tron_queue_wait_seconds`           | Time players spent in the matchmaking queue before being seated. Exponential buckets, 0.5s base, factor 2, 8 buckets.    |
 
 Why a *ratio* and not absolute time: the tick interval shrinks over the life of a game (`baseTickrate + elapsed/10` tps). Mixing absolute durations across a single histogram would conflate samples taken under different deadlines. The ratio is comparable across the whole game.
 
@@ -45,9 +46,10 @@ These are `GaugeFunc`s that take `s.mu` briefly when Prometheus scrapes, so they
 |---------------------------|----------------------------------------------------------|
 | `tron_players_connected`  | Bots with a live TCP connection.                         |
 | `tron_viewers_connected`  | Active viewer WS connections.                            |
-| `tron_game_active`        | `1` if a game is currently running, `0` otherwise.        |
-| `tron_game_players`       | Players in the running game (`0` if no game).             |
-| `tron_tick_rate`          | Current ticks per second (derived from `tickNs`).         |
+| `tron_game_active`        | Number of boards currently running.                       |
+| `tron_game_players`       | Players seated across all running boards.                 |
+| `tron_players_queued`     | Connected bots waiting in the matchmaking queue.          |
+| `tron_tick_rate`          | Ticks per second of the fastest running board.            |
 
 ## Alerting suggestions
 

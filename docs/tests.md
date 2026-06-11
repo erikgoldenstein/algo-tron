@@ -33,10 +33,11 @@ Run when the matching area changes; the full suite above is still the gate.
 
 | Area changed                                           | Command                                                 |
 |--------------------------------------------------------|---------------------------------------------------------|
-| `game.go`, collisions, movement, ELO, TrueSkill        | `go test ./cmd/algo-tron -run 'TestUpdateElo|TestUpdateTrueSkill|TestMovePlayers|TestApplyCollisions|TestRemoveFromFields|TestNewGame|TestShouldEndLocked|TestKillDisconnectedLocked|TestProcessDeadLocked|TestAliveLocked|TestClearExpiredChats' -v` |
-| `tcp.go`, join validation, chat, proxy protocol        | `go test ./cmd/algo-tron -run 'TestReadProxyProtocolIP|TestValidateJoin|TestHandleMoveLocked|TestHandleChatLocked|TestConnectedPlayersLocked' -v` |
-| `player.go`, spawn, send, disconnect, score trimming   | `go test ./cmd/algo-tron -run 'TestSpawn|TestSetPos|TestReadMoveLocked|TestWinsLoses|TestTrimScores|TestSendLocked|TestWinLocked|TestLoseLocked|TestDisconnect' -v` |
-| `store.go`, SQLite persistence, password hashing       | `go test ./cmd/algo-tron -run 'TestHashPassword|TestLoadOrCreateSecret|TestLoadStore|TestLoadSetsDefaultElo|TestStoreIsIdempotent' -v` |
+| `game.go`, collisions, movement, ELO, TrueSkill        | `go test ./cmd/algo-tron -run 'TestUpdateElo|TestUpdateTrueSkill|TestMovePlayers|TestApplyCollisions|TestRemoveFromFields|TestNewGame|TestShouldEndLocked|TestKillDisconnectedLocked|TestMarkDead|TestProcessDeadLocked|TestAliveLocked|TestClearExpiredChats|TestEndLocked' -v` |
+| `matchmaker.go`, queue, banding, board budget          | `go test ./cmd/algo-tron -run 'TestMatchmake|TestStartBoards' -v` |
+| `tcp.go`, join validation, chat, proxy protocol        | `go test ./cmd/algo-tron -run 'TestReadProxyProtocolIP|TestValidateJoin|TestHandleMoveLocked|TestHandleChatLocked|TestQueuedPlayersLocked' -v` |
+| `player.go`, seats, send, disconnect, score trimming   | `go test ./cmd/algo-tron -run 'TestNewSeat|TestSetPos|TestReadMoveLocked|TestWinsLoses|TestTrimScores|TestSendLocked|TestWinLocked|TestLoseLocked|TestPatchScoreElo|TestDisconnect' -v` |
+| `store.go`, SQLite persistence, password hashing       | `go test ./cmd/algo-tron -run 'TestHashPassword|TestLoadOrCreateSecret|TestLoadStore|TestLoadSetsDefaultElo|TestLoadInitializesTrueSkill|TestStoreIsIdempotent' -v` |
 | `view.go`, scoreboard, chart data                      | `go test ./cmd/algo-tron -run 'TestUpdateScoreboard|TestUpdateChartData' -v` |
 | `util.go`, host/port parsing, IDs                      | `go test ./cmd/algo-tron -run 'TestIsLocalhost|TestHostOnly|TestPortOnly|TestRandID' -v` |
 | Viewer UI (HTML/JS/CSS in `cmd/algo-tron/view/`)       | `go test ./cmd/algo-tron -run TestE2E -v` (requires Chrome) |

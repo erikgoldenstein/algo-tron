@@ -84,7 +84,7 @@ func run() error {
 		cancelDrain()
 	}()
 
-	go s.gameLoop()
+	go s.matchmakerLoop()
 	go s.statsLoop()
 
 	g, gctx := errgroup.WithContext(drainCtx)

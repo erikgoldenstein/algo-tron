@@ -34,8 +34,10 @@ import (
 // Setup happens once per size, outside b.Run — the framework re-invokes the
 // inner lambda when it scales b.N, and we don't want to pay TCP-handshake
 // cost on every scaling iteration. Clients stay connected across game-overs;
-// bots survive ~4N-1 ticks per game, then the server starts a new one ~1s
-// later (gameLoop tick interval), reusing the same already-connected bots.
+// when a game ends the matchmaker re-seats the bots within a few seconds,
+// reusing the same already-connected bots. At sizes above maxBoardSize the
+// matchmaker splits clients across several boards, so game_tps aggregates
+// ticks from all of them.
 
 func BenchmarkE2E(b *testing.B) {
 	for _, n := range []int{16, 64, 256} {
@@ -144,7 +146,6 @@ func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func(), gameSr
 		db:           db,
 		tickOffsetCh: make(chan float64, 65536),
 	}
-	s.tickNs.Store(int64(time.Second))
 
 	tcpLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -156,7 +157,7 @@ func startE2EServer(b *testing.B) (tcpAddr, httpAddr string, stop func(), gameSr
 		b.Fatalf("listen http: %v", err)
 	}
 
-	go s.gameLoop()
+	go s.matchmakerLoop()
 	go func() {
 		for {
 			c, err := tcpLn.Accept()

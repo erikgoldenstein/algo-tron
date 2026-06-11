@@ -235,6 +235,9 @@ canvas#game { display: block; }
 
 .tabbar .tab { color: var(--text-muted); }
 .tabbar .tab.active { color: var(--text); }
+#tabs { display: flex; gap: 14px; }
+#tabs .tab[data-id] { cursor: pointer; }
+#tabs .tab[data-id]:hover { color: var(--text); }
 .tabbar .help {
   margin-left: auto;
   background: transparent;

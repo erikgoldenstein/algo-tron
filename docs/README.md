@@ -5,6 +5,7 @@
 - [Viewer protocol](viewer-protocol.md) — WebSocket JSON protocol spoken to the viewer UI.
 - [Error codes](error-codes.md) — every `ERROR_*` / `WARNING_*` the server emits and when.
 - [Game mechanics](game-mechanics.md) — tick-rate ramp, board sizing, collisions, ELO, TrueSkill.
+- [Matchmaking](matchmaking.md) — queue, multi-board scheduling, skill banding.
 - [Persistence](persistence.md) — `-data-dir` layout, SQLite schema, secret.
 - [Metrics](metrics.md) — Prometheus metric inventory.
 - [Testing](testing.md) — unit tests, e2e tests, benchmarks.

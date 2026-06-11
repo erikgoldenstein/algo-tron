@@ -185,6 +185,24 @@ func TestLoadSetsDefaultElo(t *testing.T) {
 	}
 }
 
+func TestLoadInitializesTrueSkill(t *testing.T) {
+	s := testDB(t)
+	// Rows from before TrueSkill tracking have ts_sigma = 0 — they must get
+	// the (mu0, sigma0) defaults so matchmaking can sort by TsMu right away.
+	_, err := s.db.Exec(`INSERT INTO players (username, pw_hash, elo, score_history) VALUES ('bob', 'hash', 1000, '[]')`)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	s.load()
+	p := s.players["bob"]
+	if p == nil {
+		t.Fatal("bob not found")
+	}
+	if p.TsMu != tsMu0 || p.TsSigma != tsSigma0 {
+		t.Errorf("TsMu/TsSigma = %v/%v, want %v/%v", p.TsMu, p.TsSigma, tsMu0, tsSigma0)
+	}
+}
+
 func TestStoreIsIdempotent(t *testing.T) {
 	s := testDB(t)
 	now := time.Now().UnixMilli()

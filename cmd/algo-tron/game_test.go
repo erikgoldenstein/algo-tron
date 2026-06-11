@@ -12,9 +12,9 @@ import (
 func TestUpdateEloTwoPlayers(t *testing.T) {
 	winner := &Player{Username: "winner", Elo: 1000}
 	loser := &Player{Username: "loser", Elo: 1000}
-	g := &Game{players: []*Player{winner, loser}}
+	g := bareGame(nil, winner, loser)
 
-	g.updateEloLocked([]*Player{winner})
+	g.updateEloLocked([]*Seat{winner.seat})
 
 	// With K=16 and equal pre-game elo, the symmetric expected score is 0.5;
 	// the pair result is 1 for the winner and 0 for the loser, so the delta
@@ -30,7 +30,7 @@ func TestUpdateEloTwoPlayers(t *testing.T) {
 func TestUpdateEloNoWinner(t *testing.T) {
 	p1 := &Player{Username: "p1", Elo: 1000}
 	p2 := &Player{Username: "p2", Elo: 1000}
-	g := &Game{players: []*Player{p1, p2}}
+	g := bareGame(nil, p1, p2)
 
 	g.updateEloLocked(nil)
 
@@ -43,8 +43,8 @@ func TestUpdateEloSymmetric(t *testing.T) {
 	// ELO deltas must be zero-sum
 	a := &Player{Username: "a", Elo: 1000}
 	b := &Player{Username: "b", Elo: 1200}
-	g := &Game{players: []*Player{a, b}}
-	g.updateEloLocked([]*Player{a})
+	g := bareGame(nil, a, b)
+	g.updateEloLocked([]*Seat{a.seat})
 
 	if a.Elo+b.Elo != 2200 {
 		t.Errorf("ELO not zero-sum: a=%v b=%v sum=%v", a.Elo, b.Elo, a.Elo+b.Elo)
@@ -59,11 +59,9 @@ func TestUpdateEloRanksLosersByDeathTick(t *testing.T) {
 	late := &Player{Username: "late", Elo: 1000}
 	early1 := &Player{Username: "e1", Elo: 1000}
 	early2 := &Player{Username: "e2", Elo: 1000}
-	g := &Game{
-		players:   []*Player{winner, late, early1, early2},
-		deathTick: map[*Player]int{late: 5, early1: 1, early2: 1},
-	}
-	g.updateEloLocked([]*Player{winner})
+	g := bareGame(nil, winner, late, early1, early2)
+	g.deathTick = map[*Seat]int{late.seat: 5, early1.seat: 1, early2.seat: 1}
+	g.updateEloLocked([]*Seat{winner.seat})
 
 	sum := winner.Elo + late.Elo + early1.Elo + early2.Elo
 	if math.Abs(sum-4000) > 1e-9 {
@@ -82,24 +80,11 @@ func TestUpdateEloRanksLosersByDeathTick(t *testing.T) {
 
 // — TrueSkill ——————————————————————————————————————————————————————
 
-func TestUpdateTrueSkillInitializesNewPlayers(t *testing.T) {
-	// Players with zero TsSigma get the (mu0, sigma0) default before any
-	// pairwise update is applied.
-	a := &Player{Username: "a"}
-	b := &Player{Username: "b"}
-	g := &Game{players: []*Player{a, b}}
-	g.updateTrueSkillLocked([]*Player{a})
-
-	if a.TsSigma == 0 || b.TsSigma == 0 {
-		t.Fatalf("TsSigma must be initialized: a=%v b=%v", a.TsSigma, b.TsSigma)
-	}
-}
-
 func TestUpdateTrueSkillWinnerGainsLoserLoses(t *testing.T) {
 	winner := &Player{Username: "w", TsMu: tsMu0, TsSigma: tsSigma0}
 	loser := &Player{Username: "l", TsMu: tsMu0, TsSigma: tsSigma0}
-	g := &Game{players: []*Player{winner, loser}}
-	g.updateTrueSkillLocked([]*Player{winner})
+	g := bareGame(nil, winner, loser)
+	g.updateTrueSkillLocked([]*Seat{winner.seat})
 
 	if winner.TsMu <= tsMu0 {
 		t.Errorf("winner TsMu = %v, should rise above %v", winner.TsMu, tsMu0)
@@ -117,11 +102,9 @@ func TestUpdateTrueSkillRanksLosersByDeathTick(t *testing.T) {
 	winner := &Player{Username: "w", TsMu: tsMu0, TsSigma: tsSigma0}
 	late := &Player{Username: "late", TsMu: tsMu0, TsSigma: tsSigma0}
 	early := &Player{Username: "early", TsMu: tsMu0, TsSigma: tsSigma0}
-	g := &Game{
-		players:   []*Player{winner, late, early},
-		deathTick: map[*Player]int{late: 5, early: 1},
-	}
-	g.updateTrueSkillLocked([]*Player{winner})
+	g := bareGame(nil, winner, late, early)
+	g.deathTick = map[*Seat]int{late.seat: 5, early.seat: 1}
+	g.updateTrueSkillLocked([]*Seat{winner.seat})
 
 	if late.TsMu <= early.TsMu {
 		t.Errorf("late-dying loser (%v) should outrank early-dying (%v)", late.TsMu, early.TsMu)
@@ -146,12 +129,15 @@ func TestNewGame(t *testing.T) {
 	if g.width != wantDim || g.height != wantDim {
 		t.Errorf("dimensions = %dx%d, want %dx%d", g.width, g.height, wantDim, wantDim)
 	}
-	for _, p := range g.players {
-		if !p.Alive {
-			t.Errorf("player %s should be alive after newGame", p.Username)
+	for _, st := range g.seats {
+		if !st.alive {
+			t.Errorf("player %s should be alive after newGame", st.player.Username)
 		}
-		if g.fields[p.Pos.X][p.Pos.Y] != p.ID {
-			t.Errorf("field at %v not set to player %s ID %d", p.Pos, p.Username, p.ID)
+		if st.player.seat != st {
+			t.Errorf("player %s should point at its seat", st.player.Username)
+		}
+		if g.fields[st.pos.X][st.pos.Y] != st.id {
+			t.Errorf("field at %v not set to player %s id %d", st.pos, st.player.Username, st.id)
 		}
 	}
 }
@@ -165,21 +151,21 @@ func TestRemoveFromFieldsDoesNotClearOtherPlayer(t *testing.T) {
 	a, _ := testPlayer("a")
 	b, _ := testPlayer("b")
 	g := makeGame(s, []*Player{a, b})
-	// After makeGame: a.ID=0 at (0,0), b.ID=1 at (2,2)
+	// After makeGame: a's seat id 0 at (0,0), b's seat id 1 at (2,2)
 
 	// First call — simulates killDisconnectedLocked
-	g.removeFromFields(a)
+	g.removeFromFields(a.seat)
 	if g.fields[0][0] != -1 {
 		t.Fatal("a's cell should be -1 after first removeFromFields")
 	}
 
 	// Another player claims the now-empty cell
-	g.fields[0][0] = b.ID
+	g.fields[0][0] = b.seat.id
 
-	// Second call — simulates loseDeadLocked; must not erase b's claim
-	g.removeFromFields(a)
-	if g.fields[0][0] != b.ID {
-		t.Errorf("b's claim at (0,0) was erased: fields[0][0]=%d, want %d", g.fields[0][0], b.ID)
+	// Second call — simulates processDeadLocked; must not erase b's claim
+	g.removeFromFields(a.seat)
+	if g.fields[0][0] != b.seat.id {
+		t.Errorf("b's claim at (0,0) was erased: fields[0][0]=%d, want %d", g.fields[0][0], b.seat.id)
 	}
 }
 
@@ -188,7 +174,7 @@ func TestRemoveFromFieldsClearsOwnCells(t *testing.T) {
 	a, _ := testPlayer("a")
 	g := makeGame(s, []*Player{a})
 
-	g.removeFromFields(a)
+	g.removeFromFields(a.seat)
 
 	if g.fields[0][0] != -1 {
 		t.Errorf("fields[0][0] = %d after removeFromFields, want -1", g.fields[0][0])
@@ -214,13 +200,12 @@ func TestMovePlayersWrapping(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			p := &Player{Username: "p", Alive: true, Pos: Vec2{c.sx, c.sy}}
-			p.move = c.move
-			p.Moves = []Vec2{{c.sx, c.sy}}
-			g := &Game{server: s, players: []*Player{p}, width: c.w, height: c.h}
+			g := &Game{server: s, width: c.w, height: c.h, deathTick: map[*Seat]int{}}
+			st := addSeat(g, "p", c.sx, c.sy)
+			st.move = c.move
 			g.movePlayersLocked()
-			if p.Pos.X != c.wx || p.Pos.Y != c.wy {
-				t.Errorf("pos = {%d,%d}, want {%d,%d}", p.Pos.X, p.Pos.Y, c.wx, c.wy)
+			if st.pos.X != c.wx || st.pos.Y != c.wy {
+				t.Errorf("pos = {%d,%d}, want {%d,%d}", st.pos.X, st.pos.Y, c.wx, c.wy)
 			}
 		})
 	}
@@ -228,13 +213,13 @@ func TestMovePlayersWrapping(t *testing.T) {
 
 func TestMovePlayersSkipsDead(t *testing.T) {
 	s := testServer(t)
-	p := &Player{Username: "p", Alive: false, Pos: Vec2{0, 0}}
-	p.move = MoveRight
-	p.Moves = []Vec2{{0, 0}}
-	g := &Game{server: s, players: []*Player{p}, width: 4, height: 4}
+	g := &Game{server: s, width: 4, height: 4, deathTick: map[*Seat]int{}}
+	st := addSeat(g, "p", 0, 0)
+	st.alive = false
+	st.move = MoveRight
 	g.movePlayersLocked()
-	if p.Pos != (Vec2{0, 0}) {
-		t.Errorf("dead player moved to %v, should stay at {0,0}", p.Pos)
+	if st.pos != (Vec2{0, 0}) {
+		t.Errorf("dead player moved to %v, should stay at {0,0}", st.pos)
 	}
 }
 
@@ -242,17 +227,17 @@ func TestMovePlayersSkipsDead(t *testing.T) {
 
 func TestApplyCollisionsClaimsEmptyCell(t *testing.T) {
 	s := testServer(t)
-	a := &Player{Username: "a", Alive: true, ID: 0, Pos: Vec2{1, 0}}
-	g := &Game{server: s, players: []*Player{a}, width: 4, height: 4, fields: makeFields(4, 4)}
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 1, 0)
 
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.applyCollisionsLocked(dead)
 
 	if dead[a] {
 		t.Error("a should not die moving into empty cell")
 	}
-	if g.fields[1][0] != a.ID {
-		t.Errorf("fields[1][0] = %d, want %d (a's ID)", g.fields[1][0], a.ID)
+	if g.fields[1][0] != a.id {
+		t.Errorf("fields[1][0] = %d, want %d (a's id)", g.fields[1][0], a.id)
 	}
 }
 
@@ -261,12 +246,12 @@ func TestApplyCollisionsTrailHit(t *testing.T) {
 	// a moves into (2,0) which is occupied by b's OLD trail.
 	// b has moved to (2,2) this tick — applyCollisions runs before that cell
 	// is claimed, so g.fields[2][2] is still -1.
-	a := &Player{Username: "a", Alive: true, ID: 0, Pos: Vec2{2, 0}}
-	b := &Player{Username: "b", Alive: true, ID: 1, Pos: Vec2{2, 2}}
-	g := &Game{server: s, players: []*Player{a, b}, width: 4, height: 4, fields: makeFields(4, 4)}
-	g.fields[2][0] = b.ID // b's old trail at (2,0); (2,2) is -1 (not yet claimed)
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 2, 0)
+	b := addSeat(g, "b", 2, 2)
+	g.fields[2][0] = b.id // b's old trail at (2,0); (2,2) is -1 (not yet claimed)
 
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.applyCollisionsLocked(dead)
 
 	if !dead[a] {
@@ -280,11 +265,11 @@ func TestApplyCollisionsTrailHit(t *testing.T) {
 func TestApplyCollisionsHeadOn(t *testing.T) {
 	s := testServer(t)
 	// both players move to the same empty cell → both die
-	a := &Player{Username: "a", Alive: true, ID: 0, Pos: Vec2{1, 0}}
-	b := &Player{Username: "b", Alive: true, ID: 1, Pos: Vec2{1, 0}}
-	g := &Game{server: s, players: []*Player{a, b}, width: 4, height: 4, fields: makeFields(4, 4)}
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 1, 0)
+	b := addSeat(g, "b", 1, 0)
 
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.applyCollisionsLocked(dead)
 
 	if !dead[a] || !dead[b] {
@@ -295,15 +280,58 @@ func TestApplyCollisionsHeadOn(t *testing.T) {
 func TestApplyCollisionsSelfTrail(t *testing.T) {
 	s := testServer(t)
 	// a moves into a cell already owned by its own trail
-	a := &Player{Username: "a", Alive: true, ID: 0, Pos: Vec2{0, 0}}
-	g := &Game{server: s, players: []*Player{a}, width: 4, height: 4, fields: makeFields(4, 4)}
-	g.fields[0][0] = a.ID // a's own trail
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 0, 0)
+	g.fields[0][0] = a.id // a's own trail
 
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.applyCollisionsLocked(dead)
 
 	if !dead[a] {
 		t.Error("a should die running into its own trail")
+	}
+}
+
+// — markDeadLocked ————————————————————————————————————————————————————
+
+func TestMarkDeadReleasesPlayerToQueue(t *testing.T) {
+	s := testServer(t)
+	a, _ := testPlayer("a")
+	b, _ := testPlayer("b")
+	g := makeGame(s, []*Player{a, b})
+	_, side := mustPipe(t)
+	a.conn = side
+
+	dead := map[*Seat]bool{}
+	g.markDeadLocked(g.seats[0], dead)
+
+	if a.seat != nil {
+		t.Error("dead player should be detached from its seat")
+	}
+	if a.queuedSince.IsZero() {
+		t.Error("dead connected player should be queued (queuedSince set)")
+	}
+	if s.mmArrivals != 1 {
+		t.Errorf("mmArrivals = %d, want 1", s.mmArrivals)
+	}
+	if g.seats[0].alive {
+		t.Error("seat must be marked dead")
+	}
+}
+
+func TestMarkDeadDisconnectedPlayerNotQueued(t *testing.T) {
+	s := testServer(t)
+	a, _ := testPlayer("a")
+	g := makeGame(s, []*Player{a}) // a.conn == nil
+
+	dead := map[*Seat]bool{}
+	g.markDeadLocked(g.seats[0], dead)
+
+	if a.seat != nil {
+		t.Error("dead player should be detached from its seat")
+	}
+	if s.mmArrivals != 0 {
+		t.Error("disconnected player must not count as a queue arrival")
 	}
 }
 
@@ -319,16 +347,16 @@ func TestKillDisconnectedLocked(t *testing.T) {
 	_, serverSide := mustPipe(t)
 	b.conn = serverSide
 
-	dead := map[*Player]bool{}
+	dead := map[*Seat]bool{}
 	g.killDisconnectedLocked(dead)
 
-	if !dead[a] {
+	if !dead[g.seats[0]] {
 		t.Error("disconnected player a should be in dead map")
 	}
-	if dead[b] {
+	if dead[g.seats[1]] {
 		t.Error("connected player b should not be in dead map")
 	}
-	if a.Alive {
+	if g.seats[0].alive {
 		t.Error("disconnected player a should be marked not alive")
 	}
 	if g.fields[0][0] != -1 {
@@ -345,14 +373,14 @@ func TestProcessDeadLocked(t *testing.T) {
 	g := makeGame(s, []*Player{a, b})
 	s.players["a"] = a
 	s.players["b"] = b
-	b.Alive = true
-	a.Alive = false
+	aSeat := g.seats[0]
+	aSeat.alive = false
 
-	dead := map[*Player]bool{a: true}
+	dead := map[*Seat]bool{aSeat: true}
 	ids := g.processDeadLocked(dead)
 
-	if len(ids) != 1 || ids[0] != a.ID {
-		t.Errorf("ids = %v, want [%d]", ids, a.ID)
+	if len(ids) != 1 || ids[0] != aSeat.id {
+		t.Errorf("ids = %v, want [%d]", ids, aSeat.id)
 	}
 	if len(a.ScoreHistory) != 1 || a.ScoreHistory[0].Type != 0 {
 		t.Error("a should have one loss in ScoreHistory")
@@ -382,13 +410,11 @@ func TestShouldEndLocked(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			players := make([]*Player, c.total)
-			for i := range players {
-				p, _ := testPlayer(fmt.Sprintf("p%d", i))
-				p.Alive = i < c.alive
-				players[i] = p
+			g := &Game{server: s, deathTick: map[*Seat]int{}}
+			for i := 0; i < c.total; i++ {
+				st := addSeat(g, fmt.Sprintf("p%d", i), 0, 0)
+				st.alive = i < c.alive
 			}
-			g := &Game{server: s, players: players}
 			if got := g.shouldEndLocked(); got != c.wantEnd {
 				t.Errorf("shouldEndLocked() = %v, want %v", got, c.wantEnd)
 			}
@@ -400,22 +426,20 @@ func TestShouldEndLocked(t *testing.T) {
 
 func TestAliveLocked(t *testing.T) {
 	s := testServer(t)
-	a, _ := testPlayer("a")
-	b, _ := testPlayer("b")
-	c, _ := testPlayer("c")
-	a.Alive = true
-	b.Alive = false
-	c.Alive = true
-	g := &Game{server: s, players: []*Player{a, b, c}}
+	g := &Game{server: s, deathTick: map[*Seat]int{}}
+	addSeat(g, "a", 0, 0)
+	b := addSeat(g, "b", 0, 0)
+	addSeat(g, "c", 0, 0)
+	b.alive = false
 
 	alive := g.aliveLocked()
 
 	if len(alive) != 2 {
 		t.Fatalf("len(alive) = %d, want 2", len(alive))
 	}
-	for _, p := range alive {
-		if !p.Alive {
-			t.Errorf("dead player %s found in alive list", p.Username)
+	for _, st := range alive {
+		if !st.alive {
+			t.Errorf("dead player %s found in alive list", st.player.Username)
 		}
 	}
 }
@@ -451,4 +475,47 @@ func TestClearExpiredChatsLockedIgnoresEmptyChat(t *testing.T) {
 
 	// should not panic or error
 	s.clearExpiredChatsLocked()
+}
+
+// — endLocked ————————————————————————————————————————————————————————
+
+// A full game end: ratings update, survivors win, everyone re-queues, the
+// game leaves s.games, and the death-time score entry gets the post-game elo
+// even though the loser already recorded a newer entry in another game.
+func TestEndLockedReleasesAndPatches(t *testing.T) {
+	s := testServer(t)
+	w, _ := testPlayer("w")
+	l, _ := testPlayer("l")
+	_, c1 := mustPipe(t)
+	_, c2 := mustPipe(t)
+	w.conn, l.conn = c1, c2
+	s.players["w"], s.players["l"] = w, l
+	g := makeGame(s, []*Player{w, l})
+	s.games = []*Game{g}
+
+	// l dies mid-game and immediately plays (and loses) somewhere else.
+	lSeat := g.seats[1]
+	dead := map[*Seat]bool{}
+	g.markDeadLocked(lSeat, dead)
+	g.processDeadLocked(dead)
+	eloAtDeath := l.ScoreHistory[0].Elo
+	l.ScoreHistory = append(l.ScoreHistory, Score{Type: 0, Time: time.Now().UnixMilli() + 5})
+
+	g.endLocked()
+
+	if len(s.games) != 0 {
+		t.Error("ended game should be removed from s.games")
+	}
+	if w.seat != nil {
+		t.Error("winner should be released back to the queue")
+	}
+	if len(w.ScoreHistory) != 1 || w.ScoreHistory[0].Type != 1 {
+		t.Fatalf("winner ScoreHistory = %+v, want one win", w.ScoreHistory)
+	}
+	if l.ScoreHistory[0].Elo == eloAtDeath {
+		t.Error("death-time entry should be patched with the post-game elo")
+	}
+	if l.ScoreHistory[1].Elo != 0 {
+		t.Error("the other game's entry must not be touched by the patch")
+	}
 }

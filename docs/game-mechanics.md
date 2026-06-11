@@ -4,10 +4,11 @@ All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
 
 ## Board
 
-- Width and height are both `2 * len(players)`.
+- Several boards can run in parallel; each holds 4–32 players. Who plays on which board, and when a board starts, is the matchmaker's call — see [matchmaking.md](matchmaking.md).
+- Width and height are both `2 * players on the board` (so 64×64 at the 32-player cap).
 - Coordinates wrap (toroidal): moving off any edge re-enters the opposite edge.
-- Spawn for player `i` (0-indexed after random shuffle) is `(2i, 2i)`. No two spawns collide.
-- `fields[x][y]` stores the player ID that owns the cell, or `-1` for empty. The owner's trail (`p.Moves`) is the authoritative record; `fields` is the per-cell index used by collision resolution.
+- Spawn for seat `i` (0-indexed after random shuffle) is `(2i, 2i)`. No two spawns collide.
+- `fields[x][y]` stores the seat id that owns the cell, or `-1` for empty. The owner's trail (`Seat.trail`) is the authoritative record; `fields` is the per-cell index used by collision resolution.
 
 ## Tick rate
 
@@ -16,7 +17,7 @@ All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
 | `baseTickrate`        | 1     | Ticks/second at game start.                      |
 | `tickIncreaseSeconds` | 10    | Add +1 tick/sec for every 10s of game time.      |
 
-So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in the `tickNs` atomic; bots see the current value via the per-packet throttle.
+So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in that game's `tickNs` atomic; the per-packet throttle uses the fastest interval across running boards.
 
 ## Move resolution (one tick)
 
@@ -27,7 +28,7 @@ So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interv
    - If the destination cell is empty, the player claims it.
    - If occupied by **another player at the same cell this tick** (head-on swap), both die.
    - Otherwise the moving player dies and the trail owner survives.
-5. **Process dead.** Dead players' trails are cleared from `fields` (only cells they still own — avoids erasing cells that another player has reclaimed mid-tick). Each gets `lose|<wins>|<losses>`.
+5. **Process dead.** Dead players' trails are cleared from `fields` (only cells they still own — avoids erasing cells that another player has reclaimed mid-tick). Each gets `lose|<wins>|<losses>` and immediately re-enters the matchmaking queue ([matchmaking.md](matchmaking.md)) — their dead seat stays in this game for the rating math at game end.
 6. **End check.** Game ends when:
    - Only one player ever joined and they died, **or**
    - Two or more players joined and ≤ 1 are alive.
@@ -51,7 +52,7 @@ For every pair `(p, q)` of players in the game, the pair result for `p` is `1.0`
 
 A player who outlived another loser claims a partial win against them even though both lost the game — that's the whole point of ranking by survival. Total delta across all players sums to zero (pair scores sum to `nC2`, pair expecteds sum to `nC2`).
 
-New accounts start at 1000. The post-game ELO is snapshotted onto each player's most recent `Score` entry inside `endLocked` so the viewer chart can reconstruct the trajectory (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
+New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends. The viewer chart reconstructs the trajectory from these snapshots (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
 
 `wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
 
@@ -59,8 +60,8 @@ New accounts start at 1000. The post-game ELO is snapshotted onto each player's 
 
 | Constant   | Value           | Meaning                                                                   |
 |------------|-----------------|---------------------------------------------------------------------------|
-| `tsMu0`    | $25$            | Default mean skill $\mu_0$ for a new player.                              |
-| `tsSigma0` | $25/3$          | Default skill uncertainty $\sigma_0$.                                     |
+| `tsMu0`    | $250$           | Default mean skill $\mu_0$ for a new player (paper's 25, scaled ×10).     |
+| `tsSigma0` | $250/3$         | Default skill uncertainty $\sigma_0$.                                     |
 | `tsBeta`   | $\sigma_0 / 2$  | Performance noise $\beta$ — how much per-game performance varies.         |
 | `tsTau`    | $\sigma_0 / 100$ | Dynamics drift $\tau$ added back to $\sigma^2$ each game.                |
 
@@ -86,9 +87,9 @@ $$
 \sigma_p^2 \;\leftarrow\; \sigma_p^2 \left(1 - \frac{\sigma_p^2}{c^2}\, w(t)\right),
 $$
 
-where $\varphi$ and $\Phi$ are the standard normal PDF and CDF. After all pairs, $\sigma^2 \leftarrow \sigma^2 + \tau^2$ so ratings stay responsive over time. Players new to TrueSkill ($\sigma = 0$) are initialized to $(\mu_0, \sigma_0)$ before the update runs, so the first game they play is also their first rated game.
+where $\varphi$ and $\Phi$ are the standard normal PDF and CDF. After all pairs, $\sigma^2 \leftarrow \sigma^2 + \tau^2$ so ratings stay responsive over time. New players are initialized to $(\mu_0, \sigma_0)$ on account creation (legacy DB rows with $\sigma = 0$ get the same defaults at load), so the matchmaker can sort by $\mu$ from their very first game.
 
-The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. ELO remains the primary sort key and chart series; TrueSkill is an additional metric, not a replacement.
+The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. ELO remains the primary sort key and chart series; TrueSkill additionally drives matchmaking ([matchmaking.md](matchmaking.md)).
 
 ## Chat
 
@@ -123,4 +124,4 @@ Three per-connection budgets are enforced inside `handlePacket`. Limits and cons
 2. Sort by win ratio desc, then wins desc, then losses desc.
 3. Truncate to 10.
 
-The chart shows a 20-point **ELO** history per top player. Each `Score` record carries the post-game ELO (`Score.Elo`); `updateChartDataLocked` walks `ScoreHistory` backward to find the latest non-zero ELO for each chart slot. Losers in a game get their post-update ELO backfilled into the most recent `Score` entry inside `endLocked`, so winners and losers report a consistent value. `Score` records written before ELO tracking existed (`Elo == 0`) are skipped — the chart simply starts later for those players.
+The chart shows a 20-point **ELO** history per top player. Each `Score` record carries the post-game ELO (`Score.Elo`); `updateChartDataLocked` walks `ScoreHistory` backward to find the latest non-zero ELO for each chart slot. Losers in a game get their post-update ELO backfilled into the `Score` entry their seat recorded at death (matched by timestamp), so winners and losers report a consistent value. `Score` records written before ELO tracking existed (`Elo == 0`) are skipped — the chart simply starts later for those players.

@@ -4,11 +4,11 @@ Multiplayer tron where the players are bots. You connect over plain TCP, your bo
 
 ## The game
 
-- The board is a square that wraps at the edges. Its size scales with the number of players.
+- The board is a square that wraps at the edges. Its size scales with the number of players; a board holds at most 32 players, and multiple boards run in parallel.
 - Every tick each alive bot must send a move: `up`, `down`, `left`, or `right`.
 - You leave a trail behind you. Running into any trail (yours or someone else's) kills you. Two bots arriving at the same cell on the same tick both die.
 - Tick rate starts at 1/s and ramps up by +1/s every 10 seconds, so games get faster the longer they last.
-- Last bot alive wins. Results feed into a rolling ELO leaderboard.
+- Last bot alive wins. Results feed into a rolling ELO leaderboard and a TrueSkill rating that the [matchmaker](docs/matchmaking.md) uses to put you on a board with similarly skilled bots. When you die you re-enter the queue right away — no waiting for your old game to end.
 
 Full ruleset in [docs/game-mechanics.md](docs/game-mechanics.md).
 

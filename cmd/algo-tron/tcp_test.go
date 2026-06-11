@@ -55,10 +55,10 @@ func TestHandleMoveLocked(t *testing.T) {
 	for _, c := range cases {
 		s := testServer(t)
 		p, buf := testPlayer("p")
-		p.move = MoveNone
+		p.seat = &Seat{player: p, alive: true}
 		s.handleMoveLocked(p, c.parts)
-		if p.move != c.wantMove {
-			t.Errorf("parts=%v: move=%v, want %v", c.parts, p.move, c.wantMove)
+		if p.seat.move != c.wantMove {
+			t.Errorf("parts=%v: move=%v, want %v", c.parts, p.seat.move, c.wantMove)
 		}
 		gotErr := strings.Contains(buf.String(), "error")
 		if gotErr != c.wantErr {
@@ -72,7 +72,7 @@ func TestHandleMoveLocked(t *testing.T) {
 func TestHandleChatLockedValid(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.Alive = true
+	bareGame(s, p)
 	s.players["alice"] = p
 
 	s.handleChatLocked(p, []string{"chat", "hello world"})
@@ -88,7 +88,7 @@ func TestHandleChatLockedValid(t *testing.T) {
 func TestHandleChatLockedDead(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.Alive = false
+	p.seat = nil // not in a game
 	s.players["alice"] = p
 
 	s.handleChatLocked(p, []string{"chat", "hello"})
@@ -104,7 +104,7 @@ func TestHandleChatLockedDead(t *testing.T) {
 func TestHandleChatLockedRateLimit(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.Alive = true
+	bareGame(s, p)
 	p.lastChatAt = time.Now() // just sent a message
 	s.players["alice"] = p
 
@@ -121,7 +121,7 @@ func TestHandleChatLockedRateLimit(t *testing.T) {
 func TestHandleChatLockedInvalidChars(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.Alive = true
+	bareGame(s, p)
 	s.players["alice"] = p
 
 	s.handleChatLocked(p, []string{"chat", "bad\x00msg"})
@@ -134,7 +134,7 @@ func TestHandleChatLockedInvalidChars(t *testing.T) {
 func TestHandleChatLockedSetsExpiry(t *testing.T) {
 	s := testServer(t)
 	p, _ := testPlayer("alice")
-	p.Alive = true
+	bareGame(s, p)
 	s.players["alice"] = p
 
 	before := time.Now()
@@ -153,7 +153,7 @@ func TestHandleChatLockedPipeIsInvalidChar(t *testing.T) {
 	// reconstructed from multiple pipe-split parts must be rejected.
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.Alive = true
+	bareGame(s, p)
 	s.players["alice"] = p
 
 	s.handleChatLocked(p, []string{"chat", "hello", "world"}) // reconstructed as "hello|world"
@@ -166,32 +166,37 @@ func TestHandleChatLockedPipeIsInvalidChar(t *testing.T) {
 	}
 }
 
-// — connectedPlayersLocked ————————————————————————————————————————————
+// — queuedPlayersLocked ———————————————————————————————————————————————
 
-func TestConnectedPlayersLocked(t *testing.T) {
+func TestQueuedPlayersLocked(t *testing.T) {
 	s := testServer(t)
 	_, sideA := mustPipe(t)
 	_, sideB := mustPipe(t)
+	_, sideC := mustPipe(t)
 
+	now := time.Now()
 	charlie, _ := testPlayer("charlie")
 	alice, _ := testPlayer("alice")
 	bob, _ := testPlayer("bob")
-	charlie.conn = sideA
-	alice.conn = sideB
-	bob.conn = nil // disconnected
+	seated, _ := testPlayer("seated")
+	charlie.conn, charlie.queuedSince = sideA, now.Add(-2*time.Second)
+	alice.conn, alice.queuedSince = sideB, now.Add(-5*time.Second)
+	bob.conn = nil // disconnected — not in queue
+	seated.conn, seated.seat = sideC, &Seat{player: seated, alive: true}
 
 	s.players = map[string]*Player{
 		"charlie": charlie,
 		"alice":   alice,
 		"bob":     bob,
+		"seated":  seated,
 	}
 
-	got := s.connectedPlayersLocked()
+	got := s.queuedPlayersLocked()
 
 	if len(got) != 2 {
-		t.Fatalf("expected 2 connected players, got %d", len(got))
+		t.Fatalf("expected 2 queued players, got %d", len(got))
 	}
-	// must be sorted alphabetically
+	// must be sorted by wait, longest first
 	if got[0].Username != "alice" || got[1].Username != "charlie" {
 		t.Errorf("expected [alice, charlie], got [%s, %s]", got[0].Username, got[1].Username)
 	}

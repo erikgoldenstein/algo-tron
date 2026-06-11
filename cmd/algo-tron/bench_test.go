@@ -22,17 +22,17 @@ import (
 // upper bound on ticks-per-second it could sustain." A loose ceiling, but
 // the right shape for the question 'will the server miss ticks at N players?'
 
-func benchPlayers(n int) []*Player {
-	players := make([]*Player, n)
-	for i := range players {
-		players[i] = &Player{
-			ID:       i,
-			Username: fmt.Sprintf("p%d", i),
-			Alive:    true,
-			Pos:      Vec2{X: i & 0xff, Y: (i >> 8) & 0xff},
+func benchSeats(n int) []*Seat {
+	seats := make([]*Seat, n)
+	for i := range seats {
+		seats[i] = &Seat{
+			player: &Player{Username: fmt.Sprintf("p%d", i)},
+			id:     i,
+			alive:  true,
+			pos:    Vec2{X: i & 0xff, Y: (i >> 8) & 0xff},
 		}
 	}
-	return players
+	return seats
 }
 
 func reportMaxTPS(b *testing.B) {
@@ -48,14 +48,14 @@ func reportMaxTPS(b *testing.B) {
 func BenchmarkTickFrame(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		b.Run(fmt.Sprintf("players=%d", n), func(b *testing.B) {
-			players := benchPlayers(n)
+			seats := benchSeats(n)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				frame := make([]byte, 0, len(players)*16)
-				for _, p := range players {
-					if p.Alive {
-						frame = appendPos(frame, p.ID, p.Pos.X, p.Pos.Y)
+				frame := make([]byte, 0, len(seats)*16)
+				for _, st := range seats {
+					if st.alive {
+						frame = appendPos(frame, st.id, st.pos.X, st.pos.Y)
 					}
 				}
 				frame = append(frame, "tick\n"...)
@@ -75,14 +75,14 @@ func BenchmarkTickFrame(b *testing.B) {
 func BenchmarkInitMarshal(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
 		b.Run(fmt.Sprintf("players=%d", n), func(b *testing.B) {
-			players := benchPlayers(n)
-			for _, p := range players {
-				p.Moves = make([]Vec2, 64)
-				for j := range p.Moves {
-					p.Moves[j] = Vec2{X: j, Y: j}
+			seats := benchSeats(n)
+			for _, st := range seats {
+				st.trail = make([]Vec2, 64)
+				for j := range st.trail {
+					st.trail[j] = Vec2{X: j, Y: j}
 				}
 			}
-			g := &Game{id: "bench", width: 64, height: 64, players: players}
+			g := &Game{id: "bench", width: 64, height: 64, seats: seats}
 			m := buildGameMsgLocked(g)
 			m.Type = "game"
 			b.ReportAllocs()
@@ -105,15 +105,16 @@ func BenchmarkPushFanout(b *testing.B) {
 		b.Run(fmt.Sprintf("viewers=%d", n), func(b *testing.B) {
 			s := &Server{viewClients: make(map[*websocket.Conn]*viewerSink, n)}
 
-			players := benchPlayers(64)
-			s.game = &Game{id: "bench", width: 64, height: 64, players: players}
+			g := &Game{id: "bench", width: 64, height: 64, seats: benchSeats(64)}
+			s.games = []*Game{g}
 
-			// Spin up N draining sinks. Distinct *websocket.Conn pointers are
-			// fine as map keys; we never call methods on them. Buffer is
-			// oversized so broadcastViewLocked never triggers its kick path
-			// (which would Close a zero-value Conn and panic).
+			// Spin up N draining sinks subscribed to the bench board.
+			// Distinct *websocket.Conn pointers are fine as map keys; we
+			// never call methods on them. Buffer is oversized so
+			// sendToSinkLocked never triggers its kick path (which would
+			// Close a zero-value Conn and panic).
 			for i := 0; i < n; i++ {
-				sink := &viewerSink{ch: make(chan []byte, 1<<14), done: make(chan struct{})}
+				sink := &viewerSink{ch: make(chan []byte, 1<<14), done: make(chan struct{}), gameID: g.id}
 				go func(sink *viewerSink) {
 					for {
 						select {
@@ -134,7 +135,7 @@ func BenchmarkPushFanout(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.broadcastTickLocked(nil)
+				s.broadcastTickLocked(g, nil)
 			}
 			b.StopTimer()
 			reportMaxTPS(b)
