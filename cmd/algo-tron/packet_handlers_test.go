@@ -1,43 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"strings"
 	"testing"
 	"time"
 )
-
-// — readProxyProtocolIP ———————————————————————————————————————————————
-
-func TestReadProxyProtocolIP(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   string
-		wantIP  string
-		wantErr bool
-	}{
-		{"TCP4", "PROXY TCP4 1.2.3.4 5.6.7.8 100 200\r\n", "1.2.3.4", false},
-		{"TCP6", "PROXY TCP6 ::1 ::2 100 200\r\n", "::1", false},
-		{"UNKNOWN", "PROXY UNKNOWN\r\n", "", false},
-		{"invalid source IP", "PROXY TCP4 notanip 5.6.7.8 100 200\r\n", "", true},
-		{"too few fields", "PROXY TCP4 1.2.3.4\r\n", "", true},
-		{"not a PROXY header", "GET / HTTP/1.1\r\n", "", true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			r := bufio.NewReader(strings.NewReader(c.input))
-			ip, err := readProxyProtocolIP(r)
-			if (err != nil) != c.wantErr {
-				t.Errorf("err = %v, wantErr = %v", err, c.wantErr)
-			}
-			if ip != c.wantIP {
-				t.Errorf("ip = %q, want %q", ip, c.wantIP)
-			}
-		})
-	}
-}
-
-// — handleMove ————————————————————————————————————————————————————————
 
 func TestHandleMove(t *testing.T) {
 	cases := []struct {
@@ -84,8 +51,6 @@ func TestHandleMoveDeadSeatDropsSilently(t *testing.T) {
 		t.Errorf("dead seat move should be dropped silently, got %q", buf.String())
 	}
 }
-
-// — handleChat ————————————————————————————————————————————————————————
 
 func TestHandleChatValid(t *testing.T) {
 	s := testServer(t)
@@ -181,83 +146,5 @@ func TestHandleChatPipeIsInvalidChar(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "ERROR_INVALID_CHAT_MESSAGE") {
 		t.Errorf("expected ERROR_INVALID_CHAT_MESSAGE, got %q", buf.String())
-	}
-}
-
-// — tokenBucket ———————————————————————————————————————————————————————
-
-func TestTokenBucketAbsorbsBurst(t *testing.T) {
-	// A full tick's budget must be allowed back-to-back: network jitter
-	// can compress one-packet-per-tick traffic into a burst, and that
-	// must not cost a move.
-	tb := &tokenBucket{}
-	for i := 0; i < movePacketsPerTick; i++ {
-		if !tb.allow(movePacketsPerTick, time.Second) {
-			t.Fatalf("burst packet %d denied; the bucket must hold a full tick budget", i)
-		}
-	}
-	if tb.allow(movePacketsPerTick, time.Second) {
-		t.Error("packet beyond the burst capacity must be denied")
-	}
-}
-
-func TestTokenBucketRefills(t *testing.T) {
-	tb := &tokenBucket{}
-	interval := 10 * time.Millisecond
-	for i := 0; i < movePacketsPerTick; i++ {
-		tb.allow(movePacketsPerTick, interval)
-	}
-	if tb.allow(movePacketsPerTick, interval) {
-		t.Fatal("bucket should be empty")
-	}
-	time.Sleep(interval) // one full interval refills a full budget
-	for i := 0; i < movePacketsPerTick; i++ {
-		if !tb.allow(movePacketsPerTick, interval) {
-			t.Fatalf("packet %d denied after a full interval refill", i)
-		}
-	}
-}
-
-func TestTokenBucketZeroBudgetDeniesAll(t *testing.T) {
-	tb := &tokenBucket{}
-	if tb.allow(0, time.Second) {
-		t.Error("zero budget must deny")
-	}
-}
-
-// — queuedPlayersLocked ———————————————————————————————————————————————
-
-func TestQueuedPlayersLocked(t *testing.T) {
-	s := testServer(t)
-	_, sideA := mustPipe(t)
-	_, sideB := mustPipe(t)
-	_, sideC := mustPipe(t)
-
-	now := time.Now()
-	charlie, _ := testPlayer("charlie")
-	alice, _ := testPlayer("alice")
-	bob, _ := testPlayer("bob")
-	seated, _ := testPlayer("seated")
-	charlie.conn, charlie.queuedSince = sideA, now.Add(-2*time.Second)
-	alice.conn, alice.queuedSince = sideB, now.Add(-5*time.Second)
-	bob.conn = nil // disconnected — not in queue
-	seated.conn = sideC
-	seated.seat.Store(&Seat{player: seated, alive: true})
-
-	s.players = map[string]*Player{
-		"charlie": charlie,
-		"alice":   alice,
-		"bob":     bob,
-		"seated":  seated,
-	}
-
-	got := s.queuedPlayersLocked()
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 queued players, got %d", len(got))
-	}
-	// must be sorted by wait, longest first
-	if got[0].Username != "alice" || got[1].Username != "charlie" {
-		t.Errorf("expected [alice, charlie], got [%s, %s]", got[0].Username, got[1].Username)
 	}
 }

@@ -60,6 +60,8 @@ func TestHostOnly(t *testing.T) {
 		{"1.2.3.4:80", "1.2.3.4"},
 		{"noport", "noport"},
 		{"[::1]:4000", "::1"},
+		{"https://tron.erik.gdn", "tron.erik.gdn"},
+		{"https://tron.erik.gdn:443", "tron.erik.gdn"},
 	}
 	for _, c := range cases {
 		if got := hostOnly(c.input); got != c.want {
@@ -76,6 +78,8 @@ func TestPortOnly(t *testing.T) {
 		{"example.com:443", 443},
 		{"host:4000", 4000},
 		{"noport", 0}, // no port present
+		{"https://tron.erik.gdn", 0},
+		{"https://tron.erik.gdn:443", 443},
 	}
 	for _, c := range cases {
 		if got := portOnly(c.input); got != c.want {

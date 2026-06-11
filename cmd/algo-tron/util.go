@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net"
+	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -42,6 +44,11 @@ func randID() string {
 }
 
 func hostOnly(s string) string {
+	if strings.Contains(s, "://") {
+		if u, err := url.Parse(s); err == nil && u.Hostname() != "" {
+			return u.Hostname()
+		}
+	}
 	if h, _, err := net.SplitHostPort(s); err == nil {
 		return h
 	}
@@ -49,6 +56,13 @@ func hostOnly(s string) string {
 }
 
 func portOnly(s string) int {
+	if strings.Contains(s, "://") {
+		if u, err := url.Parse(s); err == nil && u.Port() != "" {
+			n, _ := strconv.Atoi(u.Port())
+			return n
+		}
+		return 0
+	}
 	if _, p, err := net.SplitHostPort(s); err == nil {
 		n, _ := strconv.Atoi(p)
 		return n

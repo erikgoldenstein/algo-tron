@@ -12,7 +12,7 @@
 - Every tick each alive bot must send a move: `up`, `down`, `left`, or `right`.
 - You leave a trail behind you. Running into any trail (yours or someone else's) kills you. Two bots arriving at the same cell on the same tick both die.
 - Tick rate starts at 1/s and ramps up by +1/s every 10 seconds, so games get faster the longer they last.
-- Last bot alive wins. Results feed into a rolling ELO leaderboard and a TrueSkill rating that the [matchmaker](docs/matchmaking.md) uses to put you on a board with similarly skilled bots. When you die you re-enter the queue right away — no waiting for your old game to end.
+- Last bot alive wins. Results feed into a rolling ELO leaderboard and a TrueSkill rating that the [matchmaker](docs/matchmaking.md) uses to put you on a board with similarly skilled bots. When you die you re-enter the queue right away, no waiting for your old game to end.
 
 Full ruleset in [docs/game-mechanics.md](docs/game-mechanics.md).
 
@@ -28,4 +28,4 @@ The fastest way to get started is to read or fork one of the [example bots](exam
 
 ## Thanks
 
-algo-tron is a Go reimplementation of [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron). The bot protocol, the game idea, and the original event around it all come from there. Thanks to the gpn-tron authors for the format.
+algo-tron is a Go reimplementation of [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron). The bot protocol, the game idea, and the original event around it all come from there. Thanks to the gpn-tron author for the format. This is only possible thanks to the people i met at [gpn24](https://events.ccc.de/en/2026/03/15/gpn24/).

@@ -167,3 +167,17 @@ func listenMetrics(ctx context.Context, addr string) error {
 	}
 	return nil
 }
+
+// tickIntervalLocked returns the fastest tick interval across running
+// boards, or 1s while no game runs. Only used by the tron_tick_rate gauge;
+// per-packet rate limiting reads the player's own board via
+// Player.tickInterval instead.
+func (s *Server) tickIntervalLocked() time.Duration {
+	interval := time.Second
+	for _, g := range s.games {
+		if ns := g.tickNs.Load(); ns > 0 && time.Duration(ns) < interval {
+			interval = time.Duration(ns)
+		}
+	}
+	return interval
+}

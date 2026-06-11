@@ -1,4 +1,5 @@
-// Canvas rendering — game arena and ELO chart. Runs on a 30fps interval.
+// Canvas rendering for the game arena. render_chart.js draws the ELO chart;
+// render_loop.js owns timers.
 //
 // The arena is one canvas; the ELO chart is another. Both are redrawn each
 // frame from current gameState — no incremental damage tracking.
@@ -175,86 +176,3 @@ function renderChat(ctx, message, x, y, playerColor) {
   ctx.textBaseline = 'middle';
   ctx.fillText(message, boxX + padX, boxY + boxH / 2 + 1);
 }
-
-function renderChart() {
-  const canvas = document.getElementById('chart');
-  if (!canvas?.parentElement) return;
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const width = canvas.parentElement.clientWidth;
-  const height = canvas.parentElement.clientHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-
-  const data = gameState.chartData || [];
-  const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
-  if (!data.length || !names.length) return;
-
-  // Auto-range vertically over recorded elo values; the chart only shows
-  // recent variation rather than absolute scale.
-  let lo = Infinity, hi = -Infinity;
-  for (const point of data) {
-    for (const name of names) {
-      const v = point[name];
-      if (typeof v !== 'number') continue;
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-    }
-  }
-  if (!isFinite(lo) || !isFinite(hi) || lo === hi) {
-    lo = (lo || 1000) - 50;
-    hi = (hi || 1000) + 50;
-  }
-
-  const pad = { top: 4, right: 4, bottom: 4, left: 4 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  const x = (i) => pad.left + i / Math.max(data.length - 1, 1) * plotW;
-  const y = (v) => pad.top + (1 - (v - lo) / (hi - lo)) * plotH;
-
-  ctx.lineWidth = 1.25;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  for (const name of names) {
-    ctx.strokeStyle = playerColor(name);
-    ctx.beginPath();
-    let started = false;
-    data.forEach((point, i) => {
-      const v = point[name];
-      if (typeof v !== 'number') return;
-      if (!started) { ctx.moveTo(x(i), y(v)); started = true; }
-      else ctx.lineTo(x(i), y(v));
-    });
-    ctx.stroke();
-  }
-}
-
-setInterval(() => { render(); renderChart(); }, 1000 / 30);
-
-// Tick scoreboard name cells so scrolling names slide in-place between
-// websocket-driven full re-renders. No-op when the switch is off.
-setInterval(() => {
-  if (!getSwitch('scrollNames')) return;
-  document.querySelectorAll('#scoreboard .namestr').forEach((el) => {
-    el.textContent = displayName(el.dataset.name, scoreNameChars);
-  });
-}, 250);
-
-// When the layout changes (window resize, modal opening, etc.) the name
-// column's width changes too — re-measure and reflow the names. Skipping
-// this would leave names truncated to their pre-resize length.
-window.addEventListener('resize', () => {
-  const scoreboardEl = document.getElementById('scoreboard');
-  const firstNameCell = scoreboardEl?.querySelector('td.name');
-  if (!firstNameCell) return;
-  const cap = Math.max(0, fitChars(firstNameCell) - 2);
-  if (cap === scoreNameChars) return;
-  scoreNameChars = cap;
-  scoreboardEl.querySelectorAll('.namestr').forEach((el) => {
-    el.textContent = displayName(el.dataset.name, scoreNameChars);
-  });
-});

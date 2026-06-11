@@ -26,12 +26,11 @@ import socket
 import sys
 import time
 
+from client_helpers import DIRECTIONS, occupied, step
+from client_protocol import handle_packet
 
-# A few constants. The board is a grid; (0,0) is the top-left corner.
-# "up" means y decreases, "down" means y increases. The board wraps around
-# at the edges (it's a torus), so going off the top brings you back in at
-# the bottom.
-DIRECTIONS = ["up", "right", "down", "left"]
+
+__all__ = ["Client", "DIRECTIONS", "occupied", "step"]
 
 
 class Client:
@@ -152,87 +151,6 @@ class Client:
         line, self.buf = self.buf.split(b"\n", 1)
         return line.decode(errors="replace")
 
-    # ------------------------------------------------------------------
-    # Protocol: turning packets into game state updates.
-    # ------------------------------------------------------------------
-
-    def _handle_packet(self, parts: list[str]) -> bool:
-        """Update our state based on one packet from the server.
-
-        `parts` is the packet already split on '|', e.g. ["pos", "3", "5", "7"].
-
-        Returns True if this packet was a `tick`, meaning the server is
-        now waiting for us to send a `move`. Returns False otherwise.
-        """
-        kind = parts[0]
-
-        if kind == "motd":
-            # "Message of the day" - a greeting. We ignore it.
-            return False
-
-        if kind == "game":
-            # A new game is starting. Format: game|width|height|your_id
-            self.width = int(parts[1])
-            self.height = int(parts[2])
-            self.my_id = int(parts[3])
-            self.heads.clear()
-            self.alive.clear()
-            self.trails.clear()
-            return False
-
-        if kind == "player":
-            # One per alive player at game start. Format: player|id|name
-            pid = int(parts[1])
-            self.alive.add(pid)
-            self.trails.setdefault(pid, set())
-            return False
-
-        if kind == "pos":
-            # A player's current position. Format: pos|id|x|y
-            # Sent at game start and once per tick for every alive player.
-            pid = int(parts[1])
-            x = int(parts[2])
-            y = int(parts[3])
-            self.heads[pid] = (x, y)
-            # Every position the player has been on becomes part of their
-            # trail - i.e. a wall.
-            self.trails.setdefault(pid, set()).add((x, y))
-            return False
-
-        if kind == "die":
-            # One or more players died this tick. Format: die|id|id|...
-            for sid in parts[1:]:
-                pid = int(sid)
-                self.alive.discard(pid)
-                # Remove their trail - the server clears those cells too.
-                self.trails.pop(pid, None)
-            return False
-
-        if kind == "tick":
-            # End of a tick. The server now expects a move from us.
-            return True
-
-        if kind in ("win", "lose"):
-            # The game just ended. Clear state so the next game starts fresh.
-            self.heads.clear()
-            self.alive.clear()
-            self.trails.clear()
-            return False
-
-        if kind == "error":
-            code = parts[1] if len(parts) > 1 else ""
-            print("server error:", "|".join(parts[1:]), file=sys.stderr)
-            if code in ("ERROR_RATE_LIMIT", "ERROR_RECONNECT_PENALTY"):
-                self.stop_reconnecting = True
-            return False
-
-        # Anything else (e.g. "message") we just ignore here.
-        return False
-
-    # ------------------------------------------------------------------
-    # The main loop you actually call from a bot.
-    # ------------------------------------------------------------------
-
     def run(self, decide) -> None:
         """Log in and then loop forever, calling `decide` once per tick.
 
@@ -248,7 +166,7 @@ class Client:
                 line = self._read_line()
 
                 parts = line.split("|")
-                is_tick = self._handle_packet(parts)
+                is_tick = handle_packet(self, parts)
 
                 # If a tick just ended AND we're still alive, choose a move
                 # and send it. If we're dead we just wait for the next game.
@@ -262,53 +180,3 @@ class Client:
                 print("connection lost; reconnecting in 1 second", file=sys.stderr)
                 time.sleep(1)
                 self._reconnect()
-
-
-# ----------------------------------------------------------------------
-# Helpers that bots will commonly want.
-# ----------------------------------------------------------------------
-
-def occupied(client: Client) -> set[tuple[int, int]]:
-    """Return the set of every cell that is currently blocked.
-
-    A cell is blocked if any (still-alive) player's trail passes through
-    it. Crashing into a blocked cell kills you.
-    """
-    blocked: set[tuple[int, int]] = set()
-    for cells in client.trails.values():
-        blocked |= cells
-    return blocked
-
-
-def step(
-    x: int,
-    y: int,
-    direction: str,
-    width: int,
-    height: int,
-    wrap: bool = True,
-) -> tuple[int, int] | None:
-    """Compute the cell you land on after moving one step.
-
-    The real game board wraps around at the edges (it's a torus), so
-    `wrap=True` is what matches the server. We expose `wrap=False` only
-    because some simple bots find it easier to pretend edges are walls.
-    In that case stepping off the board returns `None`.
-    """
-    if direction == "up":
-        y -= 1
-    elif direction == "down":
-        y += 1
-    elif direction == "left":
-        x -= 1
-    elif direction == "right":
-        x += 1
-
-    if wrap:
-        # Python's % already returns a non-negative result for positive
-        # divisors, so -1 % 10 == 9 - exactly the wrap we want.
-        return x % width, y % height
-
-    if 0 <= x < width and 0 <= y < height:
-        return x, y
-    return None

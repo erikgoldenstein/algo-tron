@@ -1,0 +1,81 @@
+package main
+
+import "encoding/json"
+
+// broadcastViewLocked fans a marshaled message out to every viewer sink.
+func (s *Server) broadcastViewLocked(data []byte) {
+	for c, sink := range s.viewClients {
+		s.sendToSinkLocked(c, sink, data)
+	}
+}
+
+// broadcastBoardsLocked tells every viewer the current board list. Sent
+// whenever a board starts or ends; clients use it to render tabs and to
+// re-subscribe when their board disappears.
+func (s *Server) broadcastBoardsLocked() {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(boardsMsg{Type: "boards", Boards: s.boardListLocked()})
+	s.broadcastViewLocked(data)
+}
+
+// broadcastTickLocked sends one board's tick delta to the viewers subscribed
+// to that board. Positions and deaths come from the tick's phase-1 snapshot
+// (no g.mu needed); chats are player state, read under the Server.mu the
+// caller already holds.
+func (s *Server) broadcastTickLocked(g *Game, res tickResult) {
+	subscribed := false
+	for _, sink := range s.viewClients {
+		if sink.gameID == g.id {
+			subscribed = true
+			break
+		}
+	}
+	if !subscribed {
+		return
+	}
+	var chats map[int]string
+	for _, st := range g.seats {
+		if st.player.Chat != "" {
+			if chats == nil {
+				chats = map[int]string{}
+			}
+			chats[st.id] = st.player.Chat
+		}
+	}
+	data, _ := json.Marshal(tickMsg{
+		Type:      "tick",
+		GameID:    g.id,
+		Positions: res.positions,
+		Deaths:    res.deathIDs,
+		Chats:     chats,
+	})
+	for c, sink := range s.viewClients {
+		if sink.gameID == g.id {
+			s.sendToSinkLocked(c, sink, data)
+		}
+	}
+}
+
+func (s *Server) broadcastShutdownLocked() {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(map[string]string{"type": "misc", "content": "shutdown"})
+	s.broadcastViewLocked(data)
+}
+
+func (s *Server) broadcastEndLocked(gameID string) {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(endMsg{
+		Type:        "end",
+		GameID:      gameID,
+		Scoreboard:  s.viewState.Scoreboard,
+		ChartData:   s.viewState.ChartData,
+		LastWinners: s.viewState.LastWinners,
+	})
+	s.broadcastViewLocked(data)
+}

@@ -12,8 +12,11 @@
   <script defer src="/static/helpers.js"></script>
   <script defer src="/static/schemes.js"></script>
   <script defer src="/static/gameState.js"></script>
+  <script defer src="/static/dom_follow.js"></script>
   <script defer src="/static/dom.js"></script>
   <script defer src="/static/render.js"></script>
+  <script defer src="/static/render_chart.js"></script>
+  <script defer src="/static/render_loop.js"></script>
   <script defer src="/static/modal.js"></script>
   <script defer src="/static/ws.js"></script>
   <script defer src="/static/schedule.js"></script>
@@ -27,7 +30,7 @@
         <h1>algo-tron</h1>
       </a>
       <div class="tagline">last bot alive wins · view at <span id="addr">localhost:3000</span></div>
-      <div class="tagline">want to play: <span id="play-addr">localhost:3000</span>/play</div>
+      <div class="tagline">want to play: <a id="play-addr" href="/play" target="_blank" rel="noopener">run a bot</a></div>
     </header>
 
     <section class="arena-section">
@@ -111,7 +114,7 @@
 
       <div class="modal-body">
       <section class="modal-section">
-        <div class="modal-section-title">connect</div>
+        <div class="modal-section-title">infos</div>
         <dl class="kv kv-2col">
           <dt>game</dt><dd id="modal-game">—</dd>
           <dt>view</dt><dd id="modal-view">—</dd>

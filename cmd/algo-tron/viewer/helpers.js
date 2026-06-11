@@ -13,6 +13,12 @@ function viewHostPort(v) {
   return host + ':' + port;
 }
 
+function viewURL(v, path = '') {
+  const hostPort = viewHostPort(v);
+  if (!hostPort) return '';
+  return (v.scheme || 'https') + '://' + hostPort + path;
+}
+
 // CRC-32 of a string. Used as a deterministic hash for color/palette lookups
 // so a given player always lands on the same color across reloads.
 function crc32(r) {
