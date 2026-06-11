@@ -238,9 +238,21 @@ func (g *Game) broadcastAliveLocked(packet []byte) {
 func (g *Game) killDisconnectedLocked() {
 	for _, st := range g.seats {
 		if st.alive && st.player.sink.Load() == nil {
+			snap := st.player.disconnectSnapshot(time.Now())
 			g.markDeadLocked(st)
 			g.removeFromFields(st)
 			metricDisconnectKilled.Inc()
+			slog.Warn("player killed after disconnect",
+				"user", st.player.Username,
+				"game", g.id,
+				"seat", st.id,
+				"tick", g.tick,
+				"disconnect_reason", snap.reason,
+				"disconnect_age_ms", snap.age.Milliseconds(),
+				"disconnect_total", snap.total,
+				"disconnect_streak", snap.streak,
+				"last_remote", snap.remote,
+			)
 		}
 	}
 }

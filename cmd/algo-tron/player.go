@@ -4,6 +4,15 @@ import (
 	"time"
 )
 
+type disconnectSnapshot struct {
+	reason string
+	remote string
+	at     time.Time
+	age    time.Duration
+	total  uint64
+	streak uint64
+}
+
 func newSeat(g *Game, p *Player, id, x, y int) *Seat {
 	st := &Seat{player: p, game: g, id: id, alive: true}
 	st.setPos(x, y)
@@ -105,4 +114,40 @@ func (p *Player) tickInterval() time.Duration {
 		}
 	}
 	return time.Second
+}
+
+func (p *Player) recordDisconnect(reason, remote string, now time.Time) disconnectSnapshot {
+	if reason == "" {
+		reason = "unknown"
+	}
+	prevNs := p.lastDisconnectAtNs.Load()
+	total := p.disconnectsTotal.Add(1)
+	streak := uint64(1)
+	if prevNs > 0 && now.Sub(time.Unix(0, prevNs)) <= disconnectRepeatWindow {
+		streak = p.disconnectStreak.Add(1)
+	} else {
+		p.disconnectStreak.Store(streak)
+	}
+	p.lastDisconnectReason.Store(reason)
+	p.lastDisconnectRemote.Store(remote)
+	p.lastDisconnectAtNs.Store(now.UnixNano())
+	return disconnectSnapshot{reason: reason, remote: remote, at: now, total: total, streak: streak}
+}
+
+func (p *Player) disconnectSnapshot(now time.Time) disconnectSnapshot {
+	ns := p.lastDisconnectAtNs.Load()
+	if ns == 0 {
+		return disconnectSnapshot{}
+	}
+	at := time.Unix(0, ns)
+	reason, _ := p.lastDisconnectReason.Load().(string)
+	remote, _ := p.lastDisconnectRemote.Load().(string)
+	return disconnectSnapshot{
+		reason: reason,
+		remote: remote,
+		at:     at,
+		age:    now.Sub(at),
+		total:  p.disconnectsTotal.Load(),
+		streak: p.disconnectStreak.Load(),
+	}
 }

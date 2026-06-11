@@ -25,13 +25,33 @@ type botSink struct {
 	done   chan struct{}
 	once   sync.Once
 	kicked atomic.Bool
+	reason atomic.Pointer[string]
 }
 
 func newBotSink(conn net.Conn) *botSink {
 	return &botSink{conn: conn, ch: make(chan []byte, botSinkBuf), done: make(chan struct{})}
 }
 
-func (b *botSink) shutdown() { b.once.Do(func() { close(b.done) }) }
+func (b *botSink) shutdown(reasons ...string) {
+	if len(reasons) > 0 {
+		b.setCloseReason(reasons[0])
+	}
+	b.once.Do(func() { close(b.done) })
+}
+
+func (b *botSink) setCloseReason(reason string) {
+	if reason == "" {
+		return
+	}
+	b.reason.CompareAndSwap(nil, &reason)
+}
+
+func (b *botSink) closeReason() string {
+	if reason := b.reason.Load(); reason != nil {
+		return *reason
+	}
+	return ""
+}
 
 // enqueue queues one packet for the writer. Callers may hold any lock —
 // this never blocks. A full buffer means the bot has fallen botSinkBuf
@@ -44,7 +64,7 @@ func (b *botSink) enqueue(data []byte) {
 		if b.kicked.CompareAndSwap(false, true) {
 			metricBotsKicked.Inc()
 		}
-		b.shutdown()
+		b.shutdown("send_buffer_full")
 	}
 }
 
@@ -63,6 +83,7 @@ func (b *botSink) run() {
 				select {
 				case data := <-b.ch:
 					if _, err := b.conn.Write(data); err != nil {
+						b.setCloseReason("write_error")
 						b.conn.Close()
 						return
 					}
@@ -77,6 +98,7 @@ func (b *botSink) run() {
 			_, err := b.conn.Write(data)
 			metricBotWrite.Observe(time.Since(start).Seconds())
 			if err != nil {
+				b.setCloseReason("write_error")
 				b.conn.Close()
 				return
 			}

@@ -46,6 +46,8 @@ const (
 	reconnectPenaltyBase       = 1 * time.Second
 	reconnectPenaltyMax        = 60 * time.Second
 	reconnectPenaltyRedemption = 5
+	disconnectRepeatWindow     = 5 * time.Minute
+	disconnectRepeatWarn       = 3
 
 	// TrueSkill parameters (Herbrich, Minka, Graepel 2007). The paper's defaults
 	// are mu0=25, sigma0=25/3, beta=sigma0/2, tau=sigma0/100; we scale by 10x so
@@ -125,6 +127,12 @@ type Player struct {
 	// lives in connLimits, local to the connection's reader goroutine.
 	reconnectPenalty   time.Duration
 	reconnectAllowedAt time.Time
+
+	lastDisconnectAtNs   atomic.Int64
+	disconnectsTotal     atomic.Uint64
+	disconnectStreak     atomic.Uint64
+	lastDisconnectReason atomic.Value
+	lastDisconnectRemote atomic.Value
 }
 
 // Seat is one player's participation in one game. The id doubles as the

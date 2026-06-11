@@ -53,6 +53,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	// writer goroutine owns all writes; the cleanup below hands the
 	// connection to it (shutdown flushes queued packets, then closes).
 	var sink *botSink
+	connectedAt := time.Now()
 	defer func() {
 		if r := recover(); r != nil {
 			metricTCPPanics.Inc()
@@ -146,7 +147,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		// and close. Its reader's cleanup won't touch p — p.conn moves
 		// to the new connection below.
 		old.enqueue(formatPacket("error", "ERROR_ALREADY_CONNECTED"))
-		old.shutdown()
+		old.shutdown("replaced_by_new_connection")
 	}
 	sink = newBotSink(conn)
 	p.conn = conn
@@ -163,18 +164,90 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	go sink.run()
 
 	lim := &connLimits{}
+	packetCount := 0
+	disconnectReason := ""
 	for scanner.Scan() {
-		if !s.handlePacket(p, lim, scanner.Text()) {
+		packetCount++
+		ok, reason := s.handlePacket(p, lim, scanner.Text())
+		if !ok {
+			disconnectReason = reason
 			break
+		}
+	}
+	readErr := scanner.Err()
+	if disconnectReason == "" {
+		switch {
+		case sink.closeReason() != "":
+			disconnectReason = sink.closeReason()
+		case readErr != nil:
+			disconnectReason = "read_error"
+		default:
+			disconnectReason = "client_closed"
 		}
 	}
 
 	s.mu.Lock()
-	if p.conn == conn {
+	current := p.conn == conn
+	if current {
 		p.conn = nil
 		p.sink.Store(nil)
 	}
+	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()
+}
+
+func (s *Server) logBotDisconnectLocked(p *Player, current bool, reason, ip, remote string, connectedFor time.Duration, packetCount, strikes int, readErr error) {
+	now := time.Now()
+	counted := current && reason != "replaced_by_new_connection"
+	snap := p.disconnectSnapshot(now)
+	if counted {
+		snap = p.recordDisconnect(reason, remote, now)
+	}
+
+	gameID := ""
+	seatID := -1
+	gameTick := -1
+	alive := false
+	if st := p.seat.Load(); st != nil {
+		g := st.game
+		g.mu.Lock()
+		gameID = g.id
+		seatID = st.id
+		gameTick = g.tick
+		alive = st.alive
+		g.mu.Unlock()
+	}
+
+	reconnectAllowedIn := time.Until(p.reconnectAllowedAt)
+	if reconnectAllowedIn < 0 {
+		reconnectAllowedIn = 0
+	}
+	args := []any{
+		"user", p.Username,
+		"reason", reason,
+		"ip", ip,
+		"remote", remote,
+		"current", current,
+		"connected_ms", connectedFor.Milliseconds(),
+		"packets", packetCount,
+		"rate_limit_strikes", strikes,
+		"game", gameID,
+		"seat", seatID,
+		"game_tick", gameTick,
+		"seat_alive", alive,
+		"disconnect_total", snap.total,
+		"disconnect_streak", snap.streak,
+		"reconnect_penalty_ms", p.reconnectPenalty.Milliseconds(),
+		"reconnect_allowed_in_ms", reconnectAllowedIn.Milliseconds(),
+	}
+	if readErr != nil {
+		args = append(args, "read_err", readErr.Error())
+	}
+	if counted && snap.streak >= disconnectRepeatWarn {
+		slog.Warn("bot disconnected repeatedly", args...)
+		return
+	}
+	slog.Info("bot disconnected", args...)
 }
 
 func readProxyProtocolIP(r *bufio.Reader) (string, error) {
@@ -242,7 +315,7 @@ type connLimits struct {
 // runs on the connection's reader goroutine and the move hot path takes no
 // server-wide lock: limiter state is goroutine-local, the seat pointer is
 // atomic, and applying a move only locks the seat's own board.
-func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) bool {
+func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) (bool, string) {
 	parts := strings.Split(packet, "|")
 	interval := p.tickInterval()
 
@@ -259,14 +332,14 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) bool {
 		st := p.seat.Load()
 		if st == nil {
 			lim.strikes = 0
-			return true
+			return true, ""
 		}
 		if !lim.move.allow(movePacketsPerTick, interval) {
 			return s.handleRateLimit(p, lim)
 		}
 		s.handleMove(p, st, parts)
 		lim.strikes = 0
-		return true
+		return true, ""
 	case "chat":
 		if !lim.chat.allow(chatPacketsPerTick, interval) {
 			metricChatRateLimited.Inc()
@@ -274,11 +347,11 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) bool {
 		}
 		s.handleChat(p, parts)
 		lim.strikes = 0
-		return true
+		return true, ""
 	default:
 		p.send("error", "ERROR_UNKNOWN_PACKET")
 		lim.strikes = 0
-		return true
+		return true, ""
 	}
 }
 
@@ -288,7 +361,7 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) bool {
 // which is enforced on the next join attempt. Saved-up penalty decays with
 // good behavior — see the redemption block below and
 // reconnectPenaltyRedemption in types.go.
-func (s *Server) handleRateLimit(p *Player, lim *connLimits) bool {
+func (s *Server) handleRateLimit(p *Player, lim *connLimits) (bool, string) {
 	lim.strikes++
 	switch {
 	case lim.strikes >= rateLimitErrorStrikes:
@@ -322,12 +395,12 @@ func (s *Server) handleRateLimit(p *Player, lim *connLimits) bool {
 		p.send("error", "ERROR_RATE_LIMIT")
 		// Returning false ends the reader loop; its cleanup shuts the
 		// sink down, which flushes the error packet and closes.
-		return false
+		return false, "rate_limit"
 	case lim.strikes == rateLimitWarnStrikes:
 		p.send("error", "WARNING_RATE_LIMIT")
-		return true
+		return true, ""
 	default:
-		return true
+		return true, ""
 	}
 }
 
