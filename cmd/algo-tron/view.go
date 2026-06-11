@@ -209,7 +209,11 @@ func (s *Server) boardListLocked() []boardMsg {
 	boards := []boardMsg{}
 	for _, g := range s.games {
 		g.mu.Lock()
-		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked())})
+		names := make([]string, 0, len(g.seats))
+		for _, st := range g.seats {
+			names = append(names, st.player.Username)
+		}
+		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
 		g.mu.Unlock()
 	}
 	return boards

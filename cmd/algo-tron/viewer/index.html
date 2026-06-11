@@ -44,10 +44,17 @@
       <div class="section-header">
         <div class="scoreboard-heading">
           <h2>scoreboard <span class="muted" id="alive-count"></span></h2>
-          <div class="muted scoreboard-scope" id="scoreboard-scope" hidden>
-            (<button class="scope-option active" data-scope="board">board</button>
-            <span>/</span>
-            <button class="scope-option" data-scope="global">global</button>)
+          <div class="scoreboard-subline" id="scoreboard-tools" hidden>
+            <div class="muted scoreboard-scope" id="scoreboard-scope">
+              (<button class="scope-option active" data-scope="board">board</button>
+              <span>/</span>
+              <button class="scope-option" data-scope="global">global</button>)
+            </div>
+            <div class="muted follow-player" id="follow-player">
+              <button id="follow-player-start">follow player</button>
+              <label id="follow-player-editor" hidden>follow: <input id="follow-player-input" autocomplete="off" spellcheck="false"></label>
+              <div class="follow-options" id="follow-player-options" hidden></div>
+            </div>
           </div>
         </div>
         <span class="muted">last 2h</span>

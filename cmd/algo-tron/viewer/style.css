@@ -120,14 +120,23 @@ h2 {
 
 .section-header h2 { margin-bottom: 0; }
 
-.scoreboard-heading { line-height: 1.2; }
+.scoreboard-heading { flex: 1; min-width: 0; line-height: 1.2; }
 
-.scoreboard-scope {
+.scoreboard-subline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 1px;
   font-size: 12px;
 }
 
-.scoreboard-scope .scope-option {
+.scoreboard-subline[hidden],
+#follow-player-editor[hidden],
+#follow-player-options[hidden],
+#follow-player-start[hidden] { display: none; }
+
+.scoreboard-scope .scope-option,
+.follow-player button {
   border: 0;
   padding: 0;
   background: transparent;
@@ -148,6 +157,42 @@ h2 {
 }
 
 .scoreboard-scope .scope-option:not(.active):hover { color: var(--text-muted); }
+
+.follow-player {
+  position: relative;
+  flex: 1;
+  text-align: right;
+}
+
+.follow-player input {
+  width: 10em;
+  border: 0;
+  border-bottom: 1px solid var(--text-dim);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.follow-options {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  min-width: 10em;
+  margin-top: 2px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+
+.follow-options button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+}
 
 .muted {
   color: var(--text-muted);

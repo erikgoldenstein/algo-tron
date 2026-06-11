@@ -207,9 +207,10 @@ type initMsg struct {
 
 // boardMsg is one entry in the board list shown as tabs in the viewer.
 type boardMsg struct {
-	ID      string `json:"id"`
-	Players int    `json:"players"`
-	Alive   int    `json:"alive"`
+	ID      string   `json:"id"`
+	Players int      `json:"players"`
+	Alive   int      `json:"alive"`
+	Names   []string `json:"names"`
 }
 
 type boardsMsg struct {

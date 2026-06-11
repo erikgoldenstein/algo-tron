@@ -16,7 +16,7 @@
 //
 // Depends on: dom.js (updateDom, showShutdownBanner), gameState.js
 // (applyMessage, gameState).
-// Provides: watchBoard, stepBoard.
+// Provides: watchBoard, stepBoard, ensureWatched.
 
 let hadActiveSession = false;
 let ws = null;
@@ -36,11 +36,23 @@ function stepBoard(delta) {
 }
 
 // If the board we're watching is gone (or we never had one), subscribe to
-// the first live board. Called after board-list changes.
+// the followed player's board, otherwise the first live board. Called after
+// board-list changes.
 function ensureWatched() {
   const ids = gameState.boards.map((b) => b.id);
+  const followed = followedBoardID();
+  if (followed && gameState.game?.id !== followed) {
+    watchBoard(followed);
+    return;
+  }
   if (gameState.game && ids.includes(gameState.game.id)) return;
   if (ids.length) watchBoard(ids[0]);
+}
+
+function followedBoardID() {
+  const name = gameState.followName;
+  if (!name) return '';
+  return gameState.boards.find((b) => (b.names || []).includes(name))?.id || '';
 }
 
 function connect() {

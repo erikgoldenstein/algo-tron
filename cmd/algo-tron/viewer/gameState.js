@@ -9,7 +9,7 @@
 //
 // Wire protocol — see view.go for the canonical definition.
 //   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
-//   {type:"boards", boards:[{id,players,alive}...]} — a board started or ended
+//   {type:"boards", boards:[{id,players,alive,names}...]} — a board started or ended
 //   {type:"game",   id, width, height, boardScoreboard, players:[{id,name,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
@@ -25,6 +25,8 @@ const gameState = {
   scoreboard: [],
   boardScoreboard: [],
   scoreboardScope: 'board',
+  followName: '',
+  followEditing: false,
   chartData: [],
   lastWinners: [],
   boards: [], // [{ id, players, alive }] — all running boards, tab bar order

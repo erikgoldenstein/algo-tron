@@ -159,6 +159,46 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	}
 }
 
+func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	a, _ := testPlayer("alice")
+	b, _ := testPlayer("bob")
+	target, _ := testPlayer("target")
+	z, _ := testPlayer("zara")
+	s.games = append(s.games, newGame(s, []*Player{a, b}), newGame(s, []*Player{target, z}))
+	s.mu.Unlock()
+
+	ctx := browser(t)
+
+	var option, value, active string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(1)`),
+		chromedp.WaitVisible(`#follow-player-start`),
+		chromedp.Click(`#follow-player-start`),
+		chromedp.WaitVisible(`#follow-player-input`),
+		chromedp.SendKeys(`#follow-player-input`, "tar"),
+		chromedp.WaitVisible(`#follow-player-options:not([hidden]) button`),
+		chromedp.Text(`#follow-player-options button`, &option),
+		chromedp.Evaluate(`document.getElementById('follow-player-input').dispatchEvent(new KeyboardEvent('keydown', {key:'Tab', bubbles:true, cancelable:true}))`, nil),
+		chromedp.Evaluate(`document.getElementById('follow-player-input').value`, &value),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(2)`),
+		chromedp.Text(`#tabs .tab.active`, &active),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if option != "target" {
+		t.Errorf("autocomplete option = %q, want target", option)
+	}
+	if value != "target" {
+		t.Errorf("follow input = %q, want target", value)
+	}
+	if active != "2:arena-2*" {
+		t.Errorf("active tab after follow = %q, want %q", active, "2:arena-2*")
+	}
+}
+
 func TestE2ESchemePersistsAcrossReload(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)

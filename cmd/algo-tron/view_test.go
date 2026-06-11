@@ -135,6 +135,22 @@ func TestBuildGameMsgIncludesBoardScoreboard(t *testing.T) {
 	}
 }
 
+func TestBoardListIncludesPlayerNames(t *testing.T) {
+	s := testServer(t)
+	alice, _ := testPlayer("alice")
+	bob, _ := testPlayer("bob")
+	s.games = []*Game{makeGame(s, []*Player{alice, bob})}
+
+	boards := s.boardListLocked()
+
+	if len(boards) != 1 {
+		t.Fatalf("boards len = %d, want 1", len(boards))
+	}
+	if got := boards[0].Names; len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
+		t.Fatalf("board names = %+v, want [alice bob]", got)
+	}
+}
+
 // — updateChartDataLocked —————————————————————————————————————————————
 
 func TestUpdateChartDataLength(t *testing.T) {
