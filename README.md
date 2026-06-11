@@ -1,6 +1,10 @@
-# algo-tron
+<p align="center">
+  <img src="assets/logo.png" alt="ALGO-TRON logo" width="240">
+</p>
 
-Multiplayer tron where the players are bots. You connect over plain TCP, your bot picks a direction every tick, last one moving wins. Watch the games live at [tron.erik.gdn](https://tron.erik.gdn).
+<h1 align="center">ALGO-TRON</h1>
+
+<p align="center">Build a bot, send it into the arena over TCP, and outmaneuver other players' bots in a fast-paced Tron battle.</p>
 
 ## The game
 
