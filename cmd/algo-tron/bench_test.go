@@ -132,10 +132,14 @@ func BenchmarkPushFanout(b *testing.B) {
 				}
 			})
 
+			res := tickResult{positions: make([][3]int, 0, len(g.seats))}
+			for _, st := range g.seats {
+				res.positions = append(res.positions, [3]int{st.id, st.pos.X, st.pos.Y})
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				s.broadcastTickLocked(g, nil)
+				s.broadcastTickLocked(g, res)
 			}
 			b.StopTimer()
 			reportMaxTPS(b)

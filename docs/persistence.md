@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS players (
 ### Read/write cadence
 
 - `s.load()` runs once at boot — `SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma FROM players`.
-- `s.store()` runs once at the end of every game, inside `endLocked`. It opens a transaction and `INSERT OR REPLACE`s every row. No-ops for unchanged rows are fine — there are few players and games are slow.
+- Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots all players under the lock, then opens a transaction and `INSERT OR REPLACE`s every row with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write of the latest state. `tron_store_seconds` records write durations.
+- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit, so ratings from games that ended since the persister's last run aren't lost. No-ops for unchanged rows are fine — there are few players and games are slow.
 
 DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server keeps running. There is no migration system — the schema only ever gets new columns by direct ALTER (TrueSkill is the first such case; `ts_mu` / `ts_sigma` are added via `ALTER TABLE players ADD COLUMN … DEFAULT 0` on every `openDB` and the duplicate-column error is intentionally swallowed).
 

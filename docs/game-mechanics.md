@@ -52,7 +52,7 @@ For every pair `(p, q)` of players in the game, the pair result for `p` is `1.0`
 
 A player who outlived another loser claims a partial win against them even though both lost the game — that's the whole point of ranking by survival. Total delta across all players sums to zero (pair scores sum to `nC2`, pair expecteds sum to `nC2`).
 
-New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends. The viewer chart reconstructs the trajectory from these snapshots (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
+New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endGameLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends. The viewer chart reconstructs the trajectory from these snapshots (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
 
 `wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
 
@@ -65,7 +65,7 @@ New accounts start at 1000. The post-game ELO is patched onto the `Score` entry 
 | `tsBeta`   | $\sigma_0 / 2$  | Performance noise $\beta$ — how much per-game performance varies.         |
 | `tsTau`    | $\sigma_0 / 100$ | Dynamics drift $\tau$ added back to $\sigma^2$ each game.                |
 
-Pairwise free-for-all TrueSkill (Herbrich, Minka, Graepel 2007) lives in `Game.updateTrueSkillLocked` and runs alongside `updateEloLocked` from `endLocked`. The `place` assignment is identical to ELO — winners share place $1$; losers rank by death tick.
+Pairwise free-for-all TrueSkill (Herbrich, Minka, Graepel 2007) lives in `Game.updateTrueSkillLocked` and runs alongside `updateEloLocked` from `endGameLocked`. The `place` assignment is identical to ELO — winners share place $1$; losers rank by death tick.
 
 For every pair $(p, q)$ where $\mathrm{place}(p) \ne \mathrm{place}(q)$ (same-place pairs are skipped rather than treated as $\varepsilon$-draws), the standard 1v1 TrueSkill update is computed and accumulated into $p$'s rating. Let $s = +1$ if $p$ outranks $q$ and $s = -1$ otherwise; then
 

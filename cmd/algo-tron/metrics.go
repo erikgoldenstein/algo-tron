@@ -70,6 +70,31 @@ var (
 		Help:    "Time players spent in the matchmaking queue before being seated.",
 		Buckets: prometheus.ExponentialBuckets(0.5, 2, 8),
 	})
+
+	// Latency-variance observability: per-bot socket write duration (a
+	// degrading client shows up here long before it fills its sink and
+	// gets kicked), kicked-bot counter, per-tick lock acquisition wait
+	// (contention between boards / packet handlers), and the async
+	// player-store duration.
+	metricBotWrite = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tron_bot_write_seconds",
+		Help:    "Duration of individual bot socket writes, performed by per-bot writer goroutines off any lock.",
+		Buckets: prometheus.ExponentialBuckets(0.00001, 4, 10), // 10µs .. ~2.6s
+	})
+	metricBotsKicked = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "tron_bots_kicked_total",
+		Help: "Bot connections dropped because their send buffer was full — the bot stopped reading or its link stalled.",
+	})
+	metricLockWait = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "tron_lock_wait_seconds",
+		Help:    "Time the tick loop waited to acquire a lock, by lock (game = own board, server = global). Sustained growth means lock contention is back on the tick path.",
+		Buckets: prometheus.ExponentialBuckets(0.000001, 4, 10), // 1µs .. ~0.26s
+	}, []string{"lock"})
+	metricStoreDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tron_store_seconds",
+		Help:    "Duration of full player-table SQLite writes (async persister; never holds the server lock).",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 12),
+	})
 )
 
 // registerGauges registers lazy gauges that read live server state. Each
@@ -111,7 +136,7 @@ func (s *Server) registerGauges() {
 		defer s.mu.Unlock()
 		n := 0
 		for _, p := range s.players {
-			if p.conn != nil && p.seat == nil {
+			if p.conn != nil && p.seat.Load() == nil {
 				n++
 			}
 		}

@@ -13,32 +13,41 @@ Started from `main()`:
 | Goroutine            | What it does                                                     |
 |----------------------|------------------------------------------------------------------|
 | `listenTCP`          | Accept loop for bot connections. Backs off on accept errors.     |
-| `handleConn` × N     | One per bot connection. Reads moves/chats, throttles per-tick.   |
+| `handleConn` × N     | One per bot connection (reader side). Reads moves/chats, throttles via goroutine-local token buckets. |
+| `botSink.run` × N    | One per bot connection (writer side). Drains the per-bot send queue with a write deadline; kicks the bot if the queue overflows. No other goroutine ever writes to a bot socket. |
 | `listenHTTP`         | HTTP server for the viewer SPA + `/ws` upgrade.                  |
 | `viewWS` reader × N  | One per viewer connection. Detects disconnect and handles `{"watch": id}` board-subscription switches. |
 | `viewWriter` × N     | One per viewer. Drains the per-viewer send queue.                |
-| `matchmakerLoop`     | Polls every 1s; groups queued players onto new boards. See [matchmaking.md](matchmaking.md). |
-| `Game.run` × boards  | One per running board. Waits on a `time.Ticker` for one tick interval, then `tickLocked`. The ticker is rebuilt each iteration if the tick-rate ramp bumped the interval; exits on game end. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
+| `matchmakerLoop`     | Polls every 1s; clears expired chats, then groups queued players onto new boards. See [matchmaking.md](matchmaking.md). |
+| `Game.run` × boards  | One per running board. Sleeps until an absolute deadline (`next += interval`), then runs the two tick phases; exits on game end. Re-anchors instead of bursting if it falls a full interval behind. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
+| `storeLoop`          | Persister. On signal, snapshots all players under the lock, then writes SQLite with no lock held. |
 | `statsLoop`          | Emits one stats line per minute while any board is active.       |
 | `listenMetrics`      | Prometheus HTTP server, only if `-metrics` is set.               |
 
-All goroutines except the game loops are I/O- or scrape-driven; only `Game.run` is on a tight time budget. Several boards run concurrently (bounded by the matchmaker's board budget); each is small (≤ 32 players), so their tick work stays cheap under the shared lock.
+All goroutines except the game loops are I/O- or scrape-driven; only `Game.run` is on a tight time budget. Crucially, nothing on a tick's critical path performs blocking I/O: bot frames are enqueued on per-bot sinks, viewer deltas on per-viewer sinks, and persistence runs in `storeLoop` — a stalled client or a slow disk can no longer delay a tick.
 
 ## Locking model
 
-There is exactly one mutex: `Server.mu`. It guards `players`, `ipCount`, `games`, `viewState`, `viewClients`, the matchmaker state (`mmArrivals`, `mmRate`), and every field of every live `Player`, `Seat`, and `Game` except where atomics are used.
+Two mutex levels:
+
+- **`Server.mu`** — global state: `players`, `ipCount`, `games`, `viewState`, `viewClients`, matchmaker state (`mmArrivals`, `mmRate`), and all `Player` fields (identity, ratings, history, chat, penalty, `conn`).
+- **`Game.mu`** — one per board: the seats' game state (`alive`, `pos`, `trail`, `move`), `fields`, `tick`, `deathTick`, and the per-tick scratch buffers.
+
+**Lock order: `Server.mu` may be held while acquiring a `Game.mu`, never the reverse.** A goroutine holding a `Game.mu` must release it before touching server state — that's why the tick runs in two phases (below).
+
+Two `Player` fields are atomic pointers so the hot paths skip locks entirely:
+
+- `Player.seat` — written only under `Server.mu` (matchmaker seating, death/end release), read lock-free by `handlePacket` so a `move` only ever locks its own board.
+- `Player.sink` — written only under `Server.mu` (connect/disconnect), read lock-free wherever packets are sent. Enqueueing on a sink never blocks and is safe under any lock.
 
 Conventions in the code:
 
-- Functions whose name ends in `Locked` assume the caller holds `s.mu`. Examples: `tickLocked`, `matchmakeLocked`, `updateScoreboardLocked`.
-- Top-level entry points (`handlePacket`, `viewWS`, `matchmakerLoop`, `Game.run`) take the lock themselves.
-- `Player.sendLocked` writes through the player's `*bufio.Writer` while holding `s.mu`. Writes are best-effort; the per-bot `bufio.Writer` is small and on the same connection the bot owns, so blocking the loop is a real risk only if the bot's TCP receive buffer fills. The server doesn't try to detect that — it relies on TCP backpressure and the tick budget metric to surface it.
+- `*Server` methods ending in `Locked` assume the caller holds `Server.mu` (`matchmakeLocked`, `updateScoreboardLocked`, `finishTickLocked`). `*Game` methods ending in `Locked` assume `g.mu` is held (`advanceLocked`, `markDeadLocked`) — except the rating helpers (`updateEloLocked`, `placesLocked`, `updateTrueSkillLocked`), which run at game end under `Server.mu` while the board is quiescent.
+- Per-connection rate-limit state (`connLimits`, token buckets + strikes) is local to the connection's reader goroutine — no lock at all. Only the cross-connection reconnect penalty lives on `Player` under `Server.mu`.
 
-A few values escape the lock as atomics:
+Values that escape both locks as atomics: `Game.tickNs` (current tick interval; read by the rate limiter and gauges), `tickDurNs`, `fanoutDurNs`.
 
-- `Game.tickNs` — that board's current tick interval (set by `Game.run`; `tickIntervalLocked()` takes the fastest across boards for packet rate limiting).
-- `tickDurNs` — last tick's build+broadcast duration.
-- `fanoutDurNs` — last viewer fanout duration.
+`tron_lock_wait_seconds{lock=game|server}` measures how long the tick loop waits on each acquisition — the regression alarm for anything heavy creeping back under either lock.
 
 ## Player vs Seat
 
@@ -46,17 +55,25 @@ A few values escape the lock as atomics:
 
 ## Tick path (per-board hot path)
 
-`Game.tickLocked`:
+**Phase 1 — `Game.advanceLocked` under `g.mu`** (pure mechanics, no server state):
 
-1. Mark disconnected players dead.
+1. Mark disconnected players dead (sink pointer is nil).
 2. Apply queued moves (`Move{Up,Right,Down,Left}` with wrap-around).
-3. Resolve collisions: self-trail, other-trail, or head-on. Head-on kills both. Dying releases the player back to the matchmaking queue.
-4. Send `lose` to dead players; clear expired chats.
-5. Build the broadcast frame: `die|...\n` (if any), `pos|id|x|y\n` per alive, then `tick\n` (omitted on the final tick).
-6. `Game.broadcastAliveLocked` to this board's bots; `broadcastTickLocked` to this board's subscribed viewers.
-7. Record `tickDurNs` / `fanoutDurNs` and tick-budget histogram.
+3. Resolve collisions: self-trail, other-trail, or head-on. Head-on kills both.
+4. Build the broadcast frame: `die|...\n` (if any), `pos|id|x|y\n` per alive, then `tick\n` (omitted on the final tick); enqueue it on every alive bot's sink.
+5. Snapshot positions/deaths into the reusable scratch buffers for phase 2.
 
-The frame is built with `appendPos` directly into a `[]byte` to stay alloc-free; `BenchmarkTickFrame` guards this path. See [bot-protocol.md](bot-protocol.md) for the wire format and [testing.md](testing.md) for the benchmark.
+**Phase 2 — `Server.finishTickLocked` under `Server.mu`**:
+
+1. Release this tick's dead: detach `Player.seat`, re-queue if connected, send `lose`.
+2. Fan the tick delta out to this board's subscribed viewers (positions come from the phase-1 snapshot, so no `g.mu` here).
+3. On the final tick: ratings, `win` packets, scoreboard/chart rebuild, viewer `end`/`boards` messages, and a persistence signal to `storeLoop` (`endGameLocked`).
+
+The frame is built with `appendPos` directly into a `[]byte` to stay alloc-free, and the dead/death-id/position scratch buffers are owned by the game goroutine and reused across ticks; `BenchmarkTickFrame` guards this path. See [bot-protocol.md](bot-protocol.md) for the wire format and [testing.md](testing.md) for the benchmark.
+
+## Bot fanout
+
+Every bot connection gets a `botSink`: a buffered channel (`botSinkBuf = 128` packets) drained by a dedicated writer goroutine, mirroring the viewer design. Enqueueing never blocks. Each write carries a `botWriteTimeout` deadline; a bot whose buffer overflows is kicked (connection closed after a best-effort flush) and `tron_bots_kicked_total` increments. Per-write durations land in `tron_bot_write_seconds` — a degrading client is visible there long before it gets kicked.
 
 ## Viewer fanout
 
@@ -90,6 +107,7 @@ Each `*.js` declares its `Depends on / Provides` globals in the header comment. 
 3. Open SQLite, load players.
 4. Build the `Server`, populate static `ServerInfo`/`ViewInfo` for the UI.
 5. `registerGauges()` lazily wires Prometheus.
-6. Launch the goroutines above via an `errgroup` rooted on a `signal.NotifyContext` (SIGINT/SIGTERM). The first listener error — or a shutdown signal — cancels the context; each listener returns; `g.Wait()` returns and `main` exits.
+6. Launch the goroutines above via an `errgroup` rooted on a `signal.NotifyContext` (SIGINT/SIGTERM). The first listener error — or a shutdown signal — cancels the context; each listener returns; `g.Wait()` returns.
+7. A final synchronous `store()` flushes any ratings the async persister hasn't written yet, then `main` exits.
 
 See [persistence.md](persistence.md) for the data directory contents.

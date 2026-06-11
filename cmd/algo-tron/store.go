@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -82,8 +83,65 @@ func (s *Server) load() {
 	}
 }
 
+// playerRow is one player's persistent state, deep-copied under Server.mu
+// so the SQLite write (JSON marshal + transaction) can run with no lock
+// held — a game ending must not stall other boards' ticks on disk I/O.
+type playerRow struct {
+	username, pwHash string
+	elo              float64
+	scores           []Score
+	tsMu, tsSigma    float64
+}
+
+// queueStoreLocked wakes the persister (storeLoop). Non-blocking: a pending
+// signal already covers any newer state, and a nil channel (tests without a
+// persister) makes this a no-op.
+func (s *Server) queueStoreLocked() {
+	select {
+	case s.storeSignal <- struct{}{}:
+	default:
+	}
+}
+
+// storeLoop is the persister goroutine: on each signal it snapshots all
+// players under the lock, then writes them to SQLite off-lock.
+func (s *Server) storeLoop() {
+	for range s.storeSignal {
+		s.mu.Lock()
+		rows := s.snapshotPlayersLocked()
+		s.mu.Unlock()
+		storeRows(s.db, rows)
+	}
+}
+
+func (s *Server) snapshotPlayersLocked() []playerRow {
+	rows := make([]playerRow, 0, len(s.players))
+	for _, p := range s.players {
+		rows = append(rows, playerRow{
+			username: p.Username,
+			pwHash:   p.PwHash,
+			elo:      p.Elo,
+			scores:   append([]Score(nil), p.ScoreHistory...),
+			tsMu:     p.TsMu,
+			tsSigma:  p.TsSigma,
+		})
+	}
+	return rows
+}
+
+// store synchronously snapshots and persists all players. Used at shutdown
+// (and in tests); live game ends go through queueStoreLocked instead.
 func (s *Server) store() {
-	tx, err := s.db.Begin()
+	s.mu.Lock()
+	rows := s.snapshotPlayersLocked()
+	s.mu.Unlock()
+	storeRows(s.db, rows)
+}
+
+func storeRows(db *sql.DB, rows []playerRow) {
+	start := time.Now()
+	defer func() { metricStoreDuration.Observe(time.Since(start).Seconds()) }()
+	tx, err := db.Begin()
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_begin").Inc()
 		slog.Error("db store begin", "err", err)
@@ -97,11 +155,11 @@ func (s *Server) store() {
 		return
 	}
 	defer stmt.Close()
-	for _, p := range s.players {
-		scores, _ := json.Marshal(p.ScoreHistory)
-		if _, err := stmt.Exec(p.Username, p.PwHash, p.Elo, string(scores), p.TsMu, p.TsSigma); err != nil {
+	for _, r := range rows {
+		scores, _ := json.Marshal(r.scores)
+		if _, err := stmt.Exec(r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()
-			slog.Error("db store row", "user", p.Username, "err", err)
+			slog.Error("db store row", "user", r.username, "err", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

@@ -49,7 +49,7 @@ func TestStartBoardsSplitsIntoSkillBands(t *testing.T) {
 		t.Errorf("bands overlap: first-board min mu %v <= second-board max mu %v", minFirst, maxSecond)
 	}
 	for _, p := range players {
-		if p.seat == nil {
+		if p.seat.Load() == nil {
 			t.Errorf("player %s not seated", p.Username)
 		}
 	}
@@ -78,7 +78,7 @@ func TestMatchmakeTinyPopulationWaitsForEveryone(t *testing.T) {
 	queuePlayer(t, s, "a", 250, time.Second)
 	b := queuePlayer(t, s, "b", 250, time.Second)
 	// b is still playing — not everyone idle is queued yet.
-	b.seat = &Seat{player: b, alive: true}
+	b.seat.Store(&Seat{player: b, alive: true})
 
 	s.matchmakeLocked(time.Now())
 	if len(s.games) != 0 {
@@ -86,7 +86,7 @@ func TestMatchmakeTinyPopulationWaitsForEveryone(t *testing.T) {
 	}
 
 	// b's game finished — now both are queued and a 2-player board starts.
-	b.seat = nil
+	b.seat.Store(nil)
 	s.matchmakeLocked(time.Now())
 	if len(s.games) != 1 || len(s.games[0].seats) != 2 {
 		t.Fatalf("expected one 2-player board, got %+v boards", len(s.games))
@@ -100,7 +100,7 @@ func TestMatchmakeRequiresMinBoardSize(t *testing.T) {
 		queuePlayer(t, s, fmt.Sprintf("p%d", i), 250, time.Minute)
 	}
 	seated := queuePlayer(t, s, "seated", 250, time.Minute)
-	seated.seat = &Seat{player: seated, alive: true}
+	seated.seat.Store(&Seat{player: seated, alive: true})
 
 	s.matchmakeLocked(time.Now())
 
@@ -117,7 +117,7 @@ func TestMatchmakeRespectsBoardBudget(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		seated := queuePlayer(t, s, fmt.Sprintf("seated%d", i), 250, 0)
 		st := &Seat{player: seated, game: running, alive: true}
-		seated.seat = st
+		seated.seat.Store(st)
 		running.seats = append(running.seats, st)
 	}
 	for i := 0; i < 4; i++ {
@@ -142,7 +142,7 @@ func TestMatchmakeStartsAtWaitCap(t *testing.T) {
 	}
 	for i := 0; i < 20; i++ {
 		seated := queuePlayer(t, s, fmt.Sprintf("seated%d", i), 250, 0)
-		seated.seat = &Seat{player: seated, alive: true}
+		seated.seat.Store(&Seat{player: seated, alive: true})
 	}
 
 	s.matchmakeLocked(time.Now())
@@ -164,7 +164,7 @@ func TestMatchmakeGathersWhileArrivalsHelp(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		seated := queuePlayer(t, s, fmt.Sprintf("seated%d", i), 250, 0)
 		st := &Seat{player: seated, game: running, alive: true}
-		seated.seat = st
+		seated.seat.Store(st)
 		running.seats = append(running.seats, st)
 	}
 

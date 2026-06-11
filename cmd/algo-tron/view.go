@@ -208,7 +208,9 @@ func (s *Server) buildInitLocked(watchID string) *initMsg {
 func (s *Server) boardListLocked() []boardMsg {
 	boards := []boardMsg{}
 	for _, g := range s.games {
+		g.mu.Lock()
 		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked())})
+		g.mu.Unlock()
 	}
 	return boards
 }
@@ -227,8 +229,10 @@ func (s *Server) broadcastBoardsLocked() {
 // buildGameMsgLocked snapshots one board including full trails. Sent inside
 // "init" and as a "game" message whenever a viewer subscribes; per-tick
 // deltas update from there. This is the only message that scales with trail
-// length.
+// length. Caller holds Server.mu; the board state is read under g.mu.
 func buildGameMsgLocked(g *Game) *gameMsg {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	m := &gameMsg{ID: g.id, Width: g.width, Height: g.height}
 	for _, st := range g.seats {
 		m.Players = append(m.Players, playerMsg{
@@ -241,8 +245,10 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 }
 
 // broadcastTickLocked sends one board's tick delta to the viewers subscribed
-// to that board.
-func (s *Server) broadcastTickLocked(g *Game, deaths []int) {
+// to that board. Positions and deaths come from the tick's phase-1 snapshot
+// (no g.mu needed); chats are player state, read under the Server.mu the
+// caller already holds.
+func (s *Server) broadcastTickLocked(g *Game, res tickResult) {
 	subscribed := false
 	for _, sink := range s.viewClients {
 		if sink.gameID == g.id {
@@ -253,12 +259,8 @@ func (s *Server) broadcastTickLocked(g *Game, deaths []int) {
 	if !subscribed {
 		return
 	}
-	positions := make([][3]int, 0, len(g.seats))
 	var chats map[int]string
 	for _, st := range g.seats {
-		if st.alive {
-			positions = append(positions, [3]int{st.id, st.pos.X, st.pos.Y})
-		}
 		if st.player.Chat != "" {
 			if chats == nil {
 				chats = map[int]string{}
@@ -269,8 +271,8 @@ func (s *Server) broadcastTickLocked(g *Game, deaths []int) {
 	data, _ := json.Marshal(tickMsg{
 		Type:      "tick",
 		GameID:    g.id,
-		Positions: positions,
-		Deaths:    deaths,
+		Positions: res.positions,
+		Deaths:    res.deathIDs,
 		Chats:     chats,
 	})
 	for c, sink := range s.viewClients {

@@ -48,7 +48,7 @@ func newGame(s *Server, players []*Player) *Game {
 	for i, p := range players {
 		st := newSeat(g, p, i, i*2, i*2)
 		g.seats = append(g.seats, st)
-		p.seat = st
+		p.seat.Store(st)
 		g.fields[i*2][i*2] = i
 	}
 	return g
@@ -57,7 +57,7 @@ func newGame(s *Server, players []*Player) *Game {
 func (g *Game) startLocked() {
 	slog.Info("game start", "id", g.id, "players", len(g.seats), "width", g.width, "height", g.height)
 	for _, st := range g.seats {
-		st.player.sendLocked("game", g.width, g.height, st.id)
+		st.player.send("game", g.width, g.height, st.id)
 	}
 	frame := make([]byte, 0, len(g.seats)*32)
 	for _, st := range g.seats {
@@ -71,37 +71,46 @@ func (g *Game) startLocked() {
 		}
 	}
 	frame = append(frame, "tick\n"...)
-	g.broadcastAliveLocked(string(frame))
+	g.mu.Lock()
+	g.broadcastAliveLocked(frame)
+	g.mu.Unlock()
 	g.server.broadcastBoardsLocked()
 	go g.run()
 }
 
+// run is the per-board tick loop. Deadlines are absolute (next = next +
+// interval) rather than ticker-relative, so a delayed tick doesn't shift
+// every later tick and a rate ramp doesn't cause a phase jump. If the loop
+// falls a full interval behind it re-anchors instead of bursting catch-up
+// ticks.
+//
+// Each tick runs in two phases: phase 1 under g.mu does the game mechanics
+// and enqueues the bot frames; phase 2 under Server.mu applies server-side
+// effects (re-queueing the dead, lose/win packets, viewer fanout, game
+// end). The locks are never held together here, and neither phase performs
+// blocking I/O.
 func (g *Game) run() {
+	s := g.server
 	var lastTick time.Time
-	var ticker *time.Ticker
-	var curRate int
-	defer func() {
-		if ticker != nil {
-			ticker.Stop()
-		}
-	}()
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+	next := time.Now()
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
 		interval := time.Second / time.Duration(rate)
 		g.tickNs.Store(int64(interval))
-		if rate != curRate {
-			if ticker != nil {
-				ticker.Stop()
-			}
-			ticker = time.NewTicker(interval)
-			curRate = rate
+		next = next.Add(interval)
+		if d := time.Until(next); d > 0 {
+			timer.Reset(d)
+			<-timer.C
+		} else {
+			next = time.Now() // fell a full interval behind — re-anchor
 		}
-		<-ticker.C
 		now := time.Now()
 		if !lastTick.IsZero() {
 			offset := float64(now.Sub(lastTick)-interval) / float64(interval)
 			metricTickOffset.Observe(offset)
-			if ch := g.server.tickOffsetCh; ch != nil {
+			if ch := s.tickOffsetCh; ch != nil {
 				select {
 				case ch <- offset:
 				default:
@@ -109,30 +118,54 @@ func (g *Game) run() {
 			}
 		}
 		lastTick = now
-		g.server.mu.Lock()
-		done := g.tickLocked()
-		g.server.mu.Unlock()
-		if done {
+
+		tickStart := time.Now()
+		g.mu.Lock()
+		metricLockWait.WithLabelValues("game").Observe(time.Since(tickStart).Seconds())
+		res := g.advanceLocked()
+		g.mu.Unlock()
+
+		serverWait := time.Now()
+		s.mu.Lock()
+		metricLockWait.WithLabelValues("server").Observe(time.Since(serverWait).Seconds())
+		fanoutDur := s.finishTickLocked(g, res)
+		s.mu.Unlock()
+
+		tickDur := time.Since(tickStart)
+		s.fanoutDurNs.Store(int64(fanoutDur))
+		s.tickDurNs.Store(int64(tickDur))
+		metricTicks.Inc()
+		metricTickBudget.Observe(tickDur.Seconds() / interval.Seconds())
+		metricFanoutBudget.Observe(fanoutDur.Seconds() / interval.Seconds())
+		if res.done {
 			return
 		}
 	}
 }
 
-func (g *Game) tickLocked() bool {
-	defer func() { g.tick++ }()
-	tickStart := time.Now()
-	dead := map[*Seat]bool{}
-	g.killDisconnectedLocked(dead)
-	g.movePlayersLocked()
-	g.applyCollisionsLocked(dead)
-	deathIDs := g.processDeadLocked(dead)
-	g.server.clearExpiredChatsLocked()
+// advanceLocked is tick phase 1: pure game mechanics plus the bot frame
+// fanout (enqueue only — sinks never block). The returned tickResult's
+// slices alias g's scratch buffers and must be consumed before the next
+// tick.
+func (g *Game) advanceLocked() tickResult {
+	g.deadScratch = g.deadScratch[:0]
+	g.deathIDs = g.deathIDs[:0]
+	g.posScratch = g.posScratch[:0]
 
+	g.killDisconnectedLocked()
+	g.movePlayersLocked()
+	g.applyCollisionsLocked()
+	for _, st := range g.deadScratch {
+		g.removeFromFields(st)
+		g.deathIDs = append(g.deathIDs, st.id)
+	}
+
+	res := tickResult{dead: g.deadScratch, deathIDs: g.deathIDs}
 	ending := g.shouldEndLocked()
-	frame := make([]byte, 0, len(g.seats)*16)
-	if len(deathIDs) > 0 {
+	frame := make([]byte, 0, len(g.seats)*16+8)
+	if len(g.deathIDs) > 0 {
 		frame = append(frame, "die|"...)
-		for i, id := range deathIDs {
+		for i, id := range g.deathIDs {
 			if i > 0 {
 				frame = append(frame, '|')
 			}
@@ -143,67 +176,88 @@ func (g *Game) tickLocked() bool {
 	for _, st := range g.seats {
 		if st.alive {
 			frame = appendPos(frame, st.id, st.pos.X, st.pos.Y)
+			g.posScratch = append(g.posScratch, [3]int{st.id, st.pos.X, st.pos.Y})
 		}
 	}
 	if !ending {
 		frame = append(frame, "tick\n"...)
 	}
-	fanoutStart := time.Now()
-	g.broadcastAliveLocked(string(frame))
-	g.server.broadcastTickLocked(g, deathIDs)
-	end := time.Now()
-	tickDur := end.Sub(tickStart)
-	fanoutDur := end.Sub(fanoutStart)
-	g.server.fanoutDurNs.Store(int64(fanoutDur))
-	g.server.tickDurNs.Store(int64(tickDur))
-	metricTicks.Inc()
-	if interval := time.Duration(g.tickNs.Load()); interval > 0 {
-		metricTickBudget.Observe(tickDur.Seconds() / interval.Seconds())
-		metricFanoutBudget.Observe(fanoutDur.Seconds() / interval.Seconds())
-	}
-
+	g.broadcastAliveLocked(frame)
+	res.positions = g.posScratch
 	if ending {
-		g.endLocked()
-		return true
+		res.done = true
+		res.alive = g.aliveLocked()
 	}
-	return false
+	g.tick++
+	return res
 }
 
-// broadcastAliveLocked sends one wire frame to every alive bot on this board.
-func (g *Game) broadcastAliveLocked(packet string) {
-	for _, st := range g.seats {
-		if st.alive && st.player.writer != nil {
-			st.player.writer.WriteString(packet)
-			st.player.writer.Flush()
+// finishTickLocked is tick phase 2: the server-side effects of one tick.
+// This tick's dead detach from their seats, re-enter the matchmaking queue,
+// and get their lose packet; viewers get the tick delta; a finished game is
+// wound down. Returns the viewer-fanout duration for the budget metric.
+func (s *Server) finishTickLocked(g *Game, res tickResult) time.Duration {
+	for _, st := range res.dead {
+		s.releaseSeatLocked(st)
+		st.loseLocked()
+	}
+	fanoutStart := time.Now()
+	s.broadcastTickLocked(g, res)
+	fanoutDur := time.Since(fanoutStart)
+	if res.done {
+		s.endGameLocked(g, res.alive)
+	}
+	return fanoutDur
+}
+
+// releaseSeatLocked detaches the player from a dead or finished seat and
+// puts them back in the matchmaking queue if still connected. The seat
+// itself stays in its game for death-rank/rating math.
+func (s *Server) releaseSeatLocked(st *Seat) {
+	if st.player.seat.Load() == st {
+		st.player.seat.Store(nil)
+		if st.player.conn != nil {
+			s.enqueueLocked(st.player)
 		}
 	}
 }
 
-func (g *Game) killDisconnectedLocked(dead map[*Seat]bool) {
+// broadcastAliveLocked enqueues one wire frame for every alive bot on this
+// board. Enqueue never blocks; each bot's writer goroutine does the socket
+// I/O concurrently, so no bot waits on another bot's connection.
+func (g *Game) broadcastAliveLocked(packet []byte) {
 	for _, st := range g.seats {
-		if st.alive && st.player.conn == nil {
-			g.markDeadLocked(st, dead)
+		if st.alive {
+			if sink := st.player.sink.Load(); sink != nil {
+				sink.enqueue(packet)
+			}
+		}
+	}
+}
+
+func (g *Game) killDisconnectedLocked() {
+	for _, st := range g.seats {
+		if st.alive && st.player.sink.Load() == nil {
+			g.markDeadLocked(st)
 			g.removeFromFields(st)
 			metricDisconnectKilled.Inc()
 		}
 	}
 }
 
-// markDeadLocked kills the seat and immediately releases the player back to
-// the matchmaking queue — they can be seated on a new board while this game
-// plays out. The seat itself stays in the game for death-rank/rating math.
-func (g *Game) markDeadLocked(st *Seat, dead map[*Seat]bool) {
-	dead[st] = true
+// markDeadLocked kills the seat and records its death tick. Server-side
+// release (detaching Player.seat, re-queueing, the lose packet) happens in
+// finishTickLocked, which runs under Server.mu right after this phase.
+// Already-dead seats are ignored, which dedupes multi-collision marks.
+func (g *Game) markDeadLocked(st *Seat) {
+	if !st.alive {
+		return
+	}
 	st.alive = false
 	if _, ok := g.deathTick[st]; !ok {
 		g.deathTick[st] = g.tick
 	}
-	if st.player.seat == st {
-		st.player.seat = nil
-		if st.player.conn != nil {
-			g.server.enqueueLocked(st.player)
-		}
-	}
+	g.deadScratch = append(g.deadScratch, st)
 }
 
 func (g *Game) movePlayersLocked() {
@@ -226,7 +280,7 @@ func (g *Game) movePlayersLocked() {
 	}
 }
 
-func (g *Game) applyCollisionsLocked(dead map[*Seat]bool) {
+func (g *Game) applyCollisionsLocked() {
 	for _, st := range g.seats {
 		if !st.alive {
 			continue
@@ -238,20 +292,10 @@ func (g *Game) applyCollisionsLocked(dead map[*Seat]bool) {
 		}
 		other := g.seats[occupant]
 		if other != st && other.pos == st.pos {
-			g.markDeadLocked(other, dead)
+			g.markDeadLocked(other)
 		}
-		g.markDeadLocked(st, dead)
+		g.markDeadLocked(st)
 	}
-}
-
-func (g *Game) processDeadLocked(dead map[*Seat]bool) []int {
-	ids := []int{}
-	for st := range dead {
-		g.removeFromFields(st)
-		st.loseLocked()
-		ids = append(ids, st.id)
-	}
-	return ids
 }
 
 func (g *Game) shouldEndLocked() bool {
@@ -259,8 +303,12 @@ func (g *Game) shouldEndLocked() bool {
 	return (len(g.seats) == 1 && len(alive) == 0) || (len(g.seats) > 1 && len(alive) <= 1)
 }
 
-func (g *Game) endLocked() {
-	alive := g.aliveLocked()
+// endGameLocked winds a finished board down: ratings, win packets, seat
+// release, scoreboard/viewer updates, and a persistence signal. Caller
+// holds Server.mu. The game goroutine is quiescent by now (this runs as
+// the tail of its final tick), so reading g's state without g.mu is safe —
+// nothing mutates a board after its final tick.
+func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	g.updateEloLocked(alive)
 	g.updateTrueSkillLocked(alive)
 	names := []string{}
@@ -276,19 +324,14 @@ func (g *Game) endLocked() {
 	}
 	// Release survivors back to the queue (the dead re-queued at death).
 	for _, st := range g.seats {
-		if st.player.seat == st {
-			st.player.seat = nil
-			if st.player.conn != nil {
-				g.server.enqueueLocked(st.player)
-			}
-		}
+		s.releaseSeatLocked(st)
 	}
-	g.server.removeGameLocked(g)
-	g.server.viewState.LastWinners = names
-	g.server.store()
-	g.server.updateScoreboardLocked()
-	g.server.broadcastEndLocked(g.id)
-	g.server.broadcastBoardsLocked()
+	s.removeGameLocked(g)
+	s.viewState.LastWinners = names
+	s.queueStoreLocked()
+	s.updateScoreboardLocked()
+	s.broadcastEndLocked(g.id)
+	s.broadcastBoardsLocked()
 	dur := time.Since(g.startTime)
 	metricGames.Inc()
 	metricGameDuration.Observe(dur.Seconds())
@@ -308,6 +351,7 @@ func (s *Server) removeGameLocked(g *Game) {
 // derived from how long it survived. Winners share place 1; losers are ranked
 // by their death tick (later death = better place). Seats that died on the
 // same tick share a place (head-on collisions, multiple disconnects).
+// Caller holds Server.mu (ratings are player state); the board is quiescent.
 func (g *Game) updateEloLocked(winners []*Seat) {
 	if len(g.seats) == 0 {
 		return
@@ -371,7 +415,7 @@ func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
 // updated against every opponent based on the FFA ranking (winners share
 // place 1; losers are ranked by death tick). Same-place pairs (co-deaths,
 // joint wins) are skipped — we treat them as no-information matchups rather
-// than ε-draws.
+// than ε-draws. Caller holds Server.mu; the board is quiescent.
 func (g *Game) updateTrueSkillLocked(winners []*Seat) {
 	if len(g.seats) == 0 {
 		return

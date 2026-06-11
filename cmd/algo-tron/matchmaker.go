@@ -32,6 +32,10 @@ func (s *Server) matchmakerLoop() {
 	for {
 		time.Sleep(time.Second)
 		s.mu.Lock()
+		// Housekeeping piggybacks on the 1 Hz cadence: chat expiry used
+		// to run inside every tick of every board, which scanned all
+		// players at tick rate for a 5s-resolution effect.
+		s.clearExpiredChatsLocked()
 		s.matchmakeLocked(time.Now())
 		s.mu.Unlock()
 	}
@@ -126,7 +130,7 @@ func (s *Server) startBoardsLocked(players []*Player) {
 func (s *Server) queuedPlayersLocked() []*Player {
 	out := []*Player{}
 	for _, p := range s.players {
-		if p.conn != nil && p.seat == nil {
+		if p.conn != nil && p.seat.Load() == nil {
 			out = append(out, p)
 		}
 	}

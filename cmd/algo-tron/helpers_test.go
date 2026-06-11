@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"log"
@@ -39,18 +38,37 @@ func testServer(t *testing.T) *Server {
 	return s
 }
 
-// testPlayer returns a Player with a buffer-backed writer.
-// Anything sent to the player is captured in the returned buffer.
-func testPlayer(username string) (*Player, *bytes.Buffer) {
-	buf := &bytes.Buffer{}
-	return &Player{
+// sinkRecorder captures packets enqueued on a player's sink without a
+// running writer goroutine. String drains anything queued so far.
+type sinkRecorder struct {
+	sink *botSink
+	buf  bytes.Buffer
+}
+
+func (r *sinkRecorder) String() string {
+	for {
+		select {
+		case data := <-r.sink.ch:
+			r.buf.Write(data)
+		default:
+			return r.buf.String()
+		}
+	}
+}
+
+// testPlayer returns a Player with a sink whose output is captured by the
+// returned recorder.
+func testPlayer(username string) (*Player, *sinkRecorder) {
+	sink := newBotSink(nil)
+	p := &Player{
 		Username: username,
 		PwHash:   "hash",
 		Elo:      1000,
 		TsMu:     tsMu0,
 		TsSigma:  tsSigma0,
-		writer:   bufio.NewWriter(buf),
-	}, buf
+	}
+	p.sink.Store(sink)
+	return p, &sinkRecorder{sink: sink}
 }
 
 // makeGame constructs a Game from the given players in their given order
@@ -67,7 +85,7 @@ func makeGame(s *Server, players []*Player) *Game {
 	for i, p := range players {
 		st := newSeat(g, p, i, i*2, i*2)
 		g.seats = append(g.seats, st)
-		p.seat = st
+		p.seat.Store(st)
 		g.fields[i*2][i*2] = i
 	}
 	return g
@@ -80,18 +98,18 @@ func bareGame(s *Server, players ...*Player) *Game {
 	for i, p := range players {
 		st := &Seat{player: p, game: g, id: i, alive: true}
 		g.seats = append(g.seats, st)
-		p.seat = st
+		p.seat.Store(st)
 	}
 	return g
 }
 
 // addSeat creates a fresh player seated at (x,y) on g. The player's packets
-// are discarded (nil writer would no-op; we keep one for sendLocked output).
+// land in its sink buffer and are discarded.
 func addSeat(g *Game, username string, x, y int) *Seat {
 	p, _ := testPlayer(username)
 	st := &Seat{player: p, game: g, id: len(g.seats), alive: true, pos: Vec2{x, y}, trail: []Vec2{{x, y}}}
 	g.seats = append(g.seats, st)
-	p.seat = st
+	p.seat.Store(st)
 	return st
 }
 

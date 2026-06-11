@@ -10,8 +10,10 @@ import (
 // TCP bot wire protocol helpers — see
 // https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md
 //
-// writePacket is the cold-path helper, used for join/error/win/lose — never
-// per-tick. fmt is fine here and reads more clearly.
+// formatPacket/writePacket are the cold-path helpers, used for
+// join/error/win/lose — never per-tick. fmt is fine here and reads more
+// clearly. writePacket writes directly (pre-join, before a botSink
+// exists); formatPacket feeds Player.send, which enqueues on the sink.
 //
 // appendPos and appendPlayer are the hot-path helpers, called once per
 // alive player per tick when building the broadcast frame. They use
@@ -20,15 +22,19 @@ import (
 // dominate frame-build time. If you change the wire format, update both
 // styles and the matching reader in bot tests.
 
-func writePacket(w *bufio.Writer, parts ...any) {
-	if w == nil {
-		return
-	}
+func formatPacket(parts ...any) []byte {
 	vals := make([]string, len(parts))
 	for i, part := range parts {
 		vals[i] = fmt.Sprint(part)
 	}
-	fmt.Fprintln(w, strings.Join(vals, "|"))
+	return []byte(strings.Join(vals, "|") + "\n")
+}
+
+func writePacket(w *bufio.Writer, parts ...any) {
+	if w == nil {
+		return
+	}
+	w.Write(formatPacket(parts...))
 	w.Flush()
 }
 

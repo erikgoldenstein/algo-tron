@@ -20,7 +20,7 @@ passed.
 
 ## Race detector (concurrency-touching changes)
 
-Anything that touches `s.mu`, goroutines, channels, `tickLocked`,
+Anything that touches `s.mu`/`g.mu`, goroutines, channels, the tick phases,
 `broadcastTickLocked`, the TCP read/write paths, or the viewer fan-out:
 
 ```sh
@@ -36,7 +36,7 @@ Run when the matching area changes; the full suite above is still the gate.
 | `game.go`, collisions, movement, ELO, TrueSkill        | `go test ./cmd/algo-tron -run 'TestUpdateElo|TestUpdateTrueSkill|TestMovePlayers|TestApplyCollisions|TestRemoveFromFields|TestNewGame|TestShouldEndLocked|TestKillDisconnectedLocked|TestMarkDead|TestProcessDeadLocked|TestAliveLocked|TestClearExpiredChats|TestEndLocked' -v` |
 | `matchmaker.go`, queue, banding, board budget          | `go test ./cmd/algo-tron -run 'TestMatchmake|TestStartBoards' -v` |
 | `tcp.go`, join validation, chat, proxy protocol        | `go test ./cmd/algo-tron -run 'TestReadProxyProtocolIP|TestValidateJoin|TestHandleMoveLocked|TestHandleChatLocked|TestQueuedPlayersLocked' -v` |
-| `player.go`, seats, send, disconnect, score trimming   | `go test ./cmd/algo-tron -run 'TestNewSeat|TestSetPos|TestReadMoveLocked|TestWinsLoses|TestTrimScores|TestSendLocked|TestWinLocked|TestLoseLocked|TestPatchScoreElo|TestDisconnect' -v` |
+| `player.go`, seats, send, disconnect, score trimming   | `go test ./cmd/algo-tron -run 'TestNewSeat|TestSetPos|TestReadMoveLocked|TestWinsLoses|TestTrimScores|TestSend|TestWinLocked|TestLoseLocked|TestPatchScoreElo|TestBotSink' -v` |
 | `store.go`, SQLite persistence, password hashing       | `go test ./cmd/algo-tron -run 'TestHashPassword|TestLoadOrCreateSecret|TestLoadStore|TestLoadSetsDefaultElo|TestLoadInitializesTrueSkill|TestStoreIsIdempotent' -v` |
 | `view.go`, scoreboard, chart data                      | `go test ./cmd/algo-tron -run 'TestUpdateScoreboard|TestUpdateChartData' -v` |
 | `util.go`, host/port parsing, IDs                      | `go test ./cmd/algo-tron -run 'TestIsLocalhost|TestHostOnly|TestPortOnly|TestRandID' -v` |
@@ -44,7 +44,7 @@ Run when the matching area changes; the full suite above is still the gate.
 
 ## Benchmarks (hot-path changes)
 
-Run when changing anything in `protocol.go`, `view.go`, `tickLocked`,
+Run when changing anything in `protocol.go`, `view.go`, the tick phases,
 `broadcastTickLocked`, `appendPos`, `appendPlayer`, or the per-tick marshalling
 path. Watch `allocs/op` and `B/op` — they're host-invariant and the primary
 regression signal.

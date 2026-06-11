@@ -119,17 +119,17 @@ func TestTrimScores(t *testing.T) {
 	}
 }
 
-func TestSendLocked(t *testing.T) {
+func TestSend(t *testing.T) {
 	p, buf := testPlayer("alice")
-	p.sendLocked("hello", "world", 42)
+	p.send("hello", "world", 42)
 	if got := buf.String(); got != "hello|world|42\n" {
 		t.Errorf("output = %q, want %q", got, "hello|world|42\n")
 	}
 }
 
-func TestSendLockedNilWriter(t *testing.T) {
+func TestSendNoSink(t *testing.T) {
 	p := &Player{Username: "alice"}
-	p.sendLocked("should", "not", "panic") // writer is nil — must be a no-op
+	p.send("should", "not", "panic") // no sink — must be a no-op
 }
 
 func TestWinLocked(t *testing.T) {
@@ -184,19 +184,48 @@ func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
 	}
 }
 
-func TestDisconnect(t *testing.T) {
+// — botSink ———————————————————————————————————————————————————————————
+
+// The writer must deliver queued packets and close the connection after
+// shutdown — a kicked or disconnecting bot still gets its final error
+// packet (best-effort, bounded by botWriteTimeout).
+func TestBotSinkDrainsOnShutdown(t *testing.T) {
 	clientConn, serverConn := mustPipe(t)
-	defer clientConn.Close()
+	sink := newBotSink(serverConn)
+	sink.enqueue([]byte("error|ERROR_RATE_LIMIT\n"))
+	sink.shutdown()
+	go sink.run()
 
-	p, _ := testPlayer("alice")
-	p.conn = serverConn
-
-	p.disconnect()
-
-	if p.conn != nil {
-		t.Error("conn should be nil after disconnect")
+	buf := make([]byte, 64)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatalf("read: %v", err)
 	}
-	if p.writer != nil {
-		t.Error("writer should be nil after disconnect")
+	if got := string(buf[:n]); got != "error|ERROR_RATE_LIMIT\n" {
+		t.Errorf("client received %q, want the queued error packet", got)
+	}
+	// After the drain the connection must be closed.
+	clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := clientConn.Read(buf); err == nil {
+		t.Error("connection should be closed after drain")
+	}
+}
+
+// A full sink must kick (shutdown) instead of blocking the sender.
+func TestBotSinkKicksWhenFull(t *testing.T) {
+	_, serverConn := mustPipe(t)
+	sink := newBotSink(serverConn) // no writer goroutine — nothing drains
+	for i := 0; i < botSinkBuf; i++ {
+		sink.enqueue([]byte("pos|0|0|0\n"))
+	}
+	sink.enqueue([]byte("one too many\n")) // must not block
+
+	select {
+	case <-sink.done:
+	default:
+		t.Error("overflowing the sink must shut it down")
+	}
+	if !sink.kicked.Load() {
+		t.Error("overflow must mark the sink kicked")
 	}
 }

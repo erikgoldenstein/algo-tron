@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"net"
 	"sync"
@@ -17,20 +16,28 @@ const (
 	joinTimeout         = 5 * time.Second
 	viewWriteTimeout    = 250 * time.Millisecond
 	viewSinkBuf         = 16 // pending delta messages per viewer before we kick them
+	botWriteTimeout     = 2 * time.Second
+	botSinkBuf          = 128 // pending packets per bot before we kick them
 	maxConnections      = 1
 	scoreWindow         = 2 * time.Hour
 	eloKFactor          = 16
 
-	// TCP per-connection rate limits. Each packet must pass the global
-	// totalPacketsPerTick budget; "move" and "chat" then have their own
-	// per-type budgets on top. Every over-budget packet adds a strike;
-	// strikes reset on the next allowed packet. At rateLimitWarnStrikes
-	// the client gets a WARNING; at rateLimitErrorStrikes it's
-	// disconnected and the per-player reconnectPenalty doubles (capped
-	// at reconnectPenaltyMax), enforced on the next join. The saved-up
-	// penalty decays linearly with good behavior: after
-	// reconnectPenaltyRedemption × the previous ban time has elapsed
-	// without another strike-out, the next ban starts at the base again.
+	// TCP per-connection rate limits, enforced as token buckets. Each
+	// bucket refills at packetsPerTick tokens per tick interval (the
+	// player's own board's interval, or 1s while unseated) and holds at
+	// most packetsPerTick tokens, so a burst of up to one tick's budget
+	// is absorbed without drops — network jitter that delivers two
+	// consecutive one-per-tick moves back-to-back must not cost a move.
+	// Every packet must pass the global totalPacketsPerTick bucket;
+	// "move" and "chat" then have their own per-type buckets on top.
+	// Every over-budget packet adds a strike; strikes reset on the next
+	// allowed packet. At rateLimitWarnStrikes the client gets a WARNING;
+	// at rateLimitErrorStrikes it's disconnected and the per-player
+	// reconnectPenalty doubles (capped at reconnectPenaltyMax), enforced
+	// on the next join. The saved-up penalty decays linearly with good
+	// behavior: after reconnectPenaltyRedemption × the previous ban time
+	// has elapsed without another strike-out, the next ban starts at the
+	// base again.
 	totalPacketsPerTick        = 10
 	movePacketsPerTick         = 5
 	chatPacketsPerTick         = 3
@@ -87,6 +94,11 @@ type Score struct {
 // player who dies leaves their Seat behind in the old game and immediately
 // re-enters the matchmaking queue, so they can be seated in a new game while
 // the old one is still running.
+//
+// All fields are guarded by Server.mu except seat and sink, which are
+// atomic pointers: they are *written* only while holding Server.mu but read
+// lock-free on the per-packet hot path (handlePacket) and the per-tick hot
+// path (frame fanout), so neither path has to touch the server lock.
 type Player struct {
 	Username     string
 	PwHash       string
@@ -98,25 +110,19 @@ type Player struct {
 	TsMu         float64
 	TsSigma      float64
 
-	conn   net.Conn
-	writer *bufio.Writer
+	conn net.Conn
+	sink atomic.Pointer[botSink]
 
 	// seat is the player's participation in the game they are currently
 	// playing; nil while idle/queued. queuedSince feeds the matchmaker's
 	// wait-time accounting (only meaningful while seat == nil).
-	seat        *Seat
+	seat        atomic.Pointer[Seat]
 	queuedSince time.Time
-
-	// Per-connection TCP rate-limit state. Reset on each new TCP
-	// connection in handleConn; see the constant block above.
-	lastPacketAt     time.Time
-	lastMovePacketAt time.Time
-	lastChatPacketAt time.Time
-	rateLimitStrikes int
 
 	// Cross-connection reconnect penalty. Survives disconnect so a bot
 	// that gets killed for spam, reconnects, and spams again pays a
-	// longer cool-off the next time.
+	// longer cool-off the next time. Per-connection rate-limit state
+	// lives in connLimits, local to the connection's reader goroutine.
 	reconnectPenalty   time.Duration
 	reconnectAllowedAt time.Time
 }
@@ -244,6 +250,11 @@ type endMsg struct {
 	LastWinners []string          `json:"lastWinners"`
 }
 
+// Server holds global state. Server.mu guards everything reachable from it
+// except per-board game state, which lives behind each Game's own mutex.
+// Lock order: Server.mu may be held while acquiring a Game.mu, never the
+// reverse — a goroutine holding a Game.mu must release it before touching
+// server state.
 type Server struct {
 	mu          sync.Mutex
 	players     map[string]*Player
@@ -257,6 +268,12 @@ type Server struct {
 	// from it. See matchmaker.go.
 	mmArrivals int
 	mmRate     float64
+
+	// storeSignal wakes the persister goroutine (storeLoop) to snapshot
+	// and write all players to SQLite. Capacity 1; senders never block —
+	// a pending signal already covers any newer state. nil in tests that
+	// don't exercise persistence (send via queueStoreLocked is a no-op).
+	storeSignal chan struct{}
 
 	secret      []byte
 	db          *sql.DB
@@ -283,7 +300,13 @@ type viewerSink struct {
 	gameID string
 }
 
+// Game is one board. mu guards all per-board state: seats' game fields
+// (alive, pos, trail, move, lastMove), fields, tick, deathTick, and the
+// scratch buffers. Functions suffixed Locked that live on *Game assume
+// g.mu is held; *Server methods suffixed Locked assume Server.mu is held
+// (see the Server doc comment for the lock order).
 type Game struct {
+	mu        sync.Mutex
 	server    *Server
 	id        string
 	seats     []*Seat
@@ -294,4 +317,22 @@ type Game struct {
 	tick      int
 	deathTick map[*Seat]int
 	tickNs    atomic.Int64 // current tick interval in nanoseconds
+
+	// Per-tick scratch, owned by the game goroutine and reused across
+	// ticks to keep the hot path alloc-free. Contents are only valid
+	// within one tick cycle (advanceLocked through finishTickLocked).
+	deadScratch []*Seat
+	deathIDs    []int
+	posScratch  [][3]int
+}
+
+// tickResult carries one tick's outcome from phase 1 (game mechanics under
+// Game.mu) to phase 2 (server-side effects under Server.mu). The slices
+// alias the game's scratch buffers — consume them before the next tick.
+type tickResult struct {
+	done      bool
+	dead      []*Seat  // seats that died this tick
+	deathIDs  []int    // their wire ids
+	positions [][3]int // alive {id,x,y} snapshot for the viewer delta
+	alive     []*Seat  // winners; only set when done
 }

@@ -72,12 +72,14 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 
 ## Rate limits
 
-Three per-connection budgets, enforced inside `handlePacket`. Each over-budget packet is dropped and adds a strike against the connection.
+Three per-connection budgets, enforced inside `handlePacket` as **token buckets**: each bucket refills at its budget per tick interval and holds up to one full budget of tokens. The burst capacity matters — network jitter routinely delivers two consecutive one-per-tick packets back-to-back, and a bucket (unlike a strict minimum-spacing rule) absorbs that without dropping a legitimate move. Each over-budget packet is dropped and adds a strike against the connection.
+
+The tick interval used for refill accounting is the bot's **own board's** current interval (1s while unseated/queued).
 
 | Budget                  | Limit                       | What it covers                                                                |
 |-------------------------|-----------------------------|-------------------------------------------------------------------------------|
 | `totalPacketsPerTick`   | 10 per tick interval        | Every packet, regardless of type. Caps unknown/malformed packets too.         |
-| `movePacketsPerTick`    | 5 per tick interval         | Just `move` packets (alive players).                                          |
+| `movePacketsPerTick`    | 5 per tick interval         | Just `move` packets (seated players).                                         |
 | `chatPacketsPerTick`    | 3 per tick interval         | Just `chat` packets at the TCP layer; chat-message posting is still 1/tick.   |
 
 A packet must clear the global budget *and* its per-type budget. If either fails, the packet is dropped and a strike is added.

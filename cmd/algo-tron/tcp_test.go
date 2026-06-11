@@ -37,9 +37,9 @@ func TestReadProxyProtocolIP(t *testing.T) {
 	}
 }
 
-// — handleMoveLocked ——————————————————————————————————————————————————
+// — handleMove ————————————————————————————————————————————————————————
 
-func TestHandleMoveLocked(t *testing.T) {
+func TestHandleMove(t *testing.T) {
 	cases := []struct {
 		parts    []string
 		wantMove Move
@@ -55,10 +55,11 @@ func TestHandleMoveLocked(t *testing.T) {
 	for _, c := range cases {
 		s := testServer(t)
 		p, buf := testPlayer("p")
-		p.seat = &Seat{player: p, alive: true}
-		s.handleMoveLocked(p, c.parts)
-		if p.seat.move != c.wantMove {
-			t.Errorf("parts=%v: move=%v, want %v", c.parts, p.seat.move, c.wantMove)
+		g := bareGame(s, p)
+		st := g.seats[0]
+		s.handleMove(p, st, c.parts)
+		if st.move != c.wantMove {
+			t.Errorf("parts=%v: move=%v, want %v", c.parts, st.move, c.wantMove)
 		}
 		gotErr := strings.Contains(buf.String(), "error")
 		if gotErr != c.wantErr {
@@ -67,15 +68,32 @@ func TestHandleMoveLocked(t *testing.T) {
 	}
 }
 
-// — handleChatLocked ——————————————————————————————————————————————————
+func TestHandleMoveDeadSeatDropsSilently(t *testing.T) {
+	s := testServer(t)
+	p, buf := testPlayer("p")
+	g := bareGame(s, p)
+	st := g.seats[0]
+	st.alive = false
 
-func TestHandleChatLockedValid(t *testing.T) {
+	s.handleMove(p, st, []string{"move", "up"})
+
+	if st.move != MoveNone {
+		t.Errorf("dead seat move = %v, want MoveNone", st.move)
+	}
+	if buf.String() != "" {
+		t.Errorf("dead seat move should be dropped silently, got %q", buf.String())
+	}
+}
+
+// — handleChat ————————————————————————————————————————————————————————
+
+func TestHandleChatValid(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
 	bareGame(s, p)
 	s.players["alice"] = p
 
-	s.handleChatLocked(p, []string{"chat", "hello world"})
+	s.handleChat(p, []string{"chat", "hello world"})
 
 	if p.Chat != "hello world" {
 		t.Errorf("Chat = %q, want %q", p.Chat, "hello world")
@@ -85,13 +103,13 @@ func TestHandleChatLockedValid(t *testing.T) {
 	}
 }
 
-func TestHandleChatLockedDead(t *testing.T) {
+func TestHandleChatDead(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	p.seat = nil // not in a game
+	// no seat — not in a game
 	s.players["alice"] = p
 
-	s.handleChatLocked(p, []string{"chat", "hello"})
+	s.handleChat(p, []string{"chat", "hello"})
 
 	if !strings.Contains(buf.String(), "ERROR_DEAD_CANNOT_CHAT") {
 		t.Errorf("expected ERROR_DEAD_CANNOT_CHAT, got %q", buf.String())
@@ -101,14 +119,14 @@ func TestHandleChatLockedDead(t *testing.T) {
 	}
 }
 
-func TestHandleChatLockedRateLimit(t *testing.T) {
+func TestHandleChatRateLimit(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
 	bareGame(s, p)
 	p.lastChatAt = time.Now() // just sent a message
 	s.players["alice"] = p
 
-	s.handleChatLocked(p, []string{"chat", "too fast"})
+	s.handleChat(p, []string{"chat", "too fast"})
 
 	if !strings.Contains(buf.String(), "WARNING_CHAT_RATE_LIMIT") {
 		t.Errorf("expected WARNING_CHAT_RATE_LIMIT, got %q", buf.String())
@@ -118,27 +136,27 @@ func TestHandleChatLockedRateLimit(t *testing.T) {
 	}
 }
 
-func TestHandleChatLockedInvalidChars(t *testing.T) {
+func TestHandleChatInvalidChars(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
 	bareGame(s, p)
 	s.players["alice"] = p
 
-	s.handleChatLocked(p, []string{"chat", "bad\x00msg"})
+	s.handleChat(p, []string{"chat", "bad\x00msg"})
 
 	if !strings.Contains(buf.String(), "ERROR_INVALID_CHAT_MESSAGE") {
 		t.Errorf("expected ERROR_INVALID_CHAT_MESSAGE, got %q", buf.String())
 	}
 }
 
-func TestHandleChatLockedSetsExpiry(t *testing.T) {
+func TestHandleChatSetsExpiry(t *testing.T) {
 	s := testServer(t)
 	p, _ := testPlayer("alice")
 	bareGame(s, p)
 	s.players["alice"] = p
 
 	before := time.Now()
-	s.handleChatLocked(p, []string{"chat", "hi"})
+	s.handleChat(p, []string{"chat", "hi"})
 	after := time.Now()
 
 	minExp := before.Add(5 * time.Second)
@@ -148,7 +166,7 @@ func TestHandleChatLockedSetsExpiry(t *testing.T) {
 	}
 }
 
-func TestHandleChatLockedPipeIsInvalidChar(t *testing.T) {
+func TestHandleChatPipeIsInvalidChar(t *testing.T) {
 	// | is the protocol delimiter and is not in validString, so a message
 	// reconstructed from multiple pipe-split parts must be rejected.
 	s := testServer(t)
@@ -156,13 +174,54 @@ func TestHandleChatLockedPipeIsInvalidChar(t *testing.T) {
 	bareGame(s, p)
 	s.players["alice"] = p
 
-	s.handleChatLocked(p, []string{"chat", "hello", "world"}) // reconstructed as "hello|world"
+	s.handleChat(p, []string{"chat", "hello", "world"}) // reconstructed as "hello|world"
 
 	if p.Chat != "" {
 		t.Errorf("Chat = %q, want empty (| is not a valid chat character)", p.Chat)
 	}
 	if !strings.Contains(buf.String(), "ERROR_INVALID_CHAT_MESSAGE") {
 		t.Errorf("expected ERROR_INVALID_CHAT_MESSAGE, got %q", buf.String())
+	}
+}
+
+// — tokenBucket ———————————————————————————————————————————————————————
+
+func TestTokenBucketAbsorbsBurst(t *testing.T) {
+	// A full tick's budget must be allowed back-to-back: network jitter
+	// can compress one-packet-per-tick traffic into a burst, and that
+	// must not cost a move.
+	tb := &tokenBucket{}
+	for i := 0; i < movePacketsPerTick; i++ {
+		if !tb.allow(movePacketsPerTick, time.Second) {
+			t.Fatalf("burst packet %d denied; the bucket must hold a full tick budget", i)
+		}
+	}
+	if tb.allow(movePacketsPerTick, time.Second) {
+		t.Error("packet beyond the burst capacity must be denied")
+	}
+}
+
+func TestTokenBucketRefills(t *testing.T) {
+	tb := &tokenBucket{}
+	interval := 10 * time.Millisecond
+	for i := 0; i < movePacketsPerTick; i++ {
+		tb.allow(movePacketsPerTick, interval)
+	}
+	if tb.allow(movePacketsPerTick, interval) {
+		t.Fatal("bucket should be empty")
+	}
+	time.Sleep(interval) // one full interval refills a full budget
+	for i := 0; i < movePacketsPerTick; i++ {
+		if !tb.allow(movePacketsPerTick, interval) {
+			t.Fatalf("packet %d denied after a full interval refill", i)
+		}
+	}
+}
+
+func TestTokenBucketZeroBudgetDeniesAll(t *testing.T) {
+	tb := &tokenBucket{}
+	if tb.allow(0, time.Second) {
+		t.Error("zero budget must deny")
 	}
 }
 
@@ -182,7 +241,8 @@ func TestQueuedPlayersLocked(t *testing.T) {
 	charlie.conn, charlie.queuedSince = sideA, now.Add(-2*time.Second)
 	alice.conn, alice.queuedSince = sideB, now.Add(-5*time.Second)
 	bob.conn = nil // disconnected — not in queue
-	seated.conn, seated.seat = sideC, &Seat{player: seated, alive: true}
+	seated.conn = sideC
+	seated.seat.Store(&Seat{player: seated, alive: true})
 
 	s.players = map[string]*Player{
 		"charlie": charlie,

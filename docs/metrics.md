@@ -22,6 +22,7 @@ All metric definitions and the call sites that update them live in `cmd/algo-tro
 | `tron_db_errors_total`                      | `op`        | SQLite errors. `op` ∈ `load`, `load_row`, `store_begin`, `store_prepare`, `store_row`, `store_commit`. |
 | `tron_chat_rate_limited_total`              | —           | Chat packets refused by the per-tick rate limit.                                          |
 | `tron_player_disconnect_mid_game_total`     | —           | Players killed mid-game because their TCP connection went away.                           |
+| `tron_bots_kicked_total`                    | —           | Bot connections dropped because their per-bot send buffer (`botSinkBuf` packets) overflowed — the bot stopped reading or its link stalled. The bot-side analog of `tron_viewers_kicked_total`. |
 
 ## Histograms
 
@@ -35,6 +36,9 @@ Bucket set for the tick-interval offset: `-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1
 | `tron_tick_interval_offset_ratio`   | `(actual − expected) / expected` for inter-tick gaps. `0` = on time, `+0.05` = 5% late, `−0.05` = 5% early. Surfaces scheduler/`time.Ticker` jitter independent of tick-build cost. |
 | `tron_game_duration_seconds`        | Wall-clock duration of completed games. Exponential buckets, 1s base, factor 2, 10 buckets.                              |
 | `tron_queue_wait_seconds`           | Time players spent in the matchmaking queue before being seated. Exponential buckets, 0.5s base, factor 2, 8 buckets.    |
+| `tron_bot_write_seconds`            | Duration of individual bot socket writes, performed by the per-bot writer goroutines (never under a lock). A degrading client shows up here long before its buffer overflows and it gets kicked. Exponential buckets, 10µs base, factor 4, 10 buckets. |
+| `tron_lock_wait_seconds`            | Labeled `lock` ∈ `game`, `server`: how long the tick loop waited to acquire each lock. Sustained growth means lock contention is back on the tick path. Exponential buckets, 1µs base, factor 4, 10 buckets. |
+| `tron_store_seconds`                | Duration of full player-table SQLite writes (async persister goroutine; runs with no lock held). Exponential buckets, 1ms base, factor 2, 12 buckets. |
 
 Why a *ratio* and not absolute time: the tick interval shrinks over the life of a game (`baseTickrate + elapsed/10` tps). Mixing absolute durations across a single histogram would conflate samples taken under different deadlines. The ratio is comparable across the whole game.
 
@@ -54,6 +58,8 @@ These are `GaugeFunc`s that take `s.mu` briefly when Prometheus scrapes, so they
 ## Alerting suggestions
 
 - `rate(tron_viewers_kicked_total[5m]) > 0` — viewers are overloaded.
+- `rate(tron_bots_kicked_total[5m]) > 0` — bots are stalling (their problem) or the server can't push frames out (our problem — correlate with `tron_bot_write_seconds`).
+- `histogram_quantile(0.99, sum(rate(tron_lock_wait_seconds_bucket[5m])) by (le, lock)) > 0.001` — lock contention is reaching the tick path again.
 - `histogram_quantile(0.99, sum(rate(tron_tick_budget_used_ratio_bucket[5m])) by (le)) >= 1.0` — server is missing tick deadlines at p99.
 - `increase(tron_tcp_panics_total[1h]) > 0` — bug; check stderr (e.g. `journalctl -u algo-tron`).
 - `rate(tron_db_errors_total[5m]) > 0` — SQLite or disk problem.

@@ -18,7 +18,7 @@ func (st *Seat) setPos(x, y int) {
 func (st *Seat) readMoveLocked() Move {
 	move := MoveUp
 	if st.move == MoveNone {
-		st.player.sendLocked("error", "ERROR_NO_MOVE")
+		st.player.send("error", "ERROR_NO_MOVE")
 		if st.lastMove != MoveNone {
 			move = st.lastMove
 		}
@@ -56,9 +56,9 @@ func (p *Player) recordScoreLocked(typ int) int64 {
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: typ, Time: now, Elo: p.Elo})
 	w, l := p.winsLosses()
 	if typ == 1 {
-		p.sendLocked("win", w, l)
+		p.send("win", w, l)
 	} else {
-		p.sendLocked("lose", w, l)
+		p.send("lose", w, l)
 	}
 	return now
 }
@@ -87,15 +87,22 @@ func (p *Player) trimScores() {
 	p.ScoreHistory = kept
 }
 
-func (p *Player) sendLocked(parts ...any) { writePacket(p.writer, parts...) }
+// send enqueues one packet on the player's sink. Safe to call from any
+// goroutine under any lock (or none): the sink pointer is atomic and
+// enqueue never blocks. A no-op while the player is disconnected.
+func (p *Player) send(parts ...any) {
+	if sink := p.sink.Load(); sink != nil {
+		sink.enqueue(formatPacket(parts...))
+	}
+}
 
-func (p *Player) disconnect() {
-	if p.writer != nil {
-		p.writer.Flush()
+// tickInterval is the rate-limit accounting interval for this player: the
+// tick interval of their own board, or 1s while unseated. Lock-free.
+func (p *Player) tickInterval() time.Duration {
+	if st := p.seat.Load(); st != nil {
+		if ns := st.game.tickNs.Load(); ns > 0 {
+			return time.Duration(ns)
+		}
 	}
-	if p.conn != nil {
-		p.conn.Close()
-	}
-	p.conn = nil
-	p.writer = nil
+	return time.Second
 }

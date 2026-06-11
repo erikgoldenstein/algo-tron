@@ -59,6 +59,7 @@ func run() error {
 		secret:      secret,
 		db:          db,
 		scheduleURL: *scheduleURL,
+		storeSignal: make(chan struct{}, 1),
 	}
 	s.viewState.ServerInfoList = []ServerInfo{{Host: hostOnly(*publicTCP), Port: portOnly(*publicTCP)}}
 	s.viewState.ViewInfoList = []ServerInfo{{Host: hostOnly(*publicView), Port: portOnly(*publicView), Scheme: *publicViewScheme}}
@@ -86,6 +87,7 @@ func run() error {
 
 	go s.matchmakerLoop()
 	go s.statsLoop()
+	go s.storeLoop()
 
 	g, gctx := errgroup.WithContext(drainCtx)
 	g.Go(func() error { return s.listenTCP(gctx, *tcpAddr, *proxyProtocol) })
@@ -95,5 +97,9 @@ func run() error {
 	}
 
 	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr, "view_metrics", *viewMetricsAuth != "")
-	return g.Wait()
+	err = g.Wait()
+	// Final synchronous store so ratings from games that ended since the
+	// persister's last run survive the shutdown.
+	s.store()
+	return err
 }

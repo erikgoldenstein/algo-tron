@@ -58,6 +58,12 @@ class Client:
         # this will raise an exception, which is fine - we want to fail loud.
         self.sock = socket.create_connection((host, port))
 
+        # Disable Nagle's algorithm. Move packets are tiny; without this
+        # the OS may hold them back waiting for more data, which (combined
+        # with delayed ACKs) can add tens of milliseconds per move - easily
+        # the difference between making a tick deadline and missing it.
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
         # A byte buffer for partial lines. The server can send several
         # packets in one TCP chunk, or split one packet across chunks, so
         # we accumulate bytes here and pull out complete lines as we go.

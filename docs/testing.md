@@ -39,7 +39,7 @@ The suite leans on small, focused tests rather than full integration runs. Rough
 | TrueSkill           | `TestUpdateTrueSkill{InitializesNewPlayers,WinnerGainsLoserLoses,RanksLosersByDeathTick}`. FFA pairwise update; new players auto-initialized to `(tsMu0, tsSigma0)`. |
 | Scoreboard / chart  | `TestUpdateScoreboard{Ordering,WinRatio,Top10,ExcludesOldScores,NoPlayers}`, `TestUpdateChartData*`. |
 | Persistence         | `TestLoadStore{RoundTrip,MultiplePlayers,TrueSkillRoundTrip}`, `TestStoreIsIdempotent`, `TestLoadSetsDefaultElo`, `TestLoadOrCreateSecret*`. |
-| TCP send path       | `TestSendLocked`, `TestSendLockedNilWriter`, `TestDisconnect`.                             |
+| TCP send path       | `TestSend`, `TestSendNoSink`, `TestBotSinkDrainsOnShutdown`, `TestBotSinkKicksWhenFull`.                             |
 
 The collision tests rely on the deterministic spawns from `makeGame` — when adding a case, prefer the shuffle-free helper over `newGame`.
 
@@ -96,5 +96,5 @@ go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 ### What to do when a benchmark regresses
 
 1. If `allocs/op` went up: look at the diff for `fmt.*`, `strconv.Format*`, string-conversions, or new slice creations on the hot path. The hot helpers (`appendPos`, `appendPlayer`) are intentionally `strconv.AppendInt` + raw byte appends.
-2. If `ns/op` went up but `allocs/op` didn't: check for lock-hold extensions or new I/O syscalls in `tickLocked` / `broadcastViewLocked`.
+2. If `ns/op` went up but `allocs/op` didn't: check for lock-hold extensions or new I/O syscalls in `advanceLocked` / `finishTickLocked` / `broadcastViewLocked`.
 3. If only `BenchmarkE2E` regressed: the cost is in dispatch / scheduling, not in the per-tick build. Profile with `-cpuprofile` and look for lock contention on `s.mu`.
