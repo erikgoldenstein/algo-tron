@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/static/fonts/RobotoMono-latin.woff2') format('woff2');
+}
+
 /*
  * Color scheme variables (--bg, --text, etc.) are set on :root by ui.js based
  * on the chosen colorscheme (default "catppuccin"). The body also gets a
