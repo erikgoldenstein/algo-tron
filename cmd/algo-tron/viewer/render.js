@@ -28,7 +28,13 @@ function render() {
 
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const size = Math.min(canvas.parentElement.clientHeight, canvas.parentElement.clientWidth);
+  const viewport = window.visualViewport || { width: window.innerWidth, height: window.innerHeight };
+  const size = Math.floor(Math.min(
+    canvas.parentElement.clientHeight,
+    canvas.parentElement.clientWidth,
+    viewport.height,
+    viewport.width,
+  ));
   canvas.width = size * dpr;
   canvas.height = size * dpr;
   canvas.style.width = size + 'px';
