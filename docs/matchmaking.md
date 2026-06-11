@@ -26,7 +26,7 @@ seconds of a 100-second game doesn't idle until that game ends.
 
 | Constant             | Value | Meaning                                                                  |
 |----------------------|-------|--------------------------------------------------------------------------|
-| `maxBoardSize`       | 32    | Players per board, upper bound.                                          |
+| `maxBoardSize`       | 24    | Players per board, upper bound.                                          |
 | `minBoardSize`       | 4     | Players per board, lower bound — waived while fewer than 4 bots are connected (tiny populations play immediately, even solo, once everyone idle is queued). |
 | `boardBudgetDivisor` | 12    | At most `max(1, connected/12)` boards run at once, so waves of deaths can't fragment into many tiny games. |
 | `matchWaitCap`       | 20s   | Hard bound: once the oldest waiter passes this, boards start regardless of the score below. |

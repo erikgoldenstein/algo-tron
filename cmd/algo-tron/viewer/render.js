@@ -1,7 +1,7 @@
-// Canvas rendering for the game arena. render_chart.js draws the ELO chart;
+// Canvas rendering for the game board. render_chart.js draws the ELO chart;
 // render_loop.js owns timers.
 //
-// The arena is one canvas; the ELO chart is another. Both are redrawn each
+// The board is one canvas; the ELO chart is another. Both are redrawn each
 // frame from current gameState — no incremental damage tracking.
 //
 // Depends on: helpers.js (contrastText), schemes.js (currentScheme,
@@ -84,6 +84,11 @@ function renderPlayers(ctx, game, room, radius) {
     const c = playerColor(player.name);
     const x = player.pos.x * room + room / 2;
     const y = player.pos.y * room + room / 2;
+    // The followed player gets a subtle low-opacity outline under their
+    // tron-line so they're easy to spot without dominating the board.
+    if (gameState.followName && player.name === gameState.followName) {
+      renderFollowOutline(ctx, game, player, room, radius, c);
+    }
     renderTrail(ctx, game, player, room, radius, c);
     renderHead(ctx, x, y, radius, c);
   }
@@ -95,6 +100,33 @@ function renderPlayers(ctx, game, room, radius) {
     renderName(ctx, player.name, x, y, c);
     if (player.chat) renderChat(ctx, player.chat, x, y, c);
   }
+}
+
+// Outline for the followed player. Drawn at full alpha onto an offscreen
+// canvas, then composited once at low alpha — stroking directly with
+// globalAlpha would stack opacity where the round line caps overlap and
+// create blotches at the corners.
+const _outlineCanvas = document.createElement('canvas');
+function renderFollowOutline(ctx, game, player, room, radius, playerColor) {
+  const main = ctx.canvas;
+  if (_outlineCanvas.width !== main.width || _outlineCanvas.height !== main.height) {
+    _outlineCanvas.width = main.width;
+    _outlineCanvas.height = main.height;
+  }
+  const octx = _outlineCanvas.getContext('2d');
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  octx.clearRect(0, 0, _outlineCanvas.width, _outlineCanvas.height);
+  octx.setTransform(ctx.getTransform());
+  // Proportional plus a constant: on dense boards the lines render thin and
+  // a purely proportional outline becomes too subtle to spot.
+  const r = radius * 1.4 + 1.5;
+  renderTrail(octx, game, player, room, r, playerColor);
+  renderHead(octx, player.pos.x * room + room / 2, player.pos.y * room + room / 2, r, playerColor);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 0.18;
+  ctx.drawImage(_outlineCanvas, 0, 0);
+  ctx.restore();
 }
 
 function renderTrail(ctx, game, player, room, radius, playerColor) {
@@ -139,14 +171,17 @@ function renderHead(ctx, x, y, radius, playerColor) {
 function renderName(ctx, name, x, y, playerColor) {
   const s = SCHEMES[currentScheme];
   const labelColor = contrastText(playerColor);
-  ctx.font = canvasFont(14, 'bold');
+  // Smaller pills on mobile (same breakpoint as the CSS) so they don't
+  // swamp the smaller board.
+  const mobile = window.innerWidth <= 1100;
+  ctx.font = canvasFont(mobile ? 10 : 14, 'bold');
   name = displayName(name);
   const w = ctx.measureText(name).width;
-  const padX = 6;
+  const padX = mobile ? 4 : 6;
   const boxW = w + padX * 2;
-  const boxH = 20;
+  const boxH = mobile ? 14 : 20;
   const boxX = x - boxW / 2;
-  const boxY = y - boxH - 22;
+  const boxY = y - boxH - (mobile ? 14 : 22);
   ctx.fillStyle = playerColor;
   ctx.fillRect(boxX, boxY, boxW, boxH);
   ctx.strokeStyle = s.text;

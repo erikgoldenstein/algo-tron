@@ -4,11 +4,11 @@
 
 <h1 align="center">ALGO-TRON</h1>
 
-<p align="center">Build a bot, send it into the arena over TCP, and outmaneuver other players' bots in a fast-paced Tron battle.</p>
+<p align="center">Build a bot, send it onto the board over TCP, and outmaneuver other players' bots in a fast-paced Tron battle.</p>
 
 ## The game
 
-- The board is a square that wraps at the edges. Its size scales with the number of players; a board holds at most 32 players, and multiple boards run in parallel.
+- The board is a square that wraps at the edges. Its size scales with the number of players; a board holds at most 24 players, and multiple boards run in parallel.
 - Every tick each alive bot must send a move: `up`, `down`, `left`, or `right`.
 - You leave a trail behind you. Running into any trail (yours or someone else's) kills you. Two bots arriving at the same cell on the same tick both die.
 - Tick rate starts at 1/s and ramps up by +1/s every 10 seconds, so games get faster the longer they last.

@@ -17,7 +17,10 @@ function renderChart() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const data = gameState.chartData || [];
+  // Mirror the scoreboard scope: per-board series in "board" scope (when
+  // several boards run), global series otherwise (global / spectator).
+  const boardScope = gameState.boards.length > 1 && gameState.scoreboardScope === 'board';
+  const data = (boardScope ? gameState.boardChartData : gameState.chartData) || [];
   const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
   if (!data.length || !names.length) return;
 

@@ -148,14 +148,14 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if first != "1:arena-1*" {
-		t.Errorf("initial active tab = %q, want %q", first, "1:arena-1*")
+	if first != "1:board-1*" {
+		t.Errorf("initial active tab = %q, want %q", first, "1:board-1*")
 	}
-	if scope != "(board / global)" {
-		t.Errorf("scoreboard scope = %q, want %q", scope, "(board / global)")
+	if scope != "(board / global / spectate)" {
+		t.Errorf("scoreboard scope = %q, want %q", scope, "(board / global / spectate)")
 	}
-	if second != "2:arena-2*" {
-		t.Errorf("active tab after click = %q, want %q", second, "2:arena-2*")
+	if second != "2:board-2*" {
+		t.Errorf("active tab after click = %q, want %q", second, "2:board-2*")
 	}
 }
 
@@ -194,8 +194,48 @@ func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	if value != "target" {
 		t.Errorf("follow input = %q, want target", value)
 	}
-	if active != "2:arena-2*" {
-		t.Errorf("active tab after follow = %q, want %q", active, "2:arena-2*")
+	if active != "2:board-2*" {
+		t.Errorf("active tab after follow = %q, want %q", active, "2:board-2*")
+	}
+}
+
+func TestE2ESpectatorAdvancesOnBoardEnd(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for i := 0; i < 3; i++ {
+		a, _ := testPlayer(fmt.Sprintf("a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("b%d", i))
+		s.games = append(s.games, newGame(s, []*Player{a, b}))
+	}
+	firstID := s.games[0].id
+	s.mu.Unlock()
+
+	ctx := browser(t)
+
+	// Watch the last board in spectate mode, then end it server-side: the
+	// viewer must hop to the next board, wrapping around to the first.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active`),
+		chromedp.Click(`.scope-option[data-scope="spectator"]`),
+		chromedp.Click(`#tabs .tab[data-id]:nth-child(3)`),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(3)`),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	s.mu.Lock()
+	s.endGameLocked(s.games[2], nil)
+	s.mu.Unlock()
+
+	var wrapped bool
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q`, firstID), &wrapped),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !wrapped {
+		t.Errorf("spectator did not wrap to the first board after the last one ended")
 	}
 }
 

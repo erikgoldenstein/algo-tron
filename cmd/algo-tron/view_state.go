@@ -42,8 +42,10 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 	defer g.mu.Unlock()
 	m := &gameMsg{ID: g.id, Width: g.width, Height: g.height}
 	players := make([]*Player, 0, len(g.seats))
+	byName := make(map[string]*Player, len(g.seats))
 	for _, st := range g.seats {
 		players = append(players, st.player)
+		byName[st.player.Username] = st.player
 		m.Players = append(m.Players, playerMsg{
 			ID: st.id, Name: st.player.Username, Pos: st.pos,
 			Moves: append([]Vec2(nil), st.trail...),
@@ -51,5 +53,6 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 		})
 	}
 	m.BoardScoreboard = buildScoreboardEntriesLocked(players)
+	m.BoardChartData = buildChartDataLocked(byName, m.BoardScoreboard)
 	return m
 }

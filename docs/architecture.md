@@ -91,7 +91,7 @@ Each viewer subscribes to one board (`viewerSink.gameID`); `broadcastTickLocked`
 | `schemes.js`   | Color schemes, palette expansion, theme application.        |
 | `gameState.js` | WS message → in-memory `gameState` (no DOM/canvas).         |
 | `dom.js`       | Scoreboard / chat / shutdown-banner DOM updates.            |
-| `render.js`    | Canvas arena + ELO chart on a 30fps loop.                   |
+| `render.js`    | Canvas board + ELO chart on a 30fps loop.                   |
 | `modal.js`     | Help/settings modal + keyboard shortcuts.                   |
 | `ws.js`        | WebSocket entry, board subscription, auto-reload on reconnect. |
 | `schedule.js`  | Optional GPN-style talk schedule pane.                      |

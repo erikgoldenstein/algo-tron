@@ -14,6 +14,10 @@ const chatLast = {};
 // each render once the cell has a layout, and on window resize.
 let scoreNameChars = 0;
 
+// Width (in digits) of the largest sigma on the current scoreboard; set in
+// updateDom before the rows render.
+let tsSigmaChars = 0;
+
 function updateDom() {
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
@@ -44,6 +48,9 @@ function updateDom() {
 
   const scoreboardEl = document.getElementById('scoreboard');
   const scoreboard = currentScoreboard();
+  // Pad every sigma to the widest one so the ± lines up down the ts column
+  // (no-break spaces — plain ones would collapse in HTML).
+  tsSigmaChars = Math.max(0, ...scoreboard.map((p) => String(Math.round(p.tsSigma)).length));
   scoreboardEl.innerHTML = scoreboard.length
     ? scoreboard.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
@@ -122,7 +129,7 @@ function updateTabs() {
   tabsEl.innerHTML = gameState.boards.length
     ? gameState.boards.map((b, i) => {
         const active = b.id === current;
-        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:arena-${i + 1}${active ? '*' : ''}</span>`;
+        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:board-${i + 1}${active ? '*' : ''}</span>`;
       }).join('')
     : '<span class="tab">no games</span>';
   tabsEl.querySelectorAll('.tab[data-id]').forEach((el) => {
@@ -142,7 +149,7 @@ function scoreRow(p, i) {
     + '<td class="sep">|</td>'
     + '<td class="elo">' + p.elo.toFixed(0) + '</td>'
     + '<td class="sep">|</td>'
-    + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + Math.round(p.tsSigma) + '</td>'
+    + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="wins">' + p.wins + '</td>'
     + '<td class="sep">|</td>'

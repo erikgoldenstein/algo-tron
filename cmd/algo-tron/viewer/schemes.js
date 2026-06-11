@@ -164,7 +164,7 @@ function playerColor(name) {
 }
 
 // canvasFont builds a canvas font string honoring the current scheme's
-// font family (gpn switches the arena to serif together with the UI).
+// font family (gpn switches the board to serif together with the UI).
 function canvasFont(px, weight) {
   const s = SCHEMES[currentScheme];
   const fam = s.font || '"Roboto Mono", ui-monospace, monospace';

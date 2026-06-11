@@ -49,6 +49,7 @@ type gameMsg struct {
 	Height          int               `json:"height"`
 	Players         []playerMsg       `json:"players"`
 	BoardScoreboard []ScoreboardEntry `json:"boardScoreboard"`
+	BoardChartData  []map[string]any  `json:"boardChartData"`
 }
 
 type playerMsg struct {

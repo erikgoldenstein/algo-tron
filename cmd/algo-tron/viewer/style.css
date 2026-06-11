@@ -81,7 +81,7 @@ a:hover { opacity: 0.85; }
 .scoreboard-section { grid-column: 1; grid-row: 2; }
 .chart-section      { grid-column: 1; grid-row: 3; }
 .chat-section       { grid-column: 1; grid-row: 4; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.arena-section      { grid-column: 2; grid-row: 1 / 5; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.board-section      { grid-column: 2; grid-row: 1 / 5; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .schedule-section   { display: none; }
 
 /* — Brand ——————————————————————————————————————————————————————————— */
@@ -120,14 +120,15 @@ h2 {
 
 .section-header h2 { margin-bottom: 0; }
 
-.scoreboard-heading { flex: 1; min-width: 0; line-height: 1.2; }
-
+/* Scope switch on the left, follow-player control on the right; spans the
+   full scoreboard width so the follow button lines up with the table edge. */
 .scoreboard-subline {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 1px;
+  margin-bottom: 4px;
   font-size: 12px;
+  line-height: 1.2;
 }
 
 .scoreboard-subline[hidden],
@@ -207,12 +208,15 @@ h2 {
   border-collapse: collapse;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-  /* Fixed layout so the name column reliably absorbs leftover space
-     rather than growing/shrinking with its content. */
-  table-layout: fixed;
+  /* Auto layout + nowrap: every column sizes to its widest cell. The name
+     column (width:100% + max-width:0) absorbs whatever space is left and
+     clips, so only names ever get cut off. */
 }
 
+.scoreboard th.name,
 .scoreboard td.name {
+  width: 100%;
+  max-width: 0;
   overflow: hidden;
   text-overflow: clip;
 }
@@ -230,19 +234,16 @@ h2 {
 .scoreboard td.name { color: var(--text); }
 .scoreboard th.sep,
 .scoreboard td.sep { color: var(--text-dim); padding: 0; }
-.scoreboard th.num,
-.scoreboard td.num { width: 1.5em; }
-.scoreboard th.name { width: auto; }
 .scoreboard th.wr,
-.scoreboard td.wr { width: 3.2em; text-align: right; }
+.scoreboard td.wr,
 .scoreboard th.elo,
-.scoreboard td.elo { width: 3.8em; text-align: right; }
+.scoreboard td.elo,
 .scoreboard th.ts,
-.scoreboard td.ts { width: 5.5em; text-align: right; }
+.scoreboard td.ts,
 .scoreboard th.wins,
-.scoreboard td.wins { width: 4em; text-align: right; }
+.scoreboard td.wins,
 .scoreboard th.losses,
-.scoreboard td.losses { width: 4.5em; text-align: right; }
+.scoreboard td.losses { text-align: right; }
 .scoreboard .empty { color: var(--text-muted); text-align: center; padding: 8px 0; }
 
 /* — Chart ——————————————————————————————————————————————————————————— */
@@ -283,9 +284,9 @@ h2 {
 #chat .msg .body { color: var(--text-muted); display: block; margin-top: 1px; }
 #chat .chat-empty { color: var(--text-muted); font-style: italic; }
 
-/* — Arena ——————————————————————————————————————————————————————————— */
+/* — Board ——————————————————————————————————————————————————————————— */
 
-.arena {
+.board {
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -303,7 +304,7 @@ h2 {
 
 canvas#game { display: block; }
 
-/* — Tab bar (sits under the arena, not the whole screen) ———————————————— */
+/* — Tab bar (sits under the board, not the whole screen) ———————————————— */
 
 .tabbar {
   display: flex;
@@ -317,13 +318,22 @@ canvas#game { display: block; }
   font-variant-numeric: tabular-nums;
 }
 
-.tabbar .tab { color: var(--text-muted); }
+.tabbar .tab { color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
 .tabbar .tab.active { color: var(--text); }
-#tabs { display: flex; gap: 14px; }
+/* Tabs scroll horizontally when there are more boards than fit; the
+   settings button sits at the right edge and is never scrolled away. */
+#tabs {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
 #tabs .tab[data-id] { cursor: pointer; }
 #tabs .tab[data-id]:hover { color: var(--text); }
 .tabbar .help {
-  margin-left: auto;
+  flex-shrink: 0;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -492,7 +502,7 @@ canvas#game { display: block; }
 
   .layout > * { min-width: 0; max-width: 100%; }
 
-  .arena { width: 100%; aspect-ratio: 1; }
+  .board { width: 100%; aspect-ratio: 1; }
 
   .chat-section { overflow: visible; }
   #chat { overflow: visible; }
@@ -501,18 +511,12 @@ canvas#game { display: block; }
 
   .schedule-section { display: block; }
 
-  .scoreboard { table-layout: fixed; font-size: 11px; width: 100%; }
+  .scoreboard { font-size: 11px; width: 100%; }
   .scoreboard th, .scoreboard td { padding: 1px 2px; }
   /* Collapse the visual pipe separators on narrow screens to free space. */
   .scoreboard th.sep, .scoreboard td.sep {
     width: 0; padding: 0; font-size: 0; color: transparent;
   }
-  .scoreboard th.num, .scoreboard td.num { width: 14px; }
-  .scoreboard th.wr, .scoreboard td.wr { width: 32px; }
-  .scoreboard th.elo, .scoreboard td.elo { width: 38px; }
-  .scoreboard th.ts, .scoreboard td.ts { width: 56px; }
-  .scoreboard th.wins, .scoreboard td.wins { width: 32px; }
-  .scoreboard th.losses, .scoreboard td.losses { width: 38px; }
   .scoreboard-section { overflow-x: hidden; }
 
   .keys-section { display: none; }

@@ -20,9 +20,14 @@
 
 let hadActiveSession = false;
 let ws = null;
+// Board id we've asked the server for but whose "game" snapshot hasn't
+// arrived yet. ensureWatched leaves an in-flight switch alone so a boards
+// update can't bounce us back to the first board.
+let pendingWatchID = '';
 
 function watchBoard(id) {
   if (id && ws && ws.readyState === WebSocket.OPEN) {
+    pendingWatchID = id;
     ws.send(JSON.stringify({ watch: id }));
   }
 }
@@ -45,6 +50,7 @@ function ensureWatched() {
     watchBoard(followed);
     return;
   }
+  if (pendingWatchID && ids.includes(pendingWatchID)) return;
   if (gameState.game && ids.includes(gameState.game.id)) return;
   if (ids.length) watchBoard(ids[0]);
 }
@@ -65,6 +71,13 @@ function connect() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'misc' && msg.content === 'shutdown') { showShutdownBanner(true); return; }
     if (msg.type === 'init') { showShutdownBanner(false); hadActiveSession = true; }
+    if (msg.type === 'game' && msg.id === pendingWatchID) pendingWatchID = '';
+    // Spectator mode: when the board we're watching finishes, hop to the
+    // next one (the "end" arrives before the boards update, so the ended
+    // board is still in the list and stepBoard wraps past the last one).
+    if (msg.type === 'end' && gameState.scoreboardScope === 'spectator' && msg.gameId === gameState.game?.id) {
+      stepBoard(1);
+    }
     applyMessage(msg);
     if (msg.type === 'init' || msg.type === 'boards') ensureWatched();
     updateDom();

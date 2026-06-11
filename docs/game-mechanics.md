@@ -4,8 +4,8 @@ All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
 
 ## Board
 
-- Several boards can run in parallel; each holds 4–32 players. Who plays on which board, and when a board starts, is the matchmaker's call — see [matchmaking.md](matchmaking.md).
-- Width and height are both `2 * players on the board` (so 64×64 at the 32-player cap).
+- Several boards can run in parallel; each holds 4–24 players. Who plays on which board, and when a board starts, is the matchmaker's call — see [matchmaking.md](matchmaking.md).
+- Width and height are both `2 * players on the board` (so 48×48 at the 24-player cap).
 - Coordinates wrap (toroidal): moving off any edge re-enters the opposite edge.
 - Spawn for seat `i` (0-indexed after random shuffle) is `(2i, 2i)`. No two spawns collide.
 - `fields[x][y]` stores the seat id that owns the cell, or `-1` for empty. The owner's trail (`Seat.trail`) is the authoritative record; `fields` is the per-cell index used by collision resolution.
@@ -62,7 +62,7 @@ New accounts start at 1000. The post-game ELO is patched onto the `Score` entry 
 |------------|-----------------|---------------------------------------------------------------------------|
 | `tsMu0`    | $250$           | Default mean skill $\mu_0$ for a new player (paper's 25, scaled ×10).     |
 | `tsSigma0` | $250/3$         | Default skill uncertainty $\sigma_0$.                                     |
-| `tsBeta`   | $\sigma_0 / 2$  | Performance noise $\beta$ — how much per-game performance varies.         |
+| `tsBeta`   | $2\sigma_0$     | Performance noise $\beta$ — how much per-game performance varies. 4x the paper's $\sigma_0/2$ so ratings converge slower. |
 | `tsTau`    | $\sigma_0 / 100$ | Dynamics drift $\tau$ added back to $\sigma^2$ each game.                |
 
 Pairwise free-for-all TrueSkill (Herbrich, Minka, Graepel 2007) lives in `Game.updateTrueSkillLocked` and runs alongside `updateEloLocked` from `endGameLocked`. The `place` assignment is identical to ELO — winners share place $1$; losers rank by death tick.

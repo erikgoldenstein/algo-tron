@@ -2,7 +2,7 @@
 //
 // Depends on: helpers.js (esc), gameState.js.
 // Runtime callbacks call updateDom and ensureWatched after all scripts load.
-// Provides: updateFollowPlayer.
+// Provides: updateFollowPlayer, setFollowName, stepFollow.
 
 function updateFollowPlayer() {
   const start = document.getElementById('follow-player-start');
@@ -48,6 +48,17 @@ function setFollowName(value) {
   gameState.followName = value.trim();
   updateFollowOptions();
   ensureWatched();
+}
+
+// stepFollow cycles the followed player through all known names ("j"/"k"
+// keys); starts at the first name when nobody is followed yet.
+function stepFollow(delta) {
+  const names = allBoardNames();
+  if (!names.length) return;
+  const i = names.indexOf(gameState.followName);
+  const next = i < 0 ? names[0] : names[(i + delta + names.length) % names.length];
+  setFollowName(next);
+  updateDom();
 }
 
 function allBoardNames() {

@@ -46,7 +46,7 @@ this page documents how `algo-tron` implements it and the small divergences.
 
 The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` packet ends the game frame.
 
-Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)); a board holds at most 32 players. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
+Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)); a board holds at most 24 players. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
 
 ## Server → bot packets
 

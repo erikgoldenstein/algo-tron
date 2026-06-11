@@ -10,7 +10,7 @@
 // Wire protocol — see view.go for the canonical definition.
 //   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
 //   {type:"boards", boards:[{id,players,alive,names}...]} — a board started or ended
-//   {type:"game",   id, width, height, boardScoreboard, players:[{id,name,pos,moves,alive,chat?}]}
+//   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
 //   {type:"misc",   content:"shutdown"} — lifecycle event; "shutdown" → banner.
@@ -24,7 +24,8 @@ const gameState = {
   viewInfo: [],
   scoreboard: [],
   boardScoreboard: [],
-  scoreboardScope: 'board',
+  boardChartData: [],
+  scoreboardScope: 'board', // 'board' | 'global' | 'spectator'
   followName: '',
   followEditing: false,
   chartData: [],
@@ -48,6 +49,7 @@ function applyInit(msg) {
   gameState.viewInfo    = msg.viewInfo    || [];
   gameState.scoreboard  = msg.scoreboard  || [];
   gameState.boardScoreboard = msg.game?.boardScoreboard || [];
+  gameState.boardChartData  = msg.game?.boardChartData  || [];
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
   gameState.boards      = msg.boards      || [];
@@ -56,6 +58,7 @@ function applyInit(msg) {
 
 function applyGame(msg) {
   gameState.boardScoreboard = msg.boardScoreboard || [];
+  gameState.boardChartData = msg.boardChartData || [];
   gameState.game = buildGame(msg);
 }
 
@@ -64,6 +67,7 @@ function applyBoards(msg) {
   if (gameState.game && !gameState.boards.some((b) => b.id === gameState.game.id)) {
     gameState.game = null;
     gameState.boardScoreboard = [];
+    gameState.boardChartData = [];
   }
 }
 

@@ -4,7 +4,8 @@
 // switch boards).
 //
 // Depends on: schemes.js (SCHEMES, SCHEME_KEYS, applyScheme, currentScheme),
-// ws.js (watchBoard, stepBoard — resolved at event time), gameState.js.
+// ws.js (watchBoard, stepBoard — resolved at event time), dom_follow.js
+// (setFollowName, stepFollow), gameState.js.
 // Provides: toggleHelp, cycleScheme.
 
 function renderSchemes() {
@@ -105,6 +106,20 @@ document.addEventListener('keydown', (e) => {
     case 'l':
       e.preventDefault();
       stepBoard(1);
+      return;
+    case 'f': {
+      e.preventDefault();
+      const leader = gameState.scoreboard[0]?.username;
+      if (leader) { setFollowName(leader); updateDom(); }
+      return;
+    }
+    case 'j':
+      e.preventDefault();
+      stepFollow(1);
+      return;
+    case 'k':
+      e.preventDefault();
+      stepFollow(-1);
       return;
     default:
       if (e.key >= '1' && e.key <= '9') {

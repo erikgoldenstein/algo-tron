@@ -43,18 +43,25 @@ func buildScoreboardEntriesLocked(players []*Player) []ScoreboardEntry {
 	return entries
 }
 
-// updateChartDataLocked computes a 20-point elo history per top player by
-// reading the elo snapshot saved on each ScoreHistory entry. Plotted by
-// viewer/ui.js. Score entries written before elo tracking existed have
-// Elo == 0; those points are omitted so the chart shows a partial series
-// rather than a misleading zero.
+// updateChartDataLocked refreshes the global chart from the global
+// scoreboard entries.
 func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
+	s.viewState.ChartData = buildChartDataLocked(s.players, entries)
+}
+
+// buildChartDataLocked computes a 20-point elo history per scoreboard entry
+// by reading the elo snapshot saved on each ScoreHistory entry. Plotted by
+// viewer/render_chart.js. Score entries written before elo tracking existed
+// have Elo == 0; those points are omitted so the chart shows a partial
+// series rather than a misleading zero. Caller holds Server.mu (ScoreHistory
+// is player state).
+func buildChartDataLocked(players map[string]*Player, entries []ScoreboardEntry) []map[string]any {
 	const chartPoints = 20
 	data := make([]map[string]any, chartPoints)
 	for i := range data {
 		point := map[string]any{"name": i}
 		for _, entry := range entries {
-			p := s.players[entry.Username]
+			p := players[entry.Username]
 			end := len(p.ScoreHistory) - (chartPoints - 1 - i)
 			if end < 0 {
 				end = 0
@@ -68,5 +75,5 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 		}
 		data[i] = point
 	}
-	s.viewState.ChartData = data
+	return data
 }
