@@ -42,11 +42,12 @@ type Server struct {
 	// don't exercise persistence (send via queueStoreLocked is a no-op).
 	storeSignal chan struct{}
 
-	secret      []byte
-	db          *sql.DB
-	scheduleURL string
-	tickDurNs   atomic.Int64 // last tick build+broadcast duration, for stats log
-	fanoutDurNs atomic.Int64 // last viewer fanout duration, for stats log
+	secret        []byte
+	db            *sql.DB
+	scheduleURL   string
+	publicViewURL string       // absolute base URL of the viewer, for og:image etc.
+	tickDurNs     atomic.Int64 // last tick build+broadcast duration, for stats log
+	fanoutDurNs   atomic.Int64 // last viewer fanout duration, for stats log
 
 	// tickOffsetCh, when non-nil, receives one (actual-expected)/expected
 	// sample per tick. Send is non-blocking; full buffer drops the sample.

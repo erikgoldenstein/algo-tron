@@ -56,13 +56,14 @@ func run() error {
 	defer db.Close()
 
 	s := &Server{
-		players:     map[string]*Player{},
-		ipCount:     map[string]int{},
-		viewClients: map[*websocket.Conn]*viewerSink{},
-		secret:      secret,
-		db:          db,
-		scheduleURL: *scheduleURL,
-		storeSignal: make(chan struct{}, 1),
+		players:       map[string]*Player{},
+		ipCount:       map[string]int{},
+		viewClients:   map[*websocket.Conn]*viewerSink{},
+		secret:        secret,
+		db:            db,
+		scheduleURL:   *scheduleURL,
+		publicViewURL: *publicViewScheme + "://" + *publicView,
+		storeSignal:   make(chan struct{}, 1),
 	}
 	s.viewState.ServerInfoList = []ServerInfo{{Host: hostOnly(*publicTCP), Port: portOnly(*publicTCP)}}
 	s.viewState.ViewInfoList = []ServerInfo{{Host: hostOnly(*publicView), Port: portOnly(*publicView), Scheme: *publicViewScheme}}
