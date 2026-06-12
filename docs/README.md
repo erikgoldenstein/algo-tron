@@ -8,8 +8,7 @@
 - [Matchmaking](matchmaking.md) — queue, multi-board scheduling, skill banding.
 - [Persistence](persistence.md) — `-data-dir` layout, SQLite schema, secret.
 - [Metrics](metrics.md) — Prometheus metric inventory.
-- [Testing](testing.md) — unit tests, e2e tests, benchmarks.
-- [Tests](tests.md) — checklist of commands to run to validate a change.
+- [Testing](testing.md) — validation checklist, unit tests, e2e tests, benchmarks.
 
 The bot protocol is a near-faithful reimplementation of
 [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md).
