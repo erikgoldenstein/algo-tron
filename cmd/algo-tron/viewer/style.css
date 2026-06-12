@@ -502,7 +502,7 @@ canvas#game { display: block; }
 
   .layout > * { min-width: 0; max-width: 100%; }
 
-  .board { width: 100%; aspect-ratio: 1; }
+  .board { width: 100%; max-height: 80dvh; aspect-ratio: 1; }
 
   .chat-section { overflow: visible; }
   #chat { overflow: visible; }
