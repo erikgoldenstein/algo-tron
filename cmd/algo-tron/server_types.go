@@ -58,16 +58,22 @@ type Server struct {
 
 // viewerSink is the per-viewer outbound queue of delta JSON messages. ch is
 // drained by a dedicated writer goroutine and never closed (would race with
-// broadcastViewLocked sends); done is closed by viewWS / broadcastViewLocked
-// when the viewer disconnects or falls too far behind, so the writer exits.
+// broadcastViewLocked sends); done is closed exactly once via closeDone when
+// the viewer disconnects or falls too far behind, so the writer exits.
 // game is the board this viewer is subscribed to, nil if none (guarded by
 // Server.mu); only that board's tick stream is sent to them. Every write to
 // game must keep the board's viewSubs counter in sync.
 type viewerSink struct {
 	ch   chan []byte
 	done chan struct{}
+	once sync.Once
 	game *Game
 }
+
+// closeDone signals the writer to exit. A kick (sendToSinkLocked) and the
+// viewWS read-loop cleanup can both reach this for the same sink; the Once
+// makes the second call a no-op instead of a double-close panic.
+func (v *viewerSink) closeDone() { v.once.Do(func() { close(v.done) }) }
 
 // Game is one board. mu guards all per-board state: seats' game fields
 // (alive, pos, trail, move, lastMove), fields, tick, deathTick, and the

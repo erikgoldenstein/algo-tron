@@ -26,9 +26,17 @@ trap 'rm -f "$old_flake" "$log"' EXIT
 
 cp flake.nix "$old_flake"
 
+# Portable in-place sed: BSD sed (macOS) reads "-i -E" as "-i with backup
+# suffix -E", which silently skips the edit and litters flake.nix-E files.
+# "-i.bak" works identically on GNU and BSD.
+sed_inplace() {
+  sed -i.bak -E "$1" flake.nix
+  rm -f flake.nix.bak
+}
+
 echo "pre-commit: refreshing vendorHash"
 
-sed -i -E 's#vendorHash = .*;#vendorHash = pkgs.lib.fakeHash;#' flake.nix
+sed_inplace 's#vendorHash = .*;#vendorHash = pkgs.lib.fakeHash;#'
 
 set +e
 nix build .# 2>&1 | tee "$log"
@@ -53,7 +61,7 @@ if [ -z "$hash" ]; then
   exit 1
 fi
 
-sed -i -E "s#vendorHash = .*;#vendorHash = \"$hash\";#" flake.nix
+sed_inplace "s#vendorHash = .*;#vendorHash = \"$hash\";#"
 
 rm -rf vendor
 

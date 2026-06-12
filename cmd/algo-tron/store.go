@@ -29,7 +29,78 @@ func openDB(path string) (*sql.DB, error) {
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN last_seen_unix INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`UPDATE players SET last_seen_unix = ? WHERE last_seen_unix = 0`, time.Now().Unix())
+	// players_archive holds retired careers (idle takeover, idle pruning) —
+	// soft-deleted: kept on disk for history, never read by the server. The
+	// same username can appear multiple times, once per retirement.
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players_archive (
+		username         TEXT NOT NULL,
+		pw_hash          TEXT NOT NULL,
+		elo              REAL NOT NULL,
+		score_history    TEXT NOT NULL,
+		ts_mu            REAL NOT NULL,
+		ts_sigma         REAL NOT NULL,
+		last_seen_unix   INTEGER NOT NULL,
+		archived_at_unix INTEGER NOT NULL
+	)`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	// WAL keeps readers from blocking the async store's writes; the busy
+	// timeout rides out the shutdown store overlapping a storeLoop write.
+	// Best-effort like the ALTERs (":memory:" test DBs ignore WAL).
+	_, _ = db.Exec(`PRAGMA journal_mode=WAL`)
+	_, _ = db.Exec(`PRAGMA busy_timeout=5000`)
 	return db, nil
+}
+
+// archiveRow copies one retired career into players_archive. Call with no
+// lock held — the live Player/row is reset or removed separately by the
+// caller. Failure is logged and counted; the takeover proceeds regardless.
+func archiveRow(db *sql.DB, r playerRow) {
+	scores, _ := json.Marshal(r.scores)
+	_, err := db.Exec(`INSERT INTO players_archive (username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, archived_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.lastSeenUnix, time.Now().Unix())
+	if err != nil {
+		metricDBErrors.WithLabelValues("archive").Inc()
+		slog.Error("db archive", "user", r.username, "err", err)
+	}
+}
+
+// pruneIdleAccounts archives and removes accounts whose last_seen_unix is
+// older than cutoffUnix. Runs once at startup, before load, so s.players
+// and the live table stay bounded; careers move to players_archive in the
+// same transaction rather than being deleted.
+func pruneIdleAccounts(db *sql.DB, cutoffUnix int64) {
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("prune").Inc()
+		slog.Error("db prune begin", "err", err)
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO players_archive (username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, archived_at_unix)
+		SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
+		time.Now().Unix(), cutoffUnix); err != nil {
+		metricDBErrors.WithLabelValues("prune").Inc()
+		slog.Error("db prune archive", "err", err)
+		return
+	}
+	res, err := tx.Exec(`DELETE FROM players WHERE last_seen_unix < ?`, cutoffUnix)
+	if err != nil {
+		metricDBErrors.WithLabelValues("prune").Inc()
+		slog.Error("db prune delete", "err", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("prune").Inc()
+		slog.Error("db prune commit", "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("pruned idle accounts to archive", "count", n)
+	}
 }
 
 func (s *Server) load() {

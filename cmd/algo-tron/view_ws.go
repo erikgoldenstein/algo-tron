@@ -47,7 +47,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 				sink.game.viewSubs.Add(-1)
 			}
 			s.mu.Unlock()
-			close(sink.done)
+			sink.closeDone()
 			c.Close()
 			return
 		}
@@ -112,7 +112,7 @@ func (s *Server) sendToSinkLocked(c *websocket.Conn, sink *viewerSink, data []by
 			sink.game.viewSubs.Add(-1)
 			sink.game = nil
 		}
-		close(sink.done)
+		sink.closeDone()
 		c.Close()
 		metricViewersKicked.Inc()
 	}

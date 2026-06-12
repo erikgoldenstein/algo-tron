@@ -325,6 +325,77 @@ func TestInactiveAccountPasswordCanReset(t *testing.T) {
 	t.Fatal("inactive account password was not reset on join")
 }
 
+func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
+	s := testServer(t)
+	oldHash := hashPassword(s.secret, "old")
+	newHash := hashPassword(s.secret, "new")
+	p := &Player{
+		Username:     "alice",
+		PwHash:       oldHash,
+		Elo:          1500,
+		TsMu:         400,
+		TsSigma:      20,
+		ScoreHistory: []Score{{Type: 1, Time: time.Now().UnixMilli(), Elo: 1500}},
+		LastSeen:     time.Now().Add(-accountPasswordResetAfter - time.Hour),
+	}
+	s.players["alice"] = p
+
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil { // motd
+		t.Fatalf("read motd: %v", err)
+	}
+	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	go io.Copy(io.Discard, br)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		reset := p.PwHash == newHash && p.Elo == 1000 &&
+			p.TsMu == tsMu0 && p.TsSigma == tsSigma0 && len(p.ScoreHistory) == 0
+		s.mu.Unlock()
+		var n int
+		var elo float64
+		_ = s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'alice'`).Scan(&n, &elo)
+		if reset && n == 1 && elo == 1500 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("idle takeover did not reset stats and archive the old career")
+}
+
+func TestPruneIdleAccountsArchives(t *testing.T) {
+	s := testDB(t)
+	s.players["old"] = &Player{Username: "old", PwHash: "h", Elo: 1200, TsMu: tsMu0, TsSigma: tsSigma0,
+		LastSeen: time.Now().Add(-accountPruneAfter - time.Hour)}
+	s.players["fresh"] = &Player{Username: "fresh", PwHash: "h", Elo: 1100, TsMu: tsMu0, TsSigma: tsSigma0,
+		LastSeen: time.Now()}
+	s.store()
+
+	pruneIdleAccounts(s.db, time.Now().Add(-accountPruneAfter).Unix())
+
+	s.players = map[string]*Player{}
+	s.load()
+	if s.players["old"] != nil {
+		t.Error("idle account still in live table after prune")
+	}
+	if s.players["fresh"] == nil {
+		t.Error("active account was pruned")
+	}
+	var n int
+	var elo float64
+	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'old'`).Scan(&n, &elo); err != nil {
+		t.Fatalf("archive query: %v", err)
+	}
+	if n != 1 || elo != 1200 {
+		t.Errorf("archive row count = %d elo = %v, want 1 row with elo 1200", n, elo)
+	}
+}
+
 func TestRecentAccountRejectsWrongPassword(t *testing.T) {
 	s := testServer(t)
 	oldHash := hashPassword(s.secret, "old")

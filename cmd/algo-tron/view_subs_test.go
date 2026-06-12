@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,4 +91,79 @@ func TestViewSubsLifecycle(t *testing.T) {
 	waitForSubs(t, g1, 1)
 	c.Close()
 	waitForSubs(t, g1, 0)
+}
+
+// TestViewerKickNoPanic: kicking a slow viewer (sendToSinkLocked closes
+// sink.done) used to double-close the channel when the viewWS read loop ran
+// its own cleanup afterwards — a panic recovered and logged by net/http.
+// The httptest server's ErrorLog captures exactly those recovered panics.
+func TestViewerKickNoPanic(t *testing.T) {
+	s := testServer(t)
+	var mu sync.Mutex
+	var errLog bytes.Buffer
+	srv := httptest.NewUnstartedServer(s.viewerHandler(""))
+	srv.Config.ErrorLog = log.New(&syncWriter{w: &errLog, mu: &mu}, "", 0)
+	srv.Start()
+	defer srv.Close()
+
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer c.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		s.mu.Lock()
+		n := len(s.viewClients)
+		s.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("viewer never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Never read on the client side; flood past the sink buffer so the
+	// viewer gets kicked, then give the read loop time to run its cleanup.
+	s.mu.Lock()
+	for i := 0; i < viewSinkBuf+8; i++ {
+		s.broadcastViewLocked([]byte(`{"type":"boards","boards":[]}`))
+	}
+	s.mu.Unlock()
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		s.mu.Lock()
+		n := len(s.viewClients)
+		s.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slow viewer was not kicked")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // let the read loop finish cleanup
+
+	mu.Lock()
+	out := errLog.String()
+	mu.Unlock()
+	if strings.Contains(out, "panic") {
+		t.Fatalf("server panicked handling a kicked viewer:\n%s", out)
+	}
+}
+
+type syncWriter struct {
+	w  *bytes.Buffer
+	mu *sync.Mutex
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }

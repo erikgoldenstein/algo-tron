@@ -5,12 +5,17 @@ import (
 	"time"
 )
 
-// endGameLocked winds a finished board down: ratings, win packets, seat
-// release, scoreboard/viewer updates, and a persistence signal. Caller
+// endGameLocked winds a finished board down: seat release, ratings, win
+// packets, scoreboard/viewer updates, and a persistence signal. Caller
 // holds Server.mu. The game goroutine is quiescent by now (this runs as
-// the tail of its final tick), so reading g's state without g.mu is safe —
-// nothing mutates a board after its final tick.
+// the tail of its final tick), and every seat is released first so no
+// packet handler can reach the board through Player.seat either — reading
+// g's state without g.mu below is therefore safe.
 func (s *Server) endGameLocked(g *Game, alive []*Seat) {
+	// Release survivors back to the queue (the dead re-queued at death).
+	for _, st := range g.seats {
+		s.releaseSeatLocked(st)
+	}
 	g.updateEloLocked(alive)
 	g.updateTrueSkillLocked(alive)
 	names := []string{}
@@ -27,10 +32,6 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	for _, st := range g.seats {
 		st.patchScoreEloLocked()
 		s.markDirtyLocked(st.player)
-	}
-	// Release survivors back to the queue (the dead re-queued at death).
-	for _, st := range g.seats {
-		s.releaseSeatLocked(st)
 	}
 	s.removeGameLocked(g)
 	// Detach viewers from the ended board: a dangling sink.game pointer

@@ -57,6 +57,17 @@ func (g *Game) startLocked() {
 	for _, st := range g.seats {
 		st.player.send("game", g.width, g.height, st.id)
 	}
+	g.mu.Lock()
+	frame := append(g.snapshotFrameLocked(), "tick\n"...)
+	g.broadcastAliveLocked(frame)
+	g.mu.Unlock()
+	g.server.broadcastBoardsLocked()
+	go g.run()
+}
+
+// snapshotFrameLocked builds the start-style wire frame describing every
+// alive seat: player lines first, then pos lines.
+func (g *Game) snapshotFrameLocked() []byte {
 	frame := make([]byte, 0, len(g.seats)*32)
 	for _, st := range g.seats {
 		if st.alive {
@@ -68,10 +79,18 @@ func (g *Game) startLocked() {
 			frame = appendPos(frame, st.id, st.pos.X, st.pos.Y)
 		}
 	}
-	frame = append(frame, "tick\n"...)
-	g.mu.Lock()
-	g.broadcastAliveLocked(frame)
-	g.mu.Unlock()
-	g.server.broadcastBoardsLocked()
-	go g.run()
+	return frame
+}
+
+// resyncLocked re-sends the game header and board snapshot to one bot that
+// reconnected while its seat is still alive (only possible within one tick
+// of the disconnect — killDisconnectedLocked kills the seat otherwise), so
+// the bot can reorient. Trails cannot be replayed — the wire protocol has
+// no message for them — but a reconnect this fast usually still has its
+// own state. No "tick" line: the next regular tick prompts the move.
+func (g *Game) resyncLocked(st *Seat) {
+	st.player.send("game", g.width, g.height, st.id)
+	if sink := st.player.sink.Load(); sink != nil {
+		sink.enqueue(g.snapshotFrameLocked())
+	}
 }

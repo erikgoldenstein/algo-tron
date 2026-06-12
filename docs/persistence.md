@@ -26,10 +26,24 @@ CREATE TABLE IF NOT EXISTS players (
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
   score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float}, …]
-  ts_mu         REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
-  ts_sigma      REAL NOT NULL DEFAULT 0     -- TrueSkill uncertainty; 0 = uninitialized
+  ts_mu          REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
+  ts_sigma       REAL NOT NULL DEFAULT 0,    -- TrueSkill uncertainty; 0 = uninitialized
+  last_seen_unix INTEGER NOT NULL DEFAULT 0  -- last join/disconnect; drives idle takeover + pruning
+);
+
+CREATE TABLE IF NOT EXISTS players_archive (
+  username         TEXT NOT NULL,   -- same username can appear once per retirement
+  pw_hash          TEXT NOT NULL,
+  elo              REAL NOT NULL,
+  score_history    TEXT NOT NULL,
+  ts_mu            REAL NOT NULL,
+  ts_sigma         REAL NOT NULL,
+  last_seen_unix   INTEGER NOT NULL,
+  archived_at_unix INTEGER NOT NULL
 );
 ```
+
+The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 
 - `pw_hash` is hex-encoded HMAC-SHA256 of the password with `secret` as key.
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
@@ -38,7 +52,8 @@ CREATE TABLE IF NOT EXISTS players (
 
 ### Read/write cadence
 
-- `s.load()` runs once at boot — `SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma FROM players`.
+- At boot, `pruneIdleAccounts` first moves accounts idle for more than `accountPruneAfter` (180 days) into `players_archive` and deletes them from `players` — one transaction, so a career is never lost mid-move. Then `s.load()` reads the remaining live rows.
+- `players_archive` is the soft-delete side of account recycling: an **idle takeover** (a join with a new password after `accountPasswordResetAfter`, 30 days) snapshots the old career into the archive and resets the live row's stats for the new owner. The server never reads the archive; it exists so history survives on disk (`sqlite3 players.db "SELECT * FROM players_archive"`).
 - Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the **dirty players** (those whose ratings/history/account changed since the last store — see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
 - On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** players, not just dirty ones, so a missed dirty mark costs freshness, never data.
 - One accepted staleness: `trimScores` rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty, so an inactive player's DB row keeps expired score entries until their next game (or shutdown). Harmless — the trim re-applies in memory after every load. Don't "fix" it by marking everyone dirty per rebuild; that reintroduces the full-table write this design removes.

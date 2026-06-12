@@ -68,7 +68,7 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 |--------|--------------------|---------------------------------------------------------------------------------------------|
 | `join` | `username\|password` | First packet. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
 | `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. Dead players' `move` packets are accepted but ignored. |
-| `chat` | `text`             | Same character class as username, ≤ scanner limit. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
+| `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
 
 ## Rate limits
 
@@ -126,6 +126,12 @@ Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …) are rejected with `E
 ## Account reuse
 
 `username` + `password` is an account. First join creates it; subsequent joins must match the HMAC-SHA256 hash stored on disk or receive `ERROR_WRONG_PASSWORD`. If the same account is already connected, the old connection receives `ERROR_ALREADY_CONNECTED` and is closed before the new one takes over.
+
+> **Never reuse a real password.** The protocol is plain TCP — the password travels unencrypted, and the server stores only a fast keyed hash. Treat it as a claim ticket for the username, nothing more.
+
+**Idle accounts are recycled.** A username whose account hasn't connected for 30 days can be claimed by joining with any new password. The previous owner's stats (ELO, TrueSkill, score history) are reset for the new owner; the old career is archived server-side (see [persistence.md](persistence.md)), not deleted.
+
+**Reconnecting mid-game:** if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
 
 ## PROXY protocol
 

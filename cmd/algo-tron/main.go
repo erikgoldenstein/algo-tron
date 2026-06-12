@@ -33,13 +33,17 @@ func run() error {
 	publicTCP := flag.String("public-tcp", "tron.erik.gdn:4000", "TCP connection string shown in viewer")
 	publicView := flag.String("public-view", "tron.erik.gdn", "HTTP viewer connection string shown in viewer")
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
-	dataDir := flag.String("data-dir", filepath.Join(os.TempDir(), "algo-tron"), "directory for secret and SQLite DB")
+	defaultDataDir := filepath.Join(os.TempDir(), "algo-tron")
+	dataDir := flag.String("data-dir", defaultDataDir, "directory for secret and SQLite DB")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
 	if *viewMetricsAuth == "" {
 		*viewMetricsAuth = os.Getenv("ALGO_TRON_VIEW_METRICS_AUTH")
 	}
 
+	if *dataDir == defaultDataDir {
+		slog.Warn("data-dir is under the OS temp directory; player DB and secret may not survive a reboot — set -data-dir for production", "dir", *dataDir)
+	}
 	if err := os.MkdirAll(*dataDir, 0755); err != nil {
 		return fmt.Errorf("data dir: %w", err)
 	}
@@ -54,6 +58,7 @@ func run() error {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer db.Close()
+	pruneIdleAccounts(db, time.Now().Add(-accountPruneAfter).Unix())
 
 	s := &Server{
 		players:       map[string]*Player{},

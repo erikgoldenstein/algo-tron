@@ -96,7 +96,7 @@ func (s *Server) handleChat(p *Player, parts []string) {
 	case time.Since(p.lastChatAt) < p.tickInterval():
 		metricChatRateLimited.Inc()
 		p.send("error", "WARNING_CHAT_RATE_LIMIT")
-	case !validString.MatchString(msg):
+	case len(msg) > chatMaxLen || !validString.MatchString(msg):
 		p.send("error", "ERROR_INVALID_CHAT_MESSAGE")
 	default:
 		p.Chat = msg

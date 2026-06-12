@@ -60,7 +60,13 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.ipCount[ip]++
 	tooMany := maxConnections >= 0 && s.ipCount[ip] > maxConnections && !isLocalhost(ip)
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); s.ipCount[ip]--; s.mu.Unlock() }()
+	defer func() {
+		s.mu.Lock()
+		if s.ipCount[ip]--; s.ipCount[ip] <= 0 {
+			delete(s.ipCount, ip)
+		}
+		s.mu.Unlock()
+	}()
 
 	if tooMany {
 		metricTCPRejected.WithLabelValues("max_connections").Inc()
@@ -98,20 +104,13 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.mu.Lock()
 	p := s.players[username]
 	if p == nil {
-		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
+		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
 		s.players[username] = p
-		s.markDirtyLocked(p) // new account: persist with the next store
 	} else if p.PwHash != pwHash && !p.passwordResetAllowed(now) {
 		s.mu.Unlock()
 		metricTCPRejected.WithLabelValues("wrong_password").Inc()
 		reject("error", "ERROR_WRONG_PASSWORD")
 		return
-	} else {
-		if p.PwHash != pwHash {
-			p.PwHash = pwHash
-		}
-		p.LastSeen = now
-		s.markDirtyLocked(p)
 	}
 	if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
 		s.mu.Unlock()
@@ -126,18 +125,42 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		old.enqueue(formatPacket("error", "ERROR_ALREADY_CONNECTED"))
 		old.shutdown("replaced_by_new_connection")
 	}
+	// Idle-account takeover (passwordResetAllowed verified above): the new
+	// owner starts with fresh stats. The old career isn't deleted — it is
+	// snapshotted here and written to players_archive off-lock below.
+	var archived *playerRow
+	if p.PwHash != pwHash {
+		row := snapshotRow(p)
+		archived = &row
+		p.PwHash = pwHash
+		p.Elo = 1000
+		p.TsMu, p.TsSigma = tsMu0, tsSigma0
+		p.ScoreHistory = nil
+	}
+	p.LastSeen = now
+	s.markDirtyLocked(p)
 	sink = newBotSink(conn)
 	p.conn = conn
 	p.sink.Store(sink)
-	// A reconnecting player whose seat is still alive resumes playing;
-	// everyone else enters the matchmaking queue. Per-connection
-	// rate-limit state starts fresh in lim below; reconnectPenalty
-	// intentionally survives — that's what makes the penalty grow
-	// across reconnects.
-	if p.seat.Load() == nil {
+	// A reconnecting player whose seat is still alive resumes playing (and
+	// gets the board snapshot re-sent so it can reorient); everyone else
+	// enters the matchmaking queue. Per-connection rate-limit state starts
+	// fresh in lim below; reconnectPenalty intentionally survives — that's
+	// what makes the penalty grow across reconnects.
+	if st := p.seat.Load(); st == nil {
 		s.enqueueLocked(p)
+	} else {
+		g := st.game
+		g.mu.Lock()
+		if st.alive {
+			g.resyncLocked(st)
+		}
+		g.mu.Unlock()
 	}
 	s.mu.Unlock()
+	if archived != nil {
+		archiveRow(s.db, *archived)
+	}
 	go sink.run()
 
 	lim := &connLimits{}

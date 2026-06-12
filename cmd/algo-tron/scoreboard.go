@@ -35,6 +35,8 @@ func buildScoreboardEntriesLocked(players []*Player) []ScoreboardEntry {
 		if entries[i].Wins != entries[j].Wins {
 			return entries[i].Wins > entries[j].Wins
 		}
+		// Equal ratio and wins implies equal losses except at zero wins;
+		// there, more games played ranks higher — activity over emptiness.
 		return entries[i].Losses > entries[j].Losses
 	})
 	if len(entries) > 10 {
