@@ -115,7 +115,7 @@ The penalty is per-account (keyed by username), in-memory only — it does not s
 | Sending a `chat` once per tick interval while alive.                                             | Sending more than `chatPacketsPerTick` (3) `chat` packets per tick at TCP — silent drop + strike. |
 | Sending an unknown packet type once in a while (you'll get `ERROR_UNKNOWN_PACKET` but stay on).  | Spamming unknown/malformed packets — counts against the global limit, same strike track.          |
 | Reconnecting after a clean disconnect.                                                           | Reconnecting inside the penalty window — rejected with `ERROR_RECONNECT_PENALTY`.                 |
-| Same username + password from a new TCP connection — old one is kicked with `ERROR_ALREADY_CONNECTED`. | Holding > `maxConnections` (1) simultaneous TCP connections from the same IP (localhost exempt). |
+| Same username + password from a new TCP connection — old one is kicked with `ERROR_ALREADY_CONNECTED`. | Holding > `maxConnections` (5) simultaneous TCP connections from the same IP (localhost exempt). |
 
 ## "bot*" usernames
 

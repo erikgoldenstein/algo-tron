@@ -39,8 +39,8 @@ func (st *Seat) readMoveLocked() Move {
 	return move
 }
 
-func (st *Seat) winLocked()  { st.scoreTime = st.player.recordScoreLocked(1) }
-func (st *Seat) loseLocked() { st.scoreTime = st.player.recordScoreLocked(0) }
+func (st *Seat) winLocked()  { st.scoreTime = st.player.recordScoreLocked(st.game.server, 1) }
+func (st *Seat) loseLocked() { st.scoreTime = st.player.recordScoreLocked(st.game.server, 0) }
 
 // patchScoreEloLocked writes the post-game elo onto the ScoreHistory entry
 // this seat recorded at win/lose time. Matched by timestamp rather than
@@ -60,9 +60,10 @@ func (st *Seat) patchScoreEloLocked() {
 
 // recordScoreLocked appends a win/lose entry and sends the matching packet.
 // Returns the entry's timestamp so the seat can patch its elo at game end.
-func (p *Player) recordScoreLocked(typ int) int64 {
+func (p *Player) recordScoreLocked(s *Server, typ int) int64 {
 	now := time.Now().UnixMilli()
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: typ, Time: now, Elo: p.Elo})
+	s.markDirtyLocked(p)
 	w, l := p.winsLosses()
 	if typ == 1 {
 		p.send("win", w, l)

@@ -136,7 +136,7 @@ func TestWinLocked(t *testing.T) {
 	p, buf := testPlayer("alice")
 	now := time.Now().UnixMilli()
 	p.ScoreHistory = []Score{{Type: 1, Time: now}} // 1 existing win
-	st := &Seat{player: p}
+	st := &Seat{player: p, game: &Game{server: &Server{}}}
 
 	st.winLocked()
 
@@ -153,7 +153,7 @@ func TestWinLocked(t *testing.T) {
 
 func TestLoseLocked(t *testing.T) {
 	p, buf := testPlayer("alice")
-	st := &Seat{player: p}
+	st := &Seat{player: p, game: &Game{server: &Server{}}}
 
 	st.loseLocked()
 
@@ -169,7 +169,7 @@ func TestLoseLocked(t *testing.T) {
 // one the player picked up in another game afterwards.
 func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
 	p, _ := testPlayer("alice")
-	st := &Seat{player: p}
+	st := &Seat{player: p, game: &Game{server: &Server{}}}
 	st.loseLocked() // entry 0, recorded by this seat
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: st.scoreTime + 5})
 

@@ -9,7 +9,7 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | Code                       | When                                                                                                  |
 |----------------------------|-------------------------------------------------------------------------------------------------------|
 | `ERROR_PROXY_PROTOCOL`     | `-proxy-protocol` enabled and the first line wasn't a valid PROXY v1 header. *algo-tron-specific.*    |
-| `ERROR_MAX_CONNECTIONS`    | Same source IP already has `maxConnections` (=1) live connection. Localhost is exempt.                |
+| `ERROR_MAX_CONNECTIONS`    | Same source IP already has `maxConnections` (=5) live connections. Localhost is exempt.                |
 | `ERROR_JOIN_TIMEOUT`       | No line received within `joinTimeout` (5s) of connect.                                                |
 | `ERROR_EXPECTED_JOIN`      | First line wasn't a `join` packet or had ≠ 3 fields.                                                  |
 | `ERROR_USERNAME_TOO_SHORT` | Empty username.                                                                                       |

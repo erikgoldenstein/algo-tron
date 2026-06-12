@@ -72,6 +72,16 @@ type playerRow struct {
 // queueStoreLocked wakes the persister (storeLoop). Non-blocking: a pending
 // signal already covers any newer state, and a nil channel (tests without a
 // persister) makes this a no-op.
+// markDirtyLocked flags a player for the next store. Call wherever a
+// player's persisted fields change (see the Server.dirty doc comment).
+// Lazily initializes the map so test servers don't need to.
+func (s *Server) markDirtyLocked(p *Player) {
+	if s.dirty == nil {
+		s.dirty = map[*Player]struct{}{}
+	}
+	s.dirty[p] = struct{}{}
+}
+
 func (s *Server) queueStoreLocked() {
 	select {
 	case s.storeSignal <- struct{}{}:
@@ -79,30 +89,58 @@ func (s *Server) queueStoreLocked() {
 	}
 }
 
-// storeLoop is the persister goroutine: on each signal it snapshots all
-// players under the lock, then writes them to SQLite off-lock.
+// storeLoop is the persister goroutine: on each signal it snapshots the
+// dirty players under the lock, then writes them to SQLite off-lock.
 func (s *Server) storeLoop() {
 	for range s.storeSignal {
+		s.storeDirtyOnce()
+	}
+}
+
+// storeDirtyOnce drains the dirty set, snapshots those players under the
+// lock, and persists them off-lock. If the write fails the players are
+// re-marked so the next store retries them.
+func (s *Server) storeDirtyOnce() {
+	s.mu.Lock()
+	players := make([]*Player, 0, len(s.dirty))
+	rows := make([]playerRow, 0, len(s.dirty))
+	for p := range s.dirty {
+		players = append(players, p)
+		rows = append(rows, snapshotRow(p))
+	}
+	clear(s.dirty)
+	s.mu.Unlock()
+	if len(rows) == 0 {
+		return
+	}
+	if !storeRows(s.db, rows) {
 		s.mu.Lock()
-		rows := s.snapshotPlayersLocked()
+		for _, p := range players {
+			s.markDirtyLocked(p)
+		}
 		s.mu.Unlock()
-		storeRows(s.db, rows)
 	}
 }
 
 func (s *Server) snapshotPlayersLocked() []playerRow {
 	rows := make([]playerRow, 0, len(s.players))
 	for _, p := range s.players {
-		rows = append(rows, playerRow{
-			username: p.Username,
-			pwHash:   p.PwHash,
-			elo:      p.Elo,
-			scores:   append([]Score(nil), p.ScoreHistory...),
-			tsMu:     p.TsMu,
-			tsSigma:  p.TsSigma,
-		})
+		rows = append(rows, snapshotRow(p))
 	}
 	return rows
+}
+
+// snapshotRow deep-copies one player's persisted fields. Caller holds
+// Server.mu (ScoreHistory is player state).
+func snapshotRow(p *Player) playerRow {
+	return playerRow{
+		username: p.Username,
+		pwHash:   p.PwHash,
+		elo:      p.Elo,
+		scores:   append([]Score(nil), p.ScoreHistory...),
+		tsMu:     p.TsMu,
+		tsSigma:  p.TsSigma,
+	}
 }
 
 // store synchronously snapshots and persists all players. Used at shutdown
@@ -114,21 +152,24 @@ func (s *Server) store() {
 	storeRows(s.db, rows)
 }
 
-func storeRows(db *sql.DB, rows []playerRow) {
+// storeRows writes the rows in one transaction. Returns false when the
+// transaction itself failed (begin/prepare/commit) so the caller can retry;
+// individual row errors are logged but don't fail the batch.
+func storeRows(db *sql.DB, rows []playerRow) bool {
 	start := time.Now()
 	defer func() { metricStoreDuration.Observe(time.Since(start).Seconds()) }()
 	tx, err := db.Begin()
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_begin").Inc()
 		slog.Error("db store begin", "err", err)
-		return
+		return false
 	}
 	defer tx.Rollback()
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history, ts_mu, ts_sigma) VALUES (?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_prepare").Inc()
 		slog.Error("db store prepare", "err", err)
-		return
+		return false
 	}
 	defer stmt.Close()
 	for _, r := range rows {
@@ -141,5 +182,7 @@ func storeRows(db *sql.DB, rows []playerRow) {
 	if err := tx.Commit(); err != nil {
 		metricDBErrors.WithLabelValues("store_commit").Inc()
 		slog.Error("db store commit", "err", err)
+		return false
 	}
+	return true
 }

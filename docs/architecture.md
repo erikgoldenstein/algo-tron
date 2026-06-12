@@ -20,7 +20,7 @@ Started from `main()`:
 | `viewWriter` × N     | One per viewer. Drains the per-viewer send queue.                |
 | `matchmakerLoop`     | Polls every 1s; clears expired chats, then groups queued players onto new boards. See [matchmaking.md](matchmaking.md). |
 | `Game.run` × boards  | One per running board. Sleeps until an absolute deadline (`next += interval`), then runs the two tick phases; exits on game end. Re-anchors instead of bursting if it falls a full interval behind. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
-| `storeLoop`          | Persister. On signal, snapshots all players under the lock, then writes SQLite with no lock held. |
+| `storeLoop`          | Persister. On signal, snapshots the dirty players under the lock, then writes SQLite with no lock held. |
 | `statsLoop`          | Emits one stats line per minute while any board is active.       |
 | `listenMetrics`      | Prometheus HTTP server, only if `-metrics` is set.               |
 

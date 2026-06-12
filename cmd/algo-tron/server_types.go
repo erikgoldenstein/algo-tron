@@ -22,6 +22,14 @@ type Server struct {
 	viewState   ViewState
 	viewClients map[*websocket.Conn]*viewerSink
 
+	// dirty is the set of players whose persisted fields (PwHash, Elo,
+	// TsMu, TsSigma, ScoreHistory) changed since the last store. Any code
+	// mutating those fields must call markDirtyLocked; storeLoop persists
+	// and clears the set, so a store only writes the players a game
+	// actually touched instead of all of them. The shutdown store() still
+	// writes everyone, so a missed mark costs freshness, not data.
+	dirty map[*Player]struct{}
+
 	// Matchmaker state: players entering the queue since the last
 	// matchmaker tick, and the EMA arrival rate (players/sec) derived
 	// from it. See matchmaker.go.

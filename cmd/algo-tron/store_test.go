@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"io"
 	"path/filepath"
 	"testing"
 	"time"
@@ -135,6 +137,146 @@ func TestLoadInitializesTrueSkill(t *testing.T) {
 	if p.TsMu != tsMu0 || p.TsSigma != tsSigma0 {
 		t.Errorf("TsMu/TsSigma = %v/%v, want %v/%v", p.TsMu, p.TsSigma, tsMu0, tsSigma0)
 	}
+}
+
+// — dirty-player tracking ————————————————————————————————————————————
+
+// storedUsernames returns the usernames currently present in the players
+// table, for asserting which rows a store actually wrote.
+func storedUsernames(t *testing.T, s *Server) map[string]bool {
+	t.Helper()
+	rows, err := s.db.Query(`SELECT username FROM players`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	got := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got[name] = true
+	}
+	return got
+}
+
+func TestStoreDirtyWritesOnlyDirtyPlayers(t *testing.T) {
+	s := testDB(t)
+	alice := &Player{Username: "alice", PwHash: "h", Elo: 1100}
+	bob := &Player{Username: "bob", PwHash: "h", Elo: 1200}
+	s.players = map[string]*Player{"alice": alice, "bob": bob}
+	s.mu.Lock()
+	s.markDirtyLocked(alice)
+	s.mu.Unlock()
+
+	s.storeDirtyOnce()
+
+	got := storedUsernames(t, s)
+	if !got["alice"] || got["bob"] {
+		t.Fatalf("stored = %v, want only alice", got)
+	}
+	if len(s.dirty) != 0 {
+		t.Fatalf("dirty not drained: %d entries", len(s.dirty))
+	}
+	s.storeDirtyOnce() // empty drain must be a no-op, not an error
+}
+
+func TestStoreDirtyRemarksOnFailure(t *testing.T) {
+	s := testDB(t)
+	alice := &Player{Username: "alice", PwHash: "h", Elo: 1100}
+	s.players = map[string]*Player{"alice": alice}
+	s.mu.Lock()
+	s.markDirtyLocked(alice)
+	s.mu.Unlock()
+	s.db.Close() // forces the transaction to fail
+
+	s.storeDirtyOnce()
+
+	if _, ok := s.dirty[alice]; !ok {
+		t.Fatal("alice not re-marked dirty after failed store")
+	}
+}
+
+func TestScoreRecordingMarksDirty(t *testing.T) {
+	s := testDB(t)
+	alice := &Player{Username: "alice", PwHash: "h", Elo: 1000}
+	s.players = map[string]*Player{"alice": alice}
+	g := &Game{server: s, id: "test", deathTick: map[*Seat]int{}}
+	st := &Seat{player: alice, game: g, id: 0, alive: true}
+	g.seats = append(g.seats, st)
+
+	st.loseLocked()
+
+	if _, ok := s.dirty[alice]; !ok {
+		t.Fatal("losing a game did not mark the player dirty")
+	}
+}
+
+// The seat-loop re-mark in endGameLocked is what gets the *patched* elo to
+// disk: the death-time mark from loseLocked may already have been drained by
+// a store before the game ends. Removing that re-mark (it looks redundant
+// next to recordScoreLocked) would silently persist pre-patch elos.
+func TestGameEndPersistsPatchedElo(t *testing.T) {
+	s := testServer(t)
+	w, _ := testPlayer("w")
+	l, _ := testPlayer("l")
+	_, c1 := mustPipe(t)
+	_, c2 := mustPipe(t)
+	w.conn, l.conn = c1, c2
+	s.players["w"], s.players["l"] = w, l
+	g := makeGame(s, []*Player{w, l})
+	s.games = []*Game{g}
+
+	// l dies; a store drains the death-time dirty mark before game end.
+	lSeat := g.seats[1]
+	g.markDeadLocked(lSeat)
+	g.removeFromFields(lSeat)
+	s.releaseSeatLocked(lSeat)
+	lSeat.loseLocked()
+	s.storeDirtyOnce()
+
+	s.endGameLocked(g, g.aliveLocked())
+	patched := l.ScoreHistory[0].Elo
+	s.storeDirtyOnce()
+
+	s.players = map[string]*Player{}
+	s.load()
+	pl := s.players["l"]
+	if pl == nil {
+		t.Fatal("l not persisted after game end")
+	}
+	if len(pl.ScoreHistory) == 0 || pl.ScoreHistory[0].Elo != patched {
+		t.Fatalf("persisted death-entry elo = %+v, want %v", pl.ScoreHistory, patched)
+	}
+}
+
+func TestJoinMarksNewAccountDirty(t *testing.T) {
+	s := testServer(t)
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil { // motd
+		t.Fatalf("read motd: %v", err)
+	}
+	if _, err := client.Write([]byte("join|alice|pw\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	go io.Copy(io.Discard, br) // drain so the server side never blocks
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		p := s.players["alice"]
+		_, dirty := s.dirty[p]
+		s.mu.Unlock()
+		if p != nil && dirty {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("new account was not marked dirty after join")
 }
 
 func TestStoreIsIdempotent(t *testing.T) {

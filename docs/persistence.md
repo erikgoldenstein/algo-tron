@@ -39,8 +39,9 @@ CREATE TABLE IF NOT EXISTS players (
 ### Read/write cadence
 
 - `s.load()` runs once at boot — `SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma FROM players`.
-- Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots all players under the lock, then opens a transaction and `INSERT OR REPLACE`s every row with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write of the latest state. `tron_store_seconds` records write durations.
-- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit, so ratings from games that ended since the persister's last run aren't lost. No-ops for unchanged rows are fine — there are few players and games are slow.
+- Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the **dirty players** (those whose ratings/history/account changed since the last store — see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
+- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** players, not just dirty ones, so a missed dirty mark costs freshness, never data.
+- One accepted staleness: `trimScores` rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty, so an inactive player's DB row keeps expired score entries until their next game (or shutdown). Harmless — the trim re-applies in memory after every load. Don't "fix" it by marking everyone dirty per rebuild; that reintroduces the full-table write this design removes.
 
 DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server keeps running. There is no migration system — the schema only ever gets new columns by direct ALTER (TrueSkill is the first such case; `ts_mu` / `ts_sigma` are added via `ALTER TABLE players ADD COLUMN … DEFAULT 0` on every `openDB` and the duplicate-column error is intentionally swallowed).
 

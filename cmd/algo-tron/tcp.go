@@ -98,6 +98,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	if p == nil {
 		p = &Player{Username: username, PwHash: hashPassword(s.secret, password), Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
 		s.players[username] = p
+		s.markDirtyLocked(p) // new account: persist with the next store
 	} else if p.PwHash != hashPassword(s.secret, password) {
 		s.mu.Unlock()
 		metricTCPRejected.WithLabelValues("wrong_password").Inc()

@@ -21,8 +21,12 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	// Losers recorded their ScoreHistory entry at death with the pre-update
 	// elo; patch the post-update value onto exactly that entry so the chart
 	// plots what the scoreboard reads.
+	// Re-mark every participant: the death-time mark from loseLocked may
+	// already have been drained by a store, and the rating updates and elo
+	// patches above must reach the next one.
 	for _, st := range g.seats {
 		st.patchScoreEloLocked()
+		s.markDirtyLocked(st.player)
 	}
 	// Release survivors back to the queue (the dead re-queued at death).
 	for _, st := range g.seats {

@@ -6,7 +6,7 @@ const (
 	joinTimeout     = 5 * time.Second
 	botWriteTimeout = 2 * time.Second
 	botSinkBuf      = 128 // pending packets per bot before we kick them
-	maxConnections  = 1
+	maxConnections  = 5
 
 	// TCP per-connection rate limits, enforced as token buckets. Each
 	// bucket refills at packetsPerTick tokens per tick interval (the
