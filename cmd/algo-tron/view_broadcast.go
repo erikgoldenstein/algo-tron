@@ -25,14 +25,7 @@ func (s *Server) broadcastBoardsLocked() {
 // (no g.mu needed); chats are player state, read under the Server.mu the
 // caller already holds.
 func (s *Server) broadcastTickLocked(g *Game, res tickResult) {
-	subscribed := false
-	for _, sink := range s.viewClients {
-		if sink.gameID == g.id {
-			subscribed = true
-			break
-		}
-	}
-	if !subscribed {
+	if g.viewSubs.Load() == 0 {
 		return
 	}
 	var chats map[int]string
@@ -52,7 +45,7 @@ func (s *Server) broadcastTickLocked(g *Game, res tickResult) {
 		Chats:     chats,
 	})
 	for c, sink := range s.viewClients {
-		if sink.gameID == g.id {
+		if sink.game == g {
 			s.sendToSinkLocked(c, sink, data)
 		}
 	}

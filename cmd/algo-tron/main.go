@@ -36,6 +36,9 @@ func run() error {
 	dataDir := flag.String("data-dir", filepath.Join(os.TempDir(), "algo-tron"), "directory for secret and SQLite DB")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
+	if *viewMetricsAuth == "" {
+		*viewMetricsAuth = os.Getenv("ALGO_TRON_VIEW_METRICS_AUTH")
+	}
 
 	if err := os.MkdirAll(*dataDir, 0755); err != nil {
 		return fmt.Errorf("data dir: %w", err)

@@ -1,6 +1,6 @@
 package main
 
-func (s *Server) buildInitLocked(watchID string) *initMsg {
+func (s *Server) buildInitLocked(watch *Game) *initMsg {
 	m := &initMsg{
 		Type:        "init",
 		ServerInfo:  s.viewState.ServerInfoList,
@@ -10,11 +10,8 @@ func (s *Server) buildInitLocked(watchID string) *initMsg {
 		LastWinners: s.viewState.LastWinners,
 		Boards:      s.boardListLocked(),
 	}
-	for _, g := range s.games {
-		if g.id == watchID {
-			m.Game = buildGameMsgLocked(g)
-			break
-		}
+	if watch != nil {
+		m.Game = buildGameMsgLocked(watch)
 	}
 	return m
 }

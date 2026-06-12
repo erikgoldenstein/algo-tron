@@ -29,6 +29,16 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 		s.releaseSeatLocked(st)
 	}
 	s.removeGameLocked(g)
+	// Detach viewers from the ended board: a dangling sink.game pointer
+	// would pin the board's fields and trails until the viewer re-picks
+	// (or forever, for a zombie connection). Clients re-subscribe from the
+	// boards message below.
+	for _, sink := range s.viewClients {
+		if sink.game == g {
+			sink.game = nil
+			g.viewSubs.Add(-1)
+		}
+	}
 	s.viewState.LastWinners = names
 	s.queueStoreLocked()
 	s.updateScoreboardLocked()

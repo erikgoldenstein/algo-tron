@@ -63,6 +63,8 @@ Values that escape both locks as atomics: `Game.tickNs` (current tick interval; 
 4. Build the broadcast frame: `die|...\n` (if any), `pos|id|x|y\n` per alive, then `tick\n` (omitted on the final tick); enqueue it on every alive bot's sink.
 5. Snapshot positions/deaths into the reusable scratch buffers for phase 2.
 
+Phase 2 is skipped entirely — no `Server.mu` acquisition — when a tick has no deaths, no subscribed viewers (`Game.viewSubs`, an atomic counter maintained wherever a viewer's board subscription changes), and isn't the final tick. With many boards and most unwatched at any moment, this is what keeps the global lock off the per-board hot path.
+
 **Phase 2 — `Server.finishTickLocked` under `Server.mu`**:
 
 1. Release this tick's dead: detach `Player.seat`, re-queue if connected, send `lose`.

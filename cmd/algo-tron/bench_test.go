@@ -114,7 +114,8 @@ func BenchmarkPushFanout(b *testing.B) {
 			// sendToSinkLocked never triggers its kick path (which would
 			// Close a zero-value Conn and panic).
 			for i := 0; i < n; i++ {
-				sink := &viewerSink{ch: make(chan []byte, 1<<14), done: make(chan struct{}), gameID: g.id}
+				sink := &viewerSink{ch: make(chan []byte, 1<<14), done: make(chan struct{}), game: g}
+				g.viewSubs.Add(1)
 				go func(sink *viewerSink) {
 					for {
 						select {

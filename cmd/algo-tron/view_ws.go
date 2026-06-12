@@ -24,9 +24,14 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	// auto-subscribed to the first running board.
 	s.mu.Lock()
 	if len(s.games) > 0 {
-		sink.gameID = s.games[0].id
+		sink.game = s.games[0]
+		// Increment BEFORE building the snapshot: a tick that read
+		// viewSubs == 0 and skipped its viewer fanout then happened
+		// entirely before this point, so the snapshot below already
+		// contains that tick's state and no delta is missed.
+		sink.game.viewSubs.Add(1)
 	}
-	init, _ := json.Marshal(s.buildInitLocked(sink.gameID))
+	init, _ := json.Marshal(s.buildInitLocked(sink.game))
 	s.viewClients[c] = sink
 	sink.ch <- init // fresh sink, buffer can't be full
 	s.mu.Unlock()
@@ -38,6 +43,9 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.mu.Lock()
 			delete(s.viewClients, c)
+			if sink.game != nil {
+				sink.game.viewSubs.Add(-1)
+			}
 			s.mu.Unlock()
 			close(sink.done)
 			c.Close()
@@ -55,7 +63,13 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 		// message.
 		for _, g := range s.games {
 			if g.id == req.Watch {
-				sink.gameID = g.id
+				if sink.game != nil {
+					sink.game.viewSubs.Add(-1)
+				}
+				sink.game = g
+				// Increment BEFORE building the snapshot — see the
+				// register path for why this order matters.
+				g.viewSubs.Add(1)
 				m := buildGameMsgLocked(g)
 				m.Type = "game"
 				snapshot, _ := json.Marshal(m)
@@ -94,6 +108,10 @@ func (s *Server) sendToSinkLocked(c *websocket.Conn, sink *viewerSink, data []by
 	case sink.ch <- data:
 	default:
 		delete(s.viewClients, c)
+		if sink.game != nil {
+			sink.game.viewSubs.Add(-1)
+			sink.game = nil
+		}
 		close(sink.done)
 		c.Close()
 		metricViewersKicked.Inc()

@@ -52,11 +52,20 @@ func (g *Game) run() {
 		res := g.advanceLocked()
 		g.mu.Unlock()
 
-		serverWait := time.Now()
-		s.mu.Lock()
-		metricLockWait.WithLabelValues("server").Observe(time.Since(serverWait).Seconds())
-		fanoutDur := s.finishTickLocked(g, res)
-		s.mu.Unlock()
+		// Phase 2 only has work when someone died, the game is ending, or
+		// a viewer is watching — otherwise skip the global lock entirely.
+		// Reading viewSubs lock-free is safe: if it reads 0, any subscriber
+		// incremented after this read, so its snapshot (buildGameMsgLocked,
+		// under g.mu) runs after this tick's phase 1 and already contains
+		// the state the skipped delta would have carried.
+		var fanoutDur time.Duration
+		if len(res.dead) > 0 || res.done || g.viewSubs.Load() > 0 {
+			serverWait := time.Now()
+			s.mu.Lock()
+			metricLockWait.WithLabelValues("server").Observe(time.Since(serverWait).Seconds())
+			fanoutDur = s.finishTickLocked(g, res)
+			s.mu.Unlock()
+		}
 
 		tickDur := time.Since(tickStart)
 		s.fanoutDurNs.Store(int64(fanoutDur))

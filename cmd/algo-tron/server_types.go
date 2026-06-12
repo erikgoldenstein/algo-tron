@@ -51,12 +51,13 @@ type Server struct {
 // drained by a dedicated writer goroutine and never closed (would race with
 // broadcastViewLocked sends); done is closed by viewWS / broadcastViewLocked
 // when the viewer disconnects or falls too far behind, so the writer exits.
-// gameID is the board this viewer is subscribed to (guarded by Server.mu);
-// only that board's tick stream is sent to them.
+// game is the board this viewer is subscribed to, nil if none (guarded by
+// Server.mu); only that board's tick stream is sent to them. Every write to
+// game must keep the board's viewSubs counter in sync.
 type viewerSink struct {
-	ch     chan []byte
-	done   chan struct{}
-	gameID string
+	ch   chan []byte
+	done chan struct{}
+	game *Game
 }
 
 // Game is one board. mu guards all per-board state: seats' game fields
@@ -76,6 +77,13 @@ type Game struct {
 	tick      int
 	deathTick map[*Seat]int
 	tickNs    atomic.Int64 // current tick interval in nanoseconds
+
+	// viewSubs counts the viewer sinks currently watching this board.
+	// Maintained under Server.mu wherever sink.game changes (register,
+	// watch switch, disconnect, kick, game end). Read lock-free by
+	// Game.run to skip the Server.mu acquisition when no audience needs
+	// the tick delta.
+	viewSubs atomic.Int32
 
 	// Per-tick scratch, owned by the game goroutine and reused across
 	// ticks to keep the hot path alloc-free. Contents are only valid
