@@ -93,18 +93,27 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		return
 	}
 
+	now := time.Now()
+	pwHash := hashPassword(s.secret, password)
 	s.mu.Lock()
 	p := s.players[username]
 	if p == nil {
-		p = &Player{Username: username, PwHash: hashPassword(s.secret, password), Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
 		s.players[username] = p
 		s.markDirtyLocked(p) // new account: persist with the next store
-	} else if p.PwHash != hashPassword(s.secret, password) {
+	} else if p.PwHash != pwHash && !p.passwordResetAllowed(now) {
 		s.mu.Unlock()
 		metricTCPRejected.WithLabelValues("wrong_password").Inc()
 		reject("error", "ERROR_WRONG_PASSWORD")
 		return
-	} else if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
+	} else {
+		if p.PwHash != pwHash {
+			p.PwHash = pwHash
+		}
+		p.LastSeen = now
+		s.markDirtyLocked(p)
+	}
+	if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
 		s.mu.Unlock()
 		metricTCPRejected.WithLabelValues("reconnect_penalty").Inc()
 		// Round up so the client never sees "0" while still penalized.
@@ -159,6 +168,8 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	if current {
 		p.conn = nil
 		p.sink.Store(nil)
+		p.LastSeen = time.Now()
+		s.markDirtyLocked(p)
 	}
 	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()

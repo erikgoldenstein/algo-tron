@@ -37,4 +37,5 @@ const (
 	reconnectPenaltyRedemption = 5
 	disconnectRepeatWindow     = 5 * time.Minute
 	disconnectRepeatWarn       = 3
+	accountPasswordResetAfter  = 30 * 24 * time.Hour
 )

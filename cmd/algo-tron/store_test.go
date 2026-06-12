@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,10 +29,12 @@ func testDB(t *testing.T) *Server {
 func TestLoadStoreRoundTrip(t *testing.T) {
 	s := testDB(t)
 	now := time.Now().UnixMilli()
+	lastSeen := time.Now().Add(-time.Hour).Truncate(time.Second)
 	s.players["alice"] = &Player{
 		Username: "alice",
 		PwHash:   hashPassword(s.secret, "pass"),
 		Elo:      1234.5,
+		LastSeen: lastSeen,
 		ScoreHistory: []Score{
 			{Type: 1, Time: now},
 			{Type: 0, Time: now},
@@ -54,6 +57,9 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	}
 	if p.PwHash != hashPassword(s.secret, "pass") {
 		t.Error("PwHash mismatch after round-trip")
+	}
+	if !p.LastSeen.Equal(lastSeen) {
+		t.Errorf("LastSeen = %v, want %v", p.LastSeen, lastSeen)
 	}
 }
 
@@ -277,6 +283,116 @@ func TestJoinMarksNewAccountDirty(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("new account was not marked dirty after join")
+}
+
+func TestInactiveAccountPasswordCanReset(t *testing.T) {
+	s := testServer(t)
+	oldHash := hashPassword(s.secret, "old")
+	newHash := hashPassword(s.secret, "new")
+	p := &Player{
+		Username: "alice",
+		PwHash:   oldHash,
+		Elo:      1000,
+		TsMu:     tsMu0,
+		TsSigma:  tsSigma0,
+		LastSeen: time.Now().Add(-accountPasswordResetAfter - time.Hour),
+	}
+	s.players["alice"] = p
+
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil { // motd
+		t.Fatalf("read motd: %v", err)
+	}
+	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	go io.Copy(io.Discard, br)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		gotHash := p.PwHash
+		lastSeen := p.LastSeen
+		_, dirty := s.dirty[p]
+		s.mu.Unlock()
+		if gotHash == newHash && lastSeen.After(time.Now().Add(-time.Minute)) && dirty {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("inactive account password was not reset on join")
+}
+
+func TestRecentAccountRejectsWrongPassword(t *testing.T) {
+	s := testServer(t)
+	oldHash := hashPassword(s.secret, "old")
+	p := &Player{
+		Username: "alice",
+		PwHash:   oldHash,
+		Elo:      1000,
+		TsMu:     tsMu0,
+		TsSigma:  tsSigma0,
+		LastSeen: time.Now().Add(-accountPasswordResetAfter + time.Hour),
+	}
+	s.players["alice"] = p
+
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil { // motd
+		t.Fatalf("read motd: %v", err)
+	}
+	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	line, err := br.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if !strings.Contains(line, "ERROR_WRONG_PASSWORD") {
+		t.Fatalf("response = %q, want ERROR_WRONG_PASSWORD", line)
+	}
+	if p.PwHash != oldHash {
+		t.Fatal("recent account password changed after wrong-password join")
+	}
+}
+
+func TestConnectedAccountRejectsPasswordReset(t *testing.T) {
+	s := testServer(t)
+	oldHash := hashPassword(s.secret, "old")
+	p := &Player{
+		Username: "alice",
+		PwHash:   oldHash,
+		Elo:      1000,
+		TsMu:     tsMu0,
+		TsSigma:  tsSigma0,
+		LastSeen: time.Now().Add(-accountPasswordResetAfter - time.Hour),
+	}
+	_, activeConn := mustPipe(t)
+	p.conn = activeConn
+	s.players["alice"] = p
+
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	if _, err := br.ReadString('\n'); err != nil { // motd
+		t.Fatalf("read motd: %v", err)
+	}
+	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	line, err := br.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if !strings.Contains(line, "ERROR_WRONG_PASSWORD") {
+		t.Fatalf("response = %q, want ERROR_WRONG_PASSWORD", line)
+	}
+	if p.PwHash != oldHash {
+		t.Fatal("connected account password changed after wrong-password join")
+	}
 }
 
 func TestStoreIsIdempotent(t *testing.T) {

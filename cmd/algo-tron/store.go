@@ -27,11 +27,13 @@ func openDB(path string) (*sql.DB, error) {
 	// TrueSkill columns added later; ignore "duplicate column" on re-open.
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_mu REAL NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN last_seen_unix INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`UPDATE players SET last_seen_unix = ? WHERE last_seen_unix = 0`, time.Now().Unix())
 	return db, nil
 }
 
 func (s *Server) load() {
-	rows, err := s.db.Query("SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma FROM players")
+	rows, err := s.db.Query("SELECT username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix FROM players")
 	if err != nil {
 		metricDBErrors.WithLabelValues("load").Inc()
 		slog.Error("db load", "err", err)
@@ -41,7 +43,8 @@ func (s *Server) load() {
 	for rows.Next() {
 		var username, pwHash, scoresJSON string
 		var elo, tsMu, tsSigma float64
-		if err := rows.Scan(&username, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma); err != nil {
+		var lastSeenUnix int64
+		if err := rows.Scan(&username, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma, &lastSeenUnix); err != nil {
 			metricDBErrors.WithLabelValues("load_row").Inc()
 			slog.Error("db load row", "err", err)
 			continue
@@ -55,7 +58,11 @@ func (s *Server) load() {
 		}
 		var scores []Score
 		_ = json.Unmarshal([]byte(scoresJSON), &scores)
-		s.players[username] = &Player{Username: username, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, ScoreHistory: scores}
+		p := &Player{Username: username, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, ScoreHistory: scores}
+		if lastSeenUnix > 0 {
+			p.LastSeen = time.Unix(lastSeenUnix, 0)
+		}
+		s.players[username] = p
 	}
 }
 
@@ -67,6 +74,7 @@ type playerRow struct {
 	elo              float64
 	scores           []Score
 	tsMu, tsSigma    float64
+	lastSeenUnix     int64
 }
 
 // queueStoreLocked wakes the persister (storeLoop). Non-blocking: a pending
@@ -133,7 +141,7 @@ func (s *Server) snapshotPlayersLocked() []playerRow {
 // snapshotRow deep-copies one player's persisted fields. Caller holds
 // Server.mu (ScoreHistory is player state).
 func snapshotRow(p *Player) playerRow {
-	return playerRow{
+	row := playerRow{
 		username: p.Username,
 		pwHash:   p.PwHash,
 		elo:      p.Elo,
@@ -141,6 +149,10 @@ func snapshotRow(p *Player) playerRow {
 		tsMu:     p.TsMu,
 		tsSigma:  p.TsSigma,
 	}
+	if !p.LastSeen.IsZero() {
+		row.lastSeenUnix = p.LastSeen.Unix()
+	}
+	return row
 }
 
 // store synchronously snapshots and persists all players. Used at shutdown
@@ -165,7 +177,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 		return false
 	}
 	defer tx.Rollback()
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history, ts_mu, ts_sigma) VALUES (?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix) VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_prepare").Inc()
 		slog.Error("db store prepare", "err", err)
@@ -174,7 +186,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 	defer stmt.Close()
 	for _, r := range rows {
 		scores, _ := json.Marshal(r.scores)
-		if _, err := stmt.Exec(r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma); err != nil {
+		if _, err := stmt.Exec(r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.lastSeenUnix); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()
 			slog.Error("db store row", "user", r.username, "err", err)
 		}

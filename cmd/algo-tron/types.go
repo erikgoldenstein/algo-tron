@@ -47,6 +47,7 @@ type Player struct {
 	Elo          float64
 	TsMu         float64
 	TsSigma      float64
+	LastSeen     time.Time
 
 	conn net.Conn
 	sink atomic.Pointer[botSink]

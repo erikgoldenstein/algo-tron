@@ -86,6 +86,10 @@ func (p *Player) winsLosses() (int, int) {
 	return w, l
 }
 
+func (p *Player) passwordResetAllowed(now time.Time) bool {
+	return p.conn == nil && p.sink.Load() == nil && !p.LastSeen.IsZero() && now.Sub(p.LastSeen) >= accountPasswordResetAfter
+}
+
 func (p *Player) trimScores() {
 	cutoff := time.Now().Add(-scoreWindow).UnixMilli()
 	kept := p.ScoreHistory[:0]
