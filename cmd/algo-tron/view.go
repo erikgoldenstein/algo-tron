@@ -9,10 +9,15 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
 	"strings"
+	"testing/fstest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/css"
+	"github.com/tdewolff/minify/v2/js"
 )
 
 //go:embed viewer/*
@@ -31,10 +36,43 @@ var viewTemplate = template.Must(template.ParseFS(viewerFS, "viewer/index.html")
 // viewerHandler builds the HTTP mux for the viewer. Extracted so the e2e
 // tests (viewer_e2e_test.go) can wrap it in an httptest.Server without
 // reproducing the routing.
+// minifyStatic returns an in-memory copy of src with .js and .css files
+// minified. Runs once at startup, so sources in the repo stay readable and
+// there is no extra build step. A file that fails to minify is served as-is.
+func minifyStatic(src fs.FS) fs.FS {
+	m := minify.New()
+	m.AddFunc(".js", js.Minify)
+	m.AddFunc(".css", css.Minify)
+	out := fstest.MapFS{}
+	fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(src, p)
+		if err != nil {
+			return err
+		}
+		if ext := path.Ext(p); ext == ".js" || ext == ".css" {
+			if minified, err := m.Bytes(ext, data); err == nil {
+				data = minified
+			} else {
+				slog.Warn("minify failed, serving original", "file", p, "err", err)
+			}
+		}
+		out[p] = &fstest.MapFile{Data: data}
+		return nil
+	})
+	return out
+}
+
 func (s *Server) viewerHandler(metricsAuth string) http.Handler {
-	staticFS, _ := fs.Sub(viewerFS, "viewer")
+	sub, _ := fs.Sub(viewerFS, "viewer")
+	staticFS := minifyStatic(sub)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.viewPage)
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, staticFS, "robots.txt")
+	})
 	mux.HandleFunc("/play", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://github.com/erikgoldenstein/algo-tron/tree/main/example_bots", http.StatusFound)
 	})
