@@ -104,7 +104,11 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.mu.Lock()
 	p := s.players[username]
 	if p == nil {
-		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+		// LastSeen and the dirty mark are set unconditionally below
+		// alongside the existing-player path; keeping them in the
+		// literal here too makes a freshly-created Player a complete
+		// account at a glance for readers of this branch.
+		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
 		s.players[username] = p
 	} else if p.PwHash != pwHash && !p.passwordResetAllowed(now) {
 		s.mu.Unlock()

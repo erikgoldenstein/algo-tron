@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +61,6 @@ func TestReconnectWithAliveSeatGetsResync(t *testing.T) {
 	a.sink.Store(nil)
 
 	br := joinAs(t, s, "a", "pw")
-	go func() { time.Sleep(2 * time.Second); io.Copy(io.Discard, br) }()
 
 	var lines []string
 	sawGame, sawPlayer, sawPos := false, false, false

@@ -131,6 +131,24 @@ func TestHandleChatSetsExpiry(t *testing.T) {
 	}
 }
 
+func TestHandleChatTooLong(t *testing.T) {
+	// Chat messages above chatMaxLen are rejected so they can't swamp the
+	// canvas bubble in the viewer.
+	s := testServer(t)
+	p, buf := testPlayer("alice")
+	bareGame(s, p)
+	s.players["alice"] = p
+
+	s.handleChat(p, []string{"chat", strings.Repeat("a", chatMaxLen+1)})
+
+	if p.Chat != "" {
+		t.Errorf("Chat = %q, want empty (message longer than chatMaxLen)", p.Chat)
+	}
+	if !strings.Contains(buf.String(), "ERROR_INVALID_CHAT_MESSAGE") {
+		t.Errorf("expected ERROR_INVALID_CHAT_MESSAGE, got %q", buf.String())
+	}
+}
+
 func TestHandleChatPipeIsInvalidChar(t *testing.T) {
 	// | is the protocol delimiter and is not in validString, so a message
 	// reconstructed from multiple pipe-split parts must be rejected.

@@ -10,7 +10,18 @@ import (
 )
 
 func openDB(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+	// modernc.org/sqlite applies _pragma= query params on every pooled
+	// connection — important for busy_timeout, which is per-connection
+	// and would otherwise only take effect on the first one. WAL is a
+	// file-level mode so it'd persist, but riding along here is harmless
+	// and keeps both pragmas in one place. ":memory:" stays bare: WAL
+	// has no meaning for an in-memory DB and the URI form would change
+	// the pool's identity semantics.
+	dsn := path
+	if path != ":memory:" {
+		dsn = path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	}
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +57,6 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	// WAL keeps readers from blocking the async store's writes; the busy
-	// timeout rides out the shutdown store overlapping a storeLoop write.
-	// Best-effort like the ALTERs (":memory:" test DBs ignore WAL).
-	_, _ = db.Exec(`PRAGMA journal_mode=WAL`)
-	_, _ = db.Exec(`PRAGMA busy_timeout=5000`)
 	return db, nil
 }
 

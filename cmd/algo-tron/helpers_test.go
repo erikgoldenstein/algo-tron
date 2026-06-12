@@ -27,6 +27,11 @@ func testServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("openDB: %v", err)
 	}
+	// SQLite ":memory:" gives each pooled connection its own database, so a
+	// CREATE TABLE on one connection isn't visible on another. Pinning the
+	// pool to a single connection is the standard fix in tests; production
+	// uses a file DB and is unaffected.
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	s := &Server{
 		players:     map[string]*Player{},
