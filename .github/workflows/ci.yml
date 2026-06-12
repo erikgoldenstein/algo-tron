@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, Vet, Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Chrome for E2E tests
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Put Chrome on PATH
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/chrome-bin"
+          ln -sf "$CHROME_PATH" "$RUNNER_TEMP/chrome-bin/google-chrome"
+          echo "$RUNNER_TEMP/chrome-bin" >> "$GITHUB_PATH"
+          "$CHROME_PATH" --version
+
+      - name: Verify Chrome is discoverable
+        run: google-chrome --version
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Vet all packages
+        run: go vet ./...
+
+      - name: Test algo-tron, including E2E
+        run: go test ./cmd/algo-tron -count=1 -v
+
+      - name: Test algo-tron with race detector
+        run: go test -race ./cmd/algo-tron -count=1

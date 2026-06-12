@@ -1,0 +1,119 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches:
+      - prod
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod
+  cancel-in-progress: false
+
+jobs:
+  test-and-benchmark:
+    name: Test and Benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Chrome for E2E tests and benchmarks
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Put Chrome on PATH
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/chrome-bin"
+          ln -sf "$CHROME_PATH" "$RUNNER_TEMP/chrome-bin/google-chrome"
+          echo "$RUNNER_TEMP/chrome-bin" >> "$GITHUB_PATH"
+          "$CHROME_PATH" --version
+
+      - name: Verify Chrome is discoverable
+        run: google-chrome --version
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Vet all packages
+        run: go vet ./...
+
+      - name: Test algo-tron, including E2E
+        run: go test ./cmd/algo-tron -count=1 -v
+
+      - name: Test algo-tron with race detector
+        run: go test -race ./cmd/algo-tron -count=1
+
+      - name: Run unit benchmarks
+        run: go test -bench='Benchmark(TickFrame|InitMarshal|PushFanout)$' -benchmem -run=^$ ./cmd/algo-tron
+
+      - name: Run E2E benchmark
+        run: go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
+
+      - name: Build production binary
+        run: go build -o algo-tron ./cmd/algo-tron
+
+      - name: Upload production binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: algo-tron-${{ github.sha }}
+          path: algo-tron
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: test-and-benchmark
+    environment: production
+
+    steps:
+      - name: Download production binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: algo-tron-${{ github.sha }}
+
+      - name: Configure SSH
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload binary to VM
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          chmod 755 algo-tron
+          ssh -i ~/.ssh/prod_key "$PROD_SSH_USER@$PROD_HOST" \
+            'dd of=/tmp/algo-tron-${{ github.sha }} bs=1M status=none' < ./algo-tron
+
+      - name: Install binary and restart service
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/prod_key "$PROD_SSH_USER@$PROD_HOST" '
+            set -e
+            sudo install -o root -g root -m 0755 /tmp/algo-tron-${{ github.sha }} /usr/local/bin/algo-tron
+            sudo systemctl restart algo-tron
+            sudo systemctl is-active --quiet algo-tron
+            sudo systemctl status algo-tron --no-pager
+            curl -fsS --retry 10 --retry-delay 1 http://127.0.0.1:3000/ >/dev/null
+            rm -f /tmp/algo-tron-${{ github.sha }}
+          '
