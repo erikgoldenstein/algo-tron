@@ -16,8 +16,9 @@ All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
 |-----------------------|-------|--------------------------------------------------|
 | `baseTickrate`        | 1     | Ticks/second at game start.                      |
 | `tickIncreaseSeconds` | 10    | Add +1 tick/sec for every 10s of game time.      |
+| `firstTickGrace`      | 1s    | Extra time before a game's first tick.           |
 
-So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in that game's `tickNs` atomic; the per-packet throttle uses the fastest interval across running boards.
+So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in that game's `tickNs` atomic; the per-packet throttle uses the player's own board's interval. The first tick fires one interval *plus* `firstTickGrace` after the start frame, so a bot with a slow first move (model warm-up, cold caches) isn't forced into `ERROR_NO_MOVE` defaults right away.
 
 ## Move resolution (one tick)
 
@@ -105,9 +106,9 @@ Three per-connection budgets are enforced inside `handlePacket`. Limits and cons
 
 | What's allowed                                                                                      | What's not                                                                                                          |
 |-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| Up to `totalPacketsPerTick` (10) packets per tick interval, any mix of `move` / `chat` / unknown.   | More than 10 packets per tick — extras are dropped silently and a strike is added.                                  |
-| Up to `movePacketsPerTick` (5) `move` packets per tick interval from an alive player.               | More than 5 `move` packets per tick — drop + strike.                                                                |
-| Up to `chatPacketsPerTick` (3) `chat` packets per tick at the TCP layer, but only one *posts*.      | More than 3 `chat` packets per tick — drop + strike. (Posting beyond one per tick gets `WARNING_CHAT_RATE_LIMIT` instead — no strike.) |
+| Up to `totalPacketsPerTick` (10) packets per tick interval, any mix of `move` / `chat` / unknown — with burst headroom of `rateLimitBurstTicks` (2) ticks' budget. | Sustained over-budget sending — extras are dropped silently; each contiguous run of drops adds a strike. |
+| Up to `movePacketsPerTick` (5) `move` packets per tick interval from an alive player.               | Sustained more than 5 `move` packets per tick — drop, one strike per run.                                           |
+| Up to `chatPacketsPerTick` (3) `chat` packets per tick at the TCP layer, but only one *posts*.      | Sustained more than 3 `chat` packets per tick — drop, one strike per run. (Posting beyond one per tick gets `WARNING_CHAT_RATE_LIMIT` instead — no strike.) |
 | Dead players may send `move` packets; they're accepted as no-ops (still count against the global limit). | Spamming any packet type at >2× rate for any sustained period — strikes accumulate and the connection gets killed. |
 | Reconnecting cleanly after a normal disconnect or kick from `ERROR_ALREADY_CONNECTED`.              | Reconnecting inside the penalty window after a rate-limit kick — `ERROR_RECONNECT_PENALTY\|<seconds>`.              |
 | Unknown packet types (you'll get `ERROR_UNKNOWN_PACKET` per packet, but the connection stays).      | Flooding unknown packets to avoid the move/chat budgets — caught by the global limiter, same strike track.          |

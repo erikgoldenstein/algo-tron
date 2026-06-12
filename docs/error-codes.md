@@ -32,7 +32,7 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | `ERROR_DEAD_CANNOT_CHAT`     | `chat` from a player who is dead this game.                                                         |
 | `WARNING_CHAT_RATE_LIMIT`    | `chat` arrived less than one tick interval after the last accepted chat. *algo-tron-specific.*      |
 | `ERROR_INVALID_CHAT_MESSAGE` | Chat fails the same character-class regex used for usernames.                                       |
-| `WARNING_RATE_LIMIT`         | Packet was dropped for exceeding a per-connection budget; first strike. Connection stays open. *algo-tron-specific.* |
+| `WARNING_RATE_LIMIT`         | A run of packets was dropped for exceeding a per-connection budget — one strike per contiguous run. Connection stays open. *algo-tron-specific.* |
 | `ERROR_RATE_LIMIT`           | Strike count reached `rateLimitErrorStrikes` (3). Connection is closed and the account's reconnect penalty doubles. *algo-tron-specific.* |
 
 See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits) for the full strike → warn → kick → penalty flow.

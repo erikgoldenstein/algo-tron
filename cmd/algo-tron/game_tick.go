@@ -21,7 +21,11 @@ func (g *Game) run() {
 	var lastTick time.Time
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
-	next := time.Now()
+	// Anchor one grace interval into the future: the first move deadline is
+	// then two intervals after the start frame, giving clients with a slow
+	// first move (model warm-up, cold caches) a chance — there is no
+	// lastMove to fall back on yet.
+	next := time.Now().Add(firstTickGrace)
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
 		interval := time.Second / time.Duration(rate)

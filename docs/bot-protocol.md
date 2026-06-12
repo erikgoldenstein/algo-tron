@@ -72,7 +72,7 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 
 ## Rate limits
 
-Three per-connection budgets, enforced inside `handlePacket` as **token buckets**: each bucket refills at its budget per tick interval and holds up to one full budget of tokens. The burst capacity matters — network jitter routinely delivers two consecutive one-per-tick packets back-to-back, and a bucket (unlike a strict minimum-spacing rule) absorbs that without dropping a legitimate move. Each over-budget packet is dropped and adds a strike against the connection.
+Three per-connection budgets, enforced inside `handlePacket` as **token buckets**: each bucket refills at its budget per tick interval and holds up to `rateLimitBurstTicks` (2) ticks' worth of tokens. The burst capacity matters — a client that stalls for a tick (GC pause, slow inference, network jitter) and answers two ticks back-to-back must not lose a move. Over-budget packets are dropped; a contiguous run of them costs one strike against the connection.
 
 The tick interval used for refill accounting is the bot's **own board's** current interval (1s while unseated/queued).
 
@@ -82,16 +82,18 @@ The tick interval used for refill accounting is the bot's **own board's** curren
 | `movePacketsPerTick`    | 5 per tick interval         | Just `move` packets (seated players).                                         |
 | `chatPacketsPerTick`    | 3 per tick interval         | Just `chat` packets at the TCP layer; chat-message posting is still 1/tick.   |
 
-A packet must clear the global budget *and* its per-type budget. If either fails, the packet is dropped and a strike is added.
+A packet must clear the global budget *and* its per-type budget. If either fails, the packet is dropped.
 
 ### Strikes → warn → disconnect → reconnect penalty
 
+A **contiguous run** of dropped packets costs **one strike**, no matter how long — a single over-budget burst can't burn through all strikes before the client sees the warning. The run ends with the next allowed packet.
+
 | Strike count                 | Effect                                                                                          |
 |------------------------------|-------------------------------------------------------------------------------------------------|
-| `rateLimitWarnStrikes` (1)   | Server sends `WARNING_RATE_LIMIT`. Connection stays open.                                       |
+| below `rateLimitErrorStrikes` | Server sends `WARNING_RATE_LIMIT`. Connection stays open.                                      |
 | `rateLimitErrorStrikes` (3)  | Server sends `ERROR_RATE_LIMIT`, then closes the connection.                                    |
 
-Strikes reset to 0 on **the next allowed packet** — a brief burst is forgiven. Strikes only matter when they pile up without any well-behaved packet between them.
+Strikes are forgiven after `rateLimitStrikeExpiry` (1 minute) without a new one — strikes only matter when denial runs keep happening.
 
 When a connection is closed for hitting the strike cap, the account's **reconnect penalty** doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives across reconnects — it only stops growing when the bot stops getting kicked.
 

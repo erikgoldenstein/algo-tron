@@ -25,14 +25,14 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) (bool, 
 		// credit the packet (global limiter already counted it).
 		st := p.seat.Load()
 		if st == nil {
-			lim.strikes = 0
+			lim.allowed()
 			return true, ""
 		}
 		if !lim.move.allow(movePacketsPerTick, interval) {
 			return s.handleRateLimit(p, lim)
 		}
 		s.handleMove(p, st, parts)
-		lim.strikes = 0
+		lim.allowed()
 		return true, ""
 	case "chat":
 		if !lim.chat.allow(chatPacketsPerTick, interval) {
@@ -40,11 +40,11 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) (bool, 
 			return s.handleRateLimit(p, lim)
 		}
 		s.handleChat(p, parts)
-		lim.strikes = 0
+		lim.allowed()
 		return true, ""
 	default:
 		p.send("error", "ERROR_UNKNOWN_PACKET")
-		lim.strikes = 0
+		lim.allowed()
 		return true, ""
 	}
 }
