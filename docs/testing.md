@@ -10,9 +10,10 @@ Run for every change:
 go build ./...
 go vet ./...
 go test ./cmd/algo-tron
+go test ./cmd/algo-tron -run TestE2E -v
 ```
 
-`go test ./cmd/algo-tron` runs every `Test*` in the package, including the headless-Chrome `TestE2E*` group. The E2E tests auto-skip if Chrome isn't installed — install it, or run on a box that has it, before claiming the suite passed.
+`go test ./cmd/algo-tron` runs every `Test*` in the package, including the headless-Chrome `TestE2E*` group. Run `go test ./cmd/algo-tron -run TestE2E -v` explicitly as part of validation so the viewer path is called out in the test log. The E2E tests auto-skip if Chrome isn't installed — install it, or run on a box that has it, before claiming the suite passed.
 
 `TestMain` in `helpers_test.go` silences `slog` and stdlib `log` so production lifecycle and stats lines don't pollute test output.
 
@@ -132,11 +133,13 @@ There are four benchmarks. Three are unit-level micro-benchmarks of the hot path
 2. If `ns/op` went up but `allocs/op` didn't: check for lock-hold extensions or new I/O syscalls in `advanceLocked` / `finishTickLocked` / `broadcastViewLocked`.
 3. If only `BenchmarkE2E` regressed: the cost is in dispatch / scheduling, not in the per-tick build. Profile with `-cpuprofile` and look for lock contention on `s.mu`.
 
-## Production build sanity
+## Production deploy sanity
 
-Run before tagging a release or merging an infra change:
+Run before tagging a release, merging an infra change, or deploying to production. Benchmarks are part of the production gate.
 
 ```sh
+go test -bench=. -benchmem -run=^$ ./cmd/algo-tron
+go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 go build -o /tmp/algo-tron ./cmd/algo-tron   # matches the deployment build
 nix build .#algo-tron                        # matches the flake / NixOS module
 ```
