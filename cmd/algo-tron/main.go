@@ -35,10 +35,16 @@ func run() error {
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
 	defaultDataDir := filepath.Join(os.TempDir(), "algo-tron")
 	dataDir := flag.String("data-dir", defaultDataDir, "directory for secret and SQLite DB")
+	geoDir := flag.String("geo-dir", "geo", "directory for GeoLite2 .mmdb files; env GEO_DATABASE_URL/GEO_ASN_DATABASE_URL/MAXMIND_LICENSE_KEY can populate it")
+	setupGeoOnly := flag.Bool("setup-geo", false, "download GeoLite2 databases into -geo-dir and exit")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
 	flag.Parse()
 	if *viewMetricsAuth == "" {
 		*viewMetricsAuth = os.Getenv("ALGO_TRON_VIEW_METRICS_AUTH")
+	}
+	if *setupGeoOnly {
+		setupGeoFiles(*geoDir)
+		return nil
 	}
 
 	if *dataDir == defaultDataDir {
@@ -58,7 +64,10 @@ func run() error {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer db.Close()
+	geo := setupGeo(*geoDir)
+	defer geo.close()
 	pruneIdleAccounts(db, time.Now().Add(-accountPruneAfter).Unix())
+	archiveOldGameParticipants(db, time.Now().Add(-gameLedgerRetention).UnixMilli())
 
 	s := &Server{
 		players:       map[string]*Player{},
@@ -66,8 +75,10 @@ func run() error {
 		viewClients:   map[*websocket.Conn]*viewerSink{},
 		secret:        secret,
 		db:            db,
+		geo:           geo,
 		scheduleURL:   *scheduleURL,
 		publicViewURL: *publicViewScheme + "://" + *publicView,
+		fillerBots:    true,
 		storeSignal:   make(chan struct{}, 1),
 	}
 	s.viewState.ServerInfoList = []ServerInfo{{Host: hostOnly(*publicTCP), Port: portOnly(*publicTCP)}}

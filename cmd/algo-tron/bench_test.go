@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -146,4 +147,106 @@ func BenchmarkPushFanout(b *testing.B) {
 			reportMaxTPS(b)
 		})
 	}
+}
+
+// benchLedgerServer returns a Server backed by an in-memory DB whose
+// game_participants table is pre-filled with `rows` ledger entries spread over
+// ~rows/10 distinct careers, all inside every board window.
+func benchLedgerServer(b *testing.B, rows int) *Server {
+	b.Helper()
+	db, err := openDB(":memory:")
+	if err != nil {
+		b.Fatalf("openDB: %v", err)
+	}
+	db.SetMaxOpenConns(1) // ":memory:" gives each pooled conn its own DB; pin to one
+	b.Cleanup(func() { db.Close() })
+	s := &Server{players: map[string]*Player{}, db: db}
+
+	now := time.Now().UnixMilli()
+	careers := rows / 10
+	if careers < 1 {
+		careers = 1
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		b.Fatalf("seed begin: %v", err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		b.Fatalf("seed prepare: %v", err)
+	}
+	for i := 0; i < rows; i++ {
+		uuid := fmt.Sprintf("u%d", i%careers)
+		won := 0
+		if i%4 == 0 {
+			won = 1
+		}
+		ended := now - int64(i%100000) // within the last ~100s → inside every window
+		if _, err := stmt.Exec(fmt.Sprintf("g%d", i), 1, uuid, "user"+uuid, won, deathReasonCollision, 1000.0, 250.0, 80.0, ended); err != nil {
+			b.Fatalf("seed exec: %v", err)
+		}
+	}
+	stmt.Close()
+	if err := tx.Commit(); err != nil {
+		b.Fatalf("seed commit: %v", err)
+	}
+	return s
+}
+
+// BenchmarkComputePeriodEntries measures a period-board cache MISS: the SQL
+// window-aggregate over game_participants that scoreboard_cache.go exists to
+// amortize. Scaling rows 1k→100k shows whether the table's indexes keep the
+// halfyear scan bounded — flat-ish is healthy; linear means an index/query
+// regression. allocs/op is the host-invariant signal.
+func BenchmarkComputePeriodEntries(b *testing.B) {
+	for _, n := range []int{1_000, 10_000, 100_000} {
+		b.Run(fmt.Sprintf("rows=%d", n), func(b *testing.B) {
+			s := benchLedgerServer(b, n)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = s.computePeriodEntries("halfyear")
+			}
+		})
+	}
+}
+
+// BenchmarkScoreboardCachedPageWarm measures a cache HIT: the per-request
+// search/sort/old-owner/paging work over an already-computed snapshot. This is
+// what every viewer request pays once the cache is warm — the complement to the
+// miss benchmark above.
+func BenchmarkScoreboardCachedPageWarm(b *testing.B) {
+	s := benchLedgerServer(b, 50_000)
+	q := scoreboardQuery{Period: "halfyear", Sort: "ts", Limit: 25}
+	s.scoreboardCachedPage(q) // warm the cache
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _ = s.scoreboardCachedPage(q)
+	}
+}
+
+// BenchmarkBotMove measures one filler bot's per-tick decision: the bounded BFS
+// (botReachLocked) run for each candidate direction. It runs on the lock-held
+// tick path, so allocs/op here is the per-bot tick tax; max_tps is the ceiling
+// if a tick did nothing but move one bot.
+func BenchmarkBotMove(b *testing.B) {
+	const w, h = 32, 32
+	g := &Game{width: w, height: h, fields: makeFields(w, h)}
+	for x := 0; x < w; x++ {
+		for y := 0; y < h; y++ {
+			if (x*7+y*13)%10 < 3 { // ~30% obstacles, deterministic
+				g.fields[x][y] = 0
+			}
+		}
+	}
+	st := &Seat{pos: Vec2{X: w / 2, Y: h / 2}}
+	g.fields[st.pos.X][st.pos.Y] = -1 // keep the start cell open
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = g.botMoveLocked(st)
+	}
+	b.StopTimer()
+	reportMaxTPS(b)
 }

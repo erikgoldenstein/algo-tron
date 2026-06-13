@@ -39,3 +39,26 @@ func TestQueuedPlayersLocked(t *testing.T) {
 		t.Errorf("expected [alice, charlie], got [%s, %s]", got[0].Username, got[1].Username)
 	}
 }
+
+func TestFillerBotsDoNotOverwritePlayerAccounts(t *testing.T) {
+	s := testServer(t)
+	_, conn := mustPipe(t)
+	realBot, _ := testPlayer("bot1")
+	realBot.conn = conn
+	s.players["bot1"] = realBot
+	s.fillerBots = true
+
+	s.ensureFillerBotsLocked()
+
+	if s.players["bot1"] != realBot {
+		t.Fatal("internal filler bot overwrote real bot1 account")
+	}
+	if len(s.filler) != fillerBotCount {
+		t.Fatalf("filler count = %d, want %d", len(s.filler), fillerBotCount)
+	}
+	for _, p := range s.filler {
+		if !p.InternalBot {
+			t.Fatalf("filler %q is not marked internal", p.Username)
+		}
+	}
+}

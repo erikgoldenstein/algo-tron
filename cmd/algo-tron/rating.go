@@ -7,6 +7,10 @@ import "math"
 // by their death tick (later death = better place). Seats that died on the
 // same tick share a place (head-on collisions, multiple disconnects).
 // Caller holds Server.mu (ratings are player state); the board is quiescent.
+//
+// Internal filler bots are excluded from rating updates on both sides: they
+// neither gain/lose Elo themselves nor count as opponents for humans, so
+// games padded with bots can't be farmed for rating.
 func (g *Game) updateEloLocked(winners []*Seat) {
 	if len(g.seats) == 0 {
 		return
@@ -14,12 +18,18 @@ func (g *Game) updateEloLocked(winners []*Seat) {
 	place := g.placesLocked(winners)
 	old := map[*Seat]float64{}
 	for _, st := range g.seats {
+		if st.player.InternalBot {
+			continue
+		}
 		old[st] = st.player.Elo
 	}
 	for _, st := range g.seats {
+		if st.player.InternalBot {
+			continue
+		}
 		delta := 0.0
 		for _, opponent := range g.seats {
-			if opponent == st {
+			if opponent == st || opponent.player.InternalBot {
 				continue
 			}
 			var score float64
@@ -38,8 +48,10 @@ func (g *Game) updateEloLocked(winners []*Seat) {
 	}
 }
 
-// placesLocked ranks every seat: winners share place 1, losers are ordered
-// by death tick (later death = better place), same-tick deaths share a place.
+// placesLocked ranks every non-bot seat: winners share place 1, losers are
+// ordered by death tick (later death = better place), same-tick deaths share
+// a place. Bots are skipped — both as ranked seats and as comparison peers —
+// so the human field is ranked as if the bots weren't there.
 func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
 	won := map[*Seat]bool{}
 	for _, st := range winners {
@@ -47,13 +59,16 @@ func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
 	}
 	place := map[*Seat]int{}
 	for _, st := range g.seats {
+		if st.player.InternalBot {
+			continue
+		}
 		if won[st] {
 			place[st] = 1
 			continue
 		}
 		better := 0
 		for _, other := range g.seats {
-			if other == st {
+			if other == st || other.player.InternalBot {
 				continue
 			}
 			if won[other] || g.deathTick[other] > g.deathTick[st] {
@@ -79,13 +94,19 @@ func (g *Game) updateTrueSkillLocked(winners []*Seat) {
 	type snap struct{ mu, sigma2 float64 }
 	old := map[*Seat]snap{}
 	for _, st := range g.seats {
+		if st.player.InternalBot {
+			continue
+		}
 		old[st] = snap{st.player.TsMu, st.player.TsSigma * st.player.TsSigma}
 	}
 	for _, st := range g.seats {
+		if st.player.InternalBot {
+			continue
+		}
 		muP, s2P := old[st].mu, old[st].sigma2
 		muNew, s2New := muP, s2P
 		for _, other := range g.seats {
-			if other == st || place[st] == place[other] {
+			if other == st || other.player.InternalBot || place[st] == place[other] {
 				continue
 			}
 			muQ, s2Q := old[other].mu, old[other].sigma2

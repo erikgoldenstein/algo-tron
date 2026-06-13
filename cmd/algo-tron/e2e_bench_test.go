@@ -199,9 +199,13 @@ func runE2EBot(b *testing.B, addr, username string, n int, tickCh chan<- struct{
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 
-	if _, err := r.ReadString('\n'); err != nil { // motd
-		ready.Done()
-		return
+	// Drain the fixed number of motd lines the server sends pre-join. See
+	// helpers_test.go (motdLines) for the source-of-truth count.
+	for i := 0; i < motdLines; i++ {
+		if _, err := r.ReadString('\n'); err != nil {
+			ready.Done()
+			return
+		}
 	}
 	if _, err := fmt.Fprintf(w, "join|%s|pw\n", username); err != nil {
 		ready.Done()

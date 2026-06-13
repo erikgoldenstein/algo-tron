@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"runtime/debug"
 	"strings"
 	"time"
 )
 
 func isLocalhost(ip string) bool {
-	return ip == "127.0.0.1" || ip == "::1"
+	addr, err := netip.ParseAddr(ip)
+	return err == nil && addr.IsLoopback()
 }
 
 func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
@@ -36,6 +38,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		_ = tc.SetNoDelay(true)
 	}
 	ip, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	ip = canonicalIPString(ip)
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 	reject := func(parts ...any) {
@@ -52,7 +55,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 			return
 		}
 		if proxyIP != "" {
-			ip = proxyIP
+			ip = canonicalIPString(proxyIP)
 		}
 	}
 
@@ -74,7 +77,8 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		return
 	}
 	_ = conn.SetWriteDeadline(time.Now().Add(botWriteTimeout))
-	writePacket(w, "motd", "You can find the protocol documentation here: https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md")
+	writePacket(w, "motd", "You can find the protocol documentation here: https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md")
+	writePacket(w, "motd", "Only accounts with a password appear on the leaderboard. Keep your password to keep your stats.")
 
 	_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
 	scanner := bufio.NewScanner(r)
@@ -108,7 +112,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		// alongside the existing-player path; keeping them in the
 		// literal here too makes a freshly-created Player a complete
 		// account at a glance for readers of this branch.
-		p = &Player{Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
+		p = &Player{UUID: randUUID(), Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
 		s.players[username] = p
 	} else if p.PwHash != pwHash && !p.passwordResetAllowed(now) {
 		s.mu.Unlock()
@@ -129,6 +133,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		old.enqueue(formatPacket("error", "ERROR_ALREADY_CONNECTED"))
 		old.shutdown("replaced_by_new_connection")
 	}
+	ensureUUID(p)
 	// Idle-account takeover (passwordResetAllowed verified above): the new
 	// owner starts with fresh stats. The old career isn't deleted — it is
 	// snapshotted here and written to players_archive off-lock below.
@@ -136,6 +141,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	if p.PwHash != pwHash {
 		row := snapshotRow(p)
 		archived = &row
+		p.UUID = randUUID()
 		p.PwHash = pwHash
 		p.Elo = 1000
 		p.TsMu, p.TsSigma = tsMu0, tsSigma0
@@ -161,10 +167,13 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		}
 		g.mu.Unlock()
 	}
+	s.updateScoreboardLocked()
+	s.broadcastScoreboardLocked()
 	s.mu.Unlock()
 	if archived != nil {
 		archiveRow(s.db, *archived)
 	}
+	recordPlayerIP(s.db, s.secret, s.geo, ensureUUID(p), ip, now)
 	go sink.run()
 
 	lim := &connLimits{}
@@ -197,6 +206,8 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		p.sink.Store(nil)
 		p.LastSeen = time.Now()
 		s.markDirtyLocked(p)
+		s.updateScoreboardLocked()
+		s.broadcastScoreboardLocked()
 	}
 	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()

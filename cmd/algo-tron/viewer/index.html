@@ -53,7 +53,7 @@
 
     <section class="scoreboard-section">
       <div class="section-header">
-        <h2>scoreboard <span class="muted" id="alive-count"></span></h2>
+        <h2><button id="scoreboard-title" class="title-button">scoreboard</button> <span class="muted" id="alive-count"></span></h2>
         <span class="muted">last 2h</span>
       </div>
       <div class="scoreboard-subline" id="scoreboard-tools" hidden>
@@ -92,7 +92,7 @@
     </section>
 
     <section class="chart-section">
-      <h2>elo</h2>
+      <h2>trueskill</h2>
       <div class="chart-wrap"><canvas id="chart"></canvas></div>
       <div class="chart-axis"><span>-2h</span><span>now</span></div>
     </section>
@@ -157,6 +157,28 @@
             <span class="kbd">?</span><span class="kd">toggle this help</span>
             <span class="kbd">q esc</span><span class="kd">close</span>
           </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="scoreboard-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-scoreboard-close></div>
+    <div class="scoreboard-window scoreboard-modal-window" role="dialog" aria-modal="true" aria-labelledby="scoreboard-modal-title">
+      <div class="modal-header">
+        <span class="modal-title" id="scoreboard-modal-title"><b>scoreboard</b></span>
+        <button class="modal-close" data-scoreboard-close>close</button>
+      </div>
+      <div class="modal-body">
+        <section class="modal-section">
+          <div class="scoreboard-modal-controls">
+            <select id="scoreboard-period"><option value="online">online</option><option value="all">all</option><option value="daily">daily</option><option value="monthly">monthly</option><option value="halfyear">y/2</option></select>
+            <select id="scoreboard-sort"><option value="ts">ts</option><option value="elo">elo</option><option value="wr">wr</option></select>
+            <input id="scoreboard-search" placeholder="search user" autocomplete="off" spellcheck="false">
+          </div>
+          <table class="scoreboard modal-scoreboard-table"><tbody id="scoreboard-modal-rows"><tr><td class="empty">loading...</td></tr></tbody></table>
+          <div id="scoreboard-asof" class="scoreboard-asof"></div>
+          <div class="scoreboard-fineprint">Only accounts with a password appear here. Internal filler bots and unauthenticated joins are excluded.</div>
         </section>
       </div>
     </div>

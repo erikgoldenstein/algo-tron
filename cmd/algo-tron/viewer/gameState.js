@@ -30,6 +30,8 @@ const gameState = {
   followEditing: false,
   chartData: [],
   lastWinners: [],
+  chatLog: [],
+  scorePages: {},
   boards: [], // [{ id, players, alive }] — all running boards, tab bar order
   game: null, // subscribed board: { id, width, height, players: { [id]: { id, name, pos, moves, alive, chat } } }
 };
@@ -41,6 +43,8 @@ function applyMessage(msg) {
     case 'game':   applyGame(msg);  break;
     case 'tick':   applyTick(msg);  break;
     case 'end':    applyEnd(msg);   break;
+    case 'scoreboard': applyScoreboard(msg); break;
+    case 'chat':   applyChat(msg);  break;
   }
 }
 
@@ -48,6 +52,7 @@ function applyInit(msg) {
   gameState.serverInfo  = msg.serverInfo  || [];
   gameState.viewInfo    = msg.viewInfo    || [];
   gameState.scoreboard  = msg.scoreboard  || [];
+  gameState.scorePages[scorePageKey('online', 'ts', '')] = { entries: gameState.scoreboard.slice(), hasMore: !!msg.scoreboardHasMore, period: 'online', sort: 'ts', search: '', computedAt: msg.computedAt || Date.now() };
   gameState.boardScoreboard = msg.game?.boardScoreboard || [];
   gameState.boardChartData  = msg.game?.boardChartData  || [];
   gameState.chartData   = msg.chartData   || [];
@@ -93,8 +98,34 @@ function applyTick(msg) {
 
 function applyEnd(msg) {
   gameState.scoreboard  = msg.scoreboard  || [];
+  gameState.scorePages[scorePageKey('online', 'ts', '')] = { entries: gameState.scoreboard.slice(), hasMore: !!msg.scoreboardHasMore, period: 'online', sort: 'ts', search: '', computedAt: msg.computedAt || Date.now() };
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
+}
+
+function applyScoreboard(msg) {
+  const key = scorePageKey(msg.period, msg.sort, msg.search);
+  const prev = msg.offset ? (gameState.scorePages[key]?.entries || []) : [];
+  gameState.scorePages[key] = {
+    entries: prev.concat(msg.entries || []),
+    hasMore: !!msg.hasMore,
+    period: msg.period || 'online',
+    sort: msg.sort || 'ts',
+    search: msg.search || '',
+    computedAt: msg.computedAt || Date.now(),
+  };
+  if ((msg.period || 'online') === 'online' && (msg.sort || 'ts') === 'ts' && !(msg.search || '')) {
+    gameState.scoreboard = gameState.scorePages[key].entries;
+  }
+}
+
+function applyChat(msg) {
+  gameState.chatLog.push(msg);
+  if (gameState.chatLog.length > 100) gameState.chatLog.shift();
+}
+
+function scorePageKey(period, sort, search) {
+  return (period || 'online') + '|' + (sort || 'ts') + '|' + (search || '');
 }
 
 function buildGame(m) {

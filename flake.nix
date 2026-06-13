@@ -14,7 +14,7 @@
           pname = "algo-tron";
           version = "0.1.0";
           src = ./.;
-          vendorHash = "sha256-2Spz/6ebObGhZS1zZU9pRDs4LdTbCPRj7rArFgtzJCw=";
+          vendorHash = "sha256-ZBKwR1Czt3mhHCMedniIZPrRf1BsVmqVvv6nskgPZ2A=";
           subPackages = [ "cmd/algo-tron" ];
           ldflags = [ "-s" "-w" ];
         };
@@ -49,6 +49,7 @@
             "-public-view" cfg.view.publicAddress
             "-public-view-scheme" cfg.view.publicScheme
             "-data-dir" cfg.dataDir
+            "-geo-dir" cfg.geoDir
           ] ++ lib.optionals (cfg.scheduleURL != "") [
             "-schedule-url" cfg.scheduleURL
           ] ++ lib.optionals (cfg.metrics.listen != "") [
@@ -84,6 +85,12 @@
               type = lib.types.str;
               default = "/var/lib/algo-tron";
               description = "Directory holding the SQLite player database and HMAC secret.";
+            };
+
+            geoDir = lib.mkOption {
+              type = lib.types.str;
+              default = "/var/lib/algo-tron/geo";
+              description = "Directory holding GeoLite2 City/ASN .mmdb files for hashed-IP enrichment.";
             };
 
             scheduleURL = lib.mkOption {
@@ -183,7 +190,7 @@
                 PrivateTmp = true;
                 ProtectHome = true;
                 ProtectSystem = "strict";
-                ReadWritePaths = [ cfg.dataDir ];
+                ReadWritePaths = [ cfg.dataDir cfg.geoDir ];
               };
             };
 

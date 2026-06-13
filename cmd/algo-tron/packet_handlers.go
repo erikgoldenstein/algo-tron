@@ -88,6 +88,7 @@ func (s *Server) handleChat(p *Player, parts []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := st.game
+	boardIndex := s.boardIndexLocked(g)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	switch {
@@ -103,5 +104,6 @@ func (s *Server) handleChat(p *Player, parts []string) {
 		p.chatExpiry = time.Now().Add(5 * time.Second)
 		p.lastChatAt = time.Now()
 		g.broadcastAliveLocked(formatPacket("message", st.id, msg))
+		s.broadcastChatLocked(chatMsg{GameID: g.id, BoardIndex: boardIndex, Username: p.Username, Message: msg, Time: time.Now().UnixMilli()})
 	}
 }

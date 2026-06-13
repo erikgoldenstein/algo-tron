@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"strconv"
 	"time"
 )
@@ -92,6 +93,8 @@ func (g *Game) advanceLocked() tickResult {
 	g.deathIDs = g.deathIDs[:0]
 	g.posScratch = g.posScratch[:0]
 
+	g.applyBotMovesLocked()
+	g.killRequestedBotsLocked()
 	g.killDisconnectedLocked()
 	g.movePlayersLocked()
 	g.applyCollisionsLocked()
@@ -137,7 +140,14 @@ func (g *Game) advanceLocked() tickResult {
 // and get their lose packet; viewers get the tick delta; a finished game is
 // wound down. Returns the viewer-fanout duration for the budget metric.
 func (s *Server) finishTickLocked(g *Game, res tickResult) time.Duration {
+	bucket := tpsBucket(g.tickNs.Load())
 	for _, st := range res.dead {
+		reason := st.deathReason
+		if reason == "" {
+			reason = deathReasonCollision
+		}
+		metricPlayerDeaths.WithLabelValues(reason, bucket).Inc()
+		slog.Debug("player died", "user", st.player.Username, "uuid", ensureUUID(st.player), "reason", reason, "game", g.id, "seat", st.id, "tick", g.tick)
 		s.releaseSeatLocked(st)
 		st.loseLocked()
 	}
@@ -156,7 +166,7 @@ func (s *Server) finishTickLocked(g *Game, res tickResult) time.Duration {
 func (s *Server) releaseSeatLocked(st *Seat) {
 	if st.player.seat.Load() == st {
 		st.player.seat.Store(nil)
-		if st.player.conn != nil {
+		if st.player.conn != nil || (st.player.InternalBot && !st.removeRequested) {
 			s.enqueueLocked(st.player)
 		}
 	}

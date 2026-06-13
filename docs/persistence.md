@@ -10,6 +10,8 @@ The server keeps state in a single directory configured with `-data-dir`. Defaul
 └── players.db                # SQLite, modernc.org/sqlite
 ```
 
+The GeoLite2 `.mmdb` files live in a separate directory configured with `-geo-dir` (default `geo` relative to cwd; the NixOS module uses `/var/lib/algo-tron/geo`). It is not under `-data-dir` — geo data is read-only enrichment, not server state.
+
 ## `secret`
 
 32 bytes from `crypto/rand`, created on first boot. Used as the HMAC-SHA256 key for password hashing. **Rotating it invalidates every account password** — every existing bot will hit `ERROR_WRONG_PASSWORD` and need to re-register under a new name. Don't rotate unless you mean to.
@@ -41,6 +43,36 @@ CREATE TABLE IF NOT EXISTS players_archive (
   last_seen_unix   INTEGER NOT NULL,
   archived_at_unix INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS game_participants (
+  game_id       TEXT NOT NULL,
+  board_index   INTEGER NOT NULL,
+  uuid          TEXT NOT NULL,
+  username      TEXT NOT NULL, -- display name at game end
+  won           INTEGER NOT NULL, -- 1 for winners, 0 otherwise; winners derive from this
+  death_reason  TEXT NOT NULL,
+  elo           REAL NOT NULL,
+  ts_mu         REAL NOT NULL,
+  ts_sigma      REAL NOT NULL,
+  ended_unix_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms);
+CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ended_unix_ms);
+
+CREATE TABLE IF NOT EXISTS player_ips (
+  uuid            TEXT NOT NULL,
+  ip_hash         TEXT NOT NULL, -- HMAC-SHA256(secret-derived-key, canonical IP)
+  family          TEXT NOT NULL, -- ipv4 / ipv6 / unknown
+  country         TEXT NOT NULL DEFAULT '',
+  region          TEXT NOT NULL DEFAULT '',
+  city            TEXT NOT NULL DEFAULT '',
+  asn             INTEGER NOT NULL DEFAULT 0,
+  as_org          TEXT NOT NULL DEFAULT '',
+  as_type         TEXT NOT NULL DEFAULT '',
+  first_seen_unix INTEGER NOT NULL,
+  last_seen_unix  INTEGER NOT NULL,
+  PRIMARY KEY (uuid, ip_hash)
+);
 ```
 
 The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
@@ -49,6 +81,20 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
 - `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo` is the player's ELO after that game; it's `omitempty` for backward compatibility, so records written before ELO tracking lack the field and parse as `0`. The viewer's ELO chart simply skips slots with `Elo == 0`. Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
+- `uuid` is the stable identity for persistence/audit rows. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username a new UUID.
+- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` at the time, and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
+- `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
+
+### GeoLite setup
+
+Run `algo-tron -setup-geo -geo-dir geo` to ensure `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` exist in `-geo-dir` (default `geo`). Normal server startup only opens existing files; it does not download over the network. The setup command mirrors the common GeoLite build-script environment:
+
+- `SKIP_BUILD_GEO=1` skips geo setup entirely.
+- `VERCEL=1` skips unless `BUILD_GEO=1` is also set.
+- `GEO_DATABASE_URL` can point to a City `.mmdb` or `.tar.gz`.
+- `GEO_ASN_DATABASE_URL` can point to an ASN `.mmdb` or `.tar.gz`.
+- `MAXMIND_LICENSE_KEY` downloads from MaxMind when custom URLs are absent.
+- Without a license key, it falls back to `GitSquared/node-geolite2-redist` tarballs.
 
 ### Read/write cadence
 

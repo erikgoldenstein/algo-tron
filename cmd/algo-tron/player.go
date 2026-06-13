@@ -42,27 +42,36 @@ func (st *Seat) readMoveLocked() Move {
 func (st *Seat) winLocked()  { st.scoreTime = st.player.recordScoreLocked(st.game.server, 1) }
 func (st *Seat) loseLocked() { st.scoreTime = st.player.recordScoreLocked(st.game.server, 0) }
 
-// patchScoreEloLocked writes the post-game elo onto the ScoreHistory entry
-// this seat recorded at win/lose time. Matched by timestamp rather than
-// index because the player may have died here, joined another board, and
-// recorded further entries before this game ended. Two entries in the same
-// millisecond would patch the later one — harmless, the elo values are
-// near-identical.
-func (st *Seat) patchScoreEloLocked() {
+// patchScoreRatingLocked writes the post-game rating onto the ScoreHistory
+// entry this seat recorded at win/lose time. Matched by timestamp rather
+// than index because the player may have died here, joined another board,
+// and recorded further entries before this game ended. Two entries in the
+// same millisecond would patch the later one — harmless, the values are
+// near-identical. A bot's scoreTime is 0 (see recordScoreLocked) so the
+// scan finds nothing — no-op for bots.
+func (st *Seat) patchScoreRatingLocked() {
 	h := st.player.ScoreHistory
 	for i := len(h) - 1; i >= 0; i-- {
 		if h[i].Time == st.scoreTime {
 			h[i].Elo = st.player.Elo
+			h[i].TsMu = st.player.TsMu
+			h[i].TsSigma = st.player.TsSigma
 			return
 		}
 	}
 }
 
 // recordScoreLocked appends a win/lose entry and sends the matching packet.
-// Returns the entry's timestamp so the seat can patch its elo at game end.
+// Returns the entry's timestamp so the seat can patch its rating at game
+// end. Internal bots are skipped: they have no ScoreHistory to persist and
+// no sink to receive the packet, so callers get scoreTime=0 and the later
+// patch becomes a no-op.
 func (p *Player) recordScoreLocked(s *Server, typ int) int64 {
+	if p.InternalBot {
+		return 0
+	}
 	now := time.Now().UnixMilli()
-	p.ScoreHistory = append(p.ScoreHistory, Score{Type: typ, Time: now, Elo: p.Elo})
+	p.ScoreHistory = append(p.ScoreHistory, Score{Type: typ, Time: now, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma})
 	s.markDirtyLocked(p)
 	w, l := p.winsLosses()
 	if typ == 1 {

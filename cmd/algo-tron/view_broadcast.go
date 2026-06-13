@@ -1,6 +1,9 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // broadcastViewLocked fans a marshaled message out to every viewer sink.
 func (s *Server) broadcastViewLocked(data []byte) {
@@ -64,11 +67,36 @@ func (s *Server) broadcastEndLocked(gameID string) {
 		return
 	}
 	data, _ := json.Marshal(endMsg{
-		Type:        "end",
-		GameID:      gameID,
-		Scoreboard:  s.viewState.Scoreboard,
-		ChartData:   s.viewState.ChartData,
-		LastWinners: s.viewState.LastWinners,
+		Type:              "end",
+		GameID:            gameID,
+		Scoreboard:        s.viewState.Scoreboard,
+		ScoreboardHasMore: s.viewState.ScoreboardHasMore,
+		ChartData:         s.viewState.ChartData,
+		LastWinners:       s.viewState.LastWinners,
 	})
 	s.broadcastViewLocked(data)
+}
+
+func (s *Server) broadcastScoreboardLocked() {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	data, _ := json.Marshal(scoreboardMsg{Type: "scoreboard", Period: "online", Sort: "ts", Offset: 0, Entries: s.viewState.Scoreboard, HasMore: s.viewState.ScoreboardHasMore, ComputedAt: time.Now().UnixMilli()})
+	s.broadcastViewLocked(data)
+}
+
+func (s *Server) broadcastChatLocked(m chatMsg) {
+	if len(s.viewClients) == 0 {
+		return
+	}
+	m.Type = "chat"
+	data, _ := json.Marshal(m)
+	s.broadcastViewLocked(data)
+}
+
+func (s *Server) addSystemChatLocked(gameID string, boardIndex int, msg string) {
+	if msg == "" {
+		return
+	}
+	s.broadcastChatLocked(chatMsg{GameID: gameID, BoardIndex: boardIndex, Username: "system", Message: msg, Time: time.Now().UnixMilli(), System: true})
 }

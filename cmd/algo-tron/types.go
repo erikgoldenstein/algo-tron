@@ -22,9 +22,11 @@ type Vec2 struct {
 }
 
 type Score struct {
-	Type int     `json:"type"`
-	Time int64   `json:"time"`
-	Elo  float64 `json:"elo,omitempty"`
+	Type    int     `json:"type"`
+	Time    int64   `json:"time"`
+	Elo     float64 `json:"elo,omitempty"`
+	TsMu    float64 `json:"tsMu,omitempty"`
+	TsSigma float64 `json:"tsSigma,omitempty"`
 }
 
 // Player is a registered bot: identity, ratings, connection. Everything tied
@@ -38,6 +40,7 @@ type Score struct {
 // lock-free on the per-packet hot path (handlePacket) and the per-tick hot
 // path (frame fanout), so neither path has to touch the server lock.
 type Player struct {
+	UUID         string
 	Username     string
 	PwHash       string
 	Chat         string
@@ -70,6 +73,8 @@ type Player struct {
 	disconnectStreak     atomic.Uint64
 	lastDisconnectReason atomic.Value
 	lastDisconnectRemote atomic.Value
+
+	InternalBot bool
 }
 
 // Seat is one player's participation in one game. The id doubles as the
@@ -91,7 +96,10 @@ type Seat struct {
 	// UnixMilli of the ScoreHistory entry written when this seat won/lost,
 	// so endLocked can patch the post-game elo onto exactly that entry —
 	// the player may have entries from other games by then.
-	scoreTime int64
+	scoreTime       int64
+	removeRequested bool
+
+	deathReason string
 }
 
 type ServerInfo struct {
@@ -101,6 +109,9 @@ type ServerInfo struct {
 }
 
 type ScoreboardEntry struct {
+	// UUID is backend-only (kept off the wire) — it identifies a career for
+	// old-owner detection but must not leak to viewers. See OldOwner.
+	UUID     string  `json:"-"`
 	Username string  `json:"username"`
 	WinRatio float64 `json:"winRatio"`
 	Wins     int     `json:"wins"`
@@ -108,15 +119,23 @@ type ScoreboardEntry struct {
 	Elo      float64 `json:"elo"`
 	TsMu     float64 `json:"tsMu"`
 	TsSigma  float64 `json:"tsSigma"`
+	Online   bool    `json:"online"`
+	// OldOwner > 0 marks a retired career whose username has since been
+	// reclaimed by a different account (idle takeover). The viewer renders it
+	// as "(old owner{OldOwner})", numbering duplicates of the same name. Set
+	// only in the period scoreboards, which read game_participants by uuid;
+	// the live boards build from s.players (one career per username).
+	OldOwner int `json:"oldOwner,omitempty"`
 }
 
 // ViewState caches the slow-changing data the viewer needs (server/view info,
 // scoreboard, chart, last winners). Live game state is streamed as deltas
 // (see message types below) and not stored here.
 type ViewState struct {
-	ServerInfoList []ServerInfo      `json:"serverInfoList"`
-	ViewInfoList   []ServerInfo      `json:"viewInfoList"`
-	ChartData      []map[string]any  `json:"chartData"`
-	Scoreboard     []ScoreboardEntry `json:"scoreboard"`
-	LastWinners    []string          `json:"lastWinners"`
+	ServerInfoList    []ServerInfo      `json:"serverInfoList"`
+	ViewInfoList      []ServerInfo      `json:"viewInfoList"`
+	ChartData         []map[string]any  `json:"chartData"`
+	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
+	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
+	LastWinners       []string          `json:"lastWinners"`
 }

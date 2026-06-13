@@ -67,8 +67,75 @@ function cycleScheme() {
   renderSchemes();
 }
 
+function scoreModalQuery(offset) {
+  return {
+    period: document.getElementById('scoreboard-period')?.value || 'online',
+    sort: document.getElementById('scoreboard-sort')?.value || 'ts',
+    search: document.getElementById('scoreboard-search')?.value || '',
+    offset: offset || 0,
+    limit: 25,
+  };
+}
+
+function renderScoreboardModalRows() {
+  const root = document.getElementById('scoreboard-modal-rows');
+  if (!root) return;
+  const q = scoreModalQuery(0);
+  const key = scorePageKey(q.period, q.sort, q.search);
+  const page = gameState.scorePages[key];
+  const rows = page?.entries || [];
+  root.innerHTML = rows.length
+    ? rows.map(scoreRow).join('')
+    : '<tr><td colspan="12" class="empty">nobody found</td></tr>';
+  const asof = document.getElementById('scoreboard-asof');
+  if (asof) asof.textContent = page?.computedAt ? 'as of ' + new Date(page.computedAt).toLocaleString() : '';
+}
+
+function openScoreboardModal() {
+  const m = document.getElementById('scoreboard-modal');
+  if (!m) return;
+  m.hidden = false;
+  requestScoreboard(scoreModalQuery(0));
+  renderScoreboardModalRows();
+}
+
+function closeScoreboardModal() {
+  const m = document.getElementById('scoreboard-modal');
+  if (m) m.hidden = true;
+}
+
+function loadMoreSidebarScores() {
+  if (!matchMedia('(min-width: 801px)').matches) return;
+  const key = scorePageKey('online', 'ts', '');
+  const page = gameState.scorePages[key];
+  if (page && !page.hasMore) return;
+  requestScoreboard({ period: 'online', sort: 'ts', search: '', offset: gameState.scoreboard.length, limit: 25 });
+}
+
+function loadMoreModalScores() {
+  const q = scoreModalQuery(0);
+  const key = scorePageKey(q.period, q.sort, q.search);
+  const page = gameState.scorePages[key];
+  if (!page?.hasMore) return;
+  requestScoreboard({ period: q.period, sort: q.sort, search: q.search, offset: page.entries.length, limit: 25 });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('help-btn')?.addEventListener('click', () => toggleHelp(true));
+  document.getElementById('scoreboard-title')?.addEventListener('click', openScoreboardModal);
+  document.querySelectorAll('[data-scoreboard-close]').forEach((el) => el.addEventListener('click', closeScoreboardModal));
+  ['scoreboard-period', 'scoreboard-sort'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', () => requestScoreboard(scoreModalQuery(0)));
+  });
+  document.getElementById('scoreboard-search')?.addEventListener('input', () => requestScoreboard(scoreModalQuery(0)));
+  document.querySelector('#scoreboard-modal .modal-body')?.addEventListener('scroll', (e) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreModalScores();
+  });
+  document.querySelector('.scoreboard-section')?.addEventListener('scroll', (e) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreSidebarScores();
+  });
   document.querySelectorAll('[data-close]').forEach((el) => {
     el.addEventListener('click', () => toggleHelp(false));
   });

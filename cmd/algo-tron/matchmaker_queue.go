@@ -11,6 +11,11 @@ func (s *Server) queuedPlayersLocked() []*Player {
 			out = append(out, p)
 		}
 	}
+	for _, p := range s.filler {
+		if !p.queuedSince.IsZero() && p.seat.Load() == nil {
+			out = append(out, p)
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].queuedSince.Before(out[j].queuedSince) })
 	return out
 }
@@ -19,6 +24,11 @@ func (s *Server) connectedCountLocked() int {
 	n := 0
 	for _, p := range s.players {
 		if p.conn != nil {
+			n++
+		}
+	}
+	for _, p := range s.filler {
+		if !p.queuedSince.IsZero() || p.seat.Load() != nil {
 			n++
 		}
 	}

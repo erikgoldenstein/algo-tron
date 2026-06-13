@@ -21,6 +21,12 @@ type Server struct {
 	games       []*Game
 	viewState   ViewState
 	viewClients map[*websocket.Conn]*viewerSink
+	filler      []*Player
+
+	// boards caches the expensive period scoreboards (all/daily/monthly/
+	// halfyear), shared across viewers and refreshed on a TTL. See
+	// scoreboard_cache.go. Has its own mutex; not guarded by mu.
+	boards boardCache
 
 	// dirty is the set of players whose persisted fields (PwHash, Elo,
 	// TsMu, TsSigma, ScoreHistory) changed since the last store. Any code
@@ -29,6 +35,12 @@ type Server struct {
 	// actually touched instead of all of them. The shutdown store() still
 	// writes everyone, so a missed mark costs freshness, not data.
 	dirty map[*Player]struct{}
+
+	// pendingGameRows buffers finished-game ledger rows (one per human per
+	// game) under mu; storeLoop drains and writes them off-lock alongside
+	// the dirty players, so a game end never blocks its board's tick on the
+	// SQLite write. See endGameLocked and storeDirtyOnce.
+	pendingGameRows []gameParticipantRecord
 
 	// Matchmaker state: players entering the queue since the last
 	// matchmaker tick, and the EMA arrival rate (players/sec) derived
@@ -44,8 +56,10 @@ type Server struct {
 
 	secret        []byte
 	db            *sql.DB
+	geo           *geoLookup
 	scheduleURL   string
-	publicViewURL string       // absolute base URL of the viewer, for og:image etc.
+	publicViewURL string // absolute base URL of the viewer, for og:image etc.
+	fillerBots    bool
 	tickDurNs     atomic.Int64 // last tick build+broadcast duration, for stats log
 	fanoutDurNs   atomic.Int64 // last viewer fanout duration, for stats log
 

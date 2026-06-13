@@ -48,6 +48,9 @@ func (s *Server) enqueueLocked(p *Player) {
 func (s *Server) matchmakeLocked(now time.Time) {
 	s.mmRate = arrivalRateAlpha*float64(s.mmArrivals) + (1-arrivalRateAlpha)*s.mmRate
 	s.mmArrivals = 0
+	if s.fillerBots {
+		s.ensureFillerBotsLocked()
+	}
 
 	queue := s.queuedPlayersLocked()
 	if len(queue) == 0 {

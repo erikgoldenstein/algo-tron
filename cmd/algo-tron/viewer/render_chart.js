@@ -1,4 +1,4 @@
-// ELO chart rendering. render_loop.js owns timers.
+// TrueSkill chart rendering. render_loop.js owns timers.
 //
 // Depends on: schemes.js (playerColor), gameState.js.
 // Provides: renderChart.
@@ -17,27 +17,23 @@ function renderChart() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  // Mirror the scoreboard scope: per-board series in "board" scope (when
-  // several boards run), global series otherwise (global / spectator).
   const boardScope = gameState.boards.length > 1 && gameState.scoreboardScope === 'board';
   const data = (boardScope ? gameState.boardChartData : gameState.chartData) || [];
   const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
   if (!data.length || !names.length) return;
 
-  // Auto-range vertically over recorded elo values; the chart only shows
-  // recent variation rather than absolute scale.
   let lo = Infinity, hi = -Infinity;
   for (const point of data) {
     for (const name of names) {
-      const v = point[name];
-      if (typeof v !== 'number') continue;
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
+      const v = chartPoint(point[name]);
+      if (!v) continue;
+      lo = Math.min(lo, v.mu - v.sigma);
+      hi = Math.max(hi, v.mu + v.sigma);
     }
   }
   if (!isFinite(lo) || !isFinite(hi) || lo === hi) {
-    lo = (lo || 1000) - 50;
-    hi = (hi || 1000) + 50;
+    lo = (lo || 250) - 50;
+    hi = (hi || 250) + 50;
   }
 
   const pad = { top: 4, right: 4, bottom: 4, left: 4 };
@@ -46,19 +42,44 @@ function renderChart() {
   const x = (i) => pad.left + i / Math.max(data.length - 1, 1) * plotW;
   const y = (v) => pad.top + (1 - (v - lo) / (hi - lo)) * plotH;
 
-  ctx.lineWidth = 1.25;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const name of names) {
-    ctx.strokeStyle = playerColor(name);
+    const color = playerColor(name);
     ctx.beginPath();
     let started = false;
     data.forEach((point, i) => {
-      const v = point[name];
-      if (typeof v !== 'number') return;
-      if (!started) { ctx.moveTo(x(i), y(v)); started = true; }
-      else ctx.lineTo(x(i), y(v));
+      const v = chartPoint(point[name]);
+      if (!v) return;
+      if (!started) { ctx.moveTo(x(i), y(v.mu - v.sigma)); started = true; }
+      else ctx.lineTo(x(i), y(v.mu - v.sigma));
+    });
+    if (started) {
+      for (let i = data.length - 1; i >= 0; i--) {
+        const v = chartPoint(data[i][name]);
+        if (v) ctx.lineTo(x(i), y(v.mu + v.sigma));
+      }
+      ctx.closePath();
+      ctx.fillStyle = color + '14';
+      ctx.fill();
+    }
+
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    started = false;
+    data.forEach((point, i) => {
+      const v = chartPoint(point[name]);
+      if (!v) return;
+      if (!started) { ctx.moveTo(x(i), y(v.mu)); started = true; }
+      else ctx.lineTo(x(i), y(v.mu));
     });
     ctx.stroke();
   }
+}
+
+function chartPoint(v) {
+  if (typeof v === 'number') return { mu: v, sigma: 0 };
+  if (v && typeof v.mu === 'number') return { mu: v.mu, sigma: typeof v.sigma === 'number' ? v.sigma : 0 };
+  return null;
 }

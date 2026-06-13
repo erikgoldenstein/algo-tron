@@ -14,7 +14,9 @@ import (
 func (s *Server) statsLoop() {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	s.updateDisconnectStats() // populate gauges at boot instead of waiting a minute
 	for range t.C {
+		s.updateDisconnectStats()
 		s.mu.Lock()
 		players := len(s.players)
 		viewers := len(s.viewClients)

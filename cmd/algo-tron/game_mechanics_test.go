@@ -117,11 +117,57 @@ func TestMarkDeadIsIdempotent(t *testing.T) {
 	a, _ := testPlayer("a")
 	g := makeGame(s, []*Player{a})
 
-	g.markDeadLocked(g.seats[0])
-	g.markDeadLocked(g.seats[0]) // second mark must be a no-op
+	g.markDeadLocked(g.seats[0], deathReasonCollision)
+	g.markDeadLocked(g.seats[0], deathReasonCollision) // second mark must be a no-op
 
 	if len(g.deadScratch) != 1 {
 		t.Errorf("deadScratch has %d entries after double mark, want 1", len(g.deadScratch))
+	}
+}
+
+func TestMarkDeadRecordsReason(t *testing.T) {
+	s := testServer(t)
+	a, _ := testPlayer("a")
+	g := makeGame(s, []*Player{a})
+
+	g.markDeadLocked(g.seats[0], deathReasonDisconnect)
+
+	if g.seats[0].deathReason != deathReasonDisconnect {
+		t.Errorf("deathReason = %q, want %q", g.seats[0].deathReason, deathReasonDisconnect)
+	}
+}
+
+// — killDisconnectedLocked ————————————————————————————————————————————
+
+// A disconnected human (nil sink) is killed mid-game and tagged with the
+// disconnect death reason so the ledger/metrics can attribute it.
+func TestKillDisconnectedTagsReason(t *testing.T) {
+	s := testServer(t)
+	human := &Player{Username: "human"} // no sink stored → counts as disconnected
+	g := makeGame(s, []*Player{human})
+
+	g.killDisconnectedLocked()
+
+	st := g.seats[0]
+	if st.alive {
+		t.Fatal("disconnected human should be killed")
+	}
+	if st.deathReason != deathReasonDisconnect {
+		t.Errorf("deathReason = %q, want %q", st.deathReason, deathReasonDisconnect)
+	}
+}
+
+// Internal bots have no sink by design; killDisconnectedLocked must skip them
+// so they aren't reaped as "disconnected" every tick.
+func TestKillDisconnectedSkipsInternalBots(t *testing.T) {
+	s := testServer(t)
+	bot := &Player{Username: "bot1", InternalBot: true} // no sink
+	g := makeGame(s, []*Player{bot})
+
+	g.killDisconnectedLocked()
+
+	if !g.seats[0].alive {
+		t.Error("internal bot must not be killed by killDisconnectedLocked")
 	}
 }
 

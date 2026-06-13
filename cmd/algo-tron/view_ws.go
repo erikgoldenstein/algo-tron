@@ -52,9 +52,40 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Watch string `json:"watch"`
+			Watch      string           `json:"watch"`
+			Scoreboard *scoreboardQuery `json:"scoreboard"`
 		}
-		if json.Unmarshal(data, &req) != nil || req.Watch == "" {
+		if json.Unmarshal(data, &req) != nil {
+			continue
+		}
+		if req.Scoreboard != nil {
+			q := *req.Scoreboard
+			if q.Period != "all" && q.Period != "daily" && q.Period != "monthly" && q.Period != "halfyear" {
+				q.Period = "online"
+			}
+			if q.Sort != "elo" && q.Sort != "wr" {
+				q.Sort = "ts"
+			}
+			var entries []ScoreboardEntry
+			var hasMore bool
+			computedAt := time.Now()
+			if q.Period == "online" {
+				s.mu.Lock()
+				entries, hasMore = s.scoreboardPageLocked(q)
+				s.mu.Unlock()
+			} else {
+				entries, hasMore, computedAt = s.scoreboardCachedPage(q)
+			}
+			m := scoreboardMsg{Type: "scoreboard", Period: q.Period, Sort: q.Sort, Search: q.Search, Offset: q.Offset, Entries: entries, HasMore: hasMore, ComputedAt: computedAt.UnixMilli()}
+			data, _ := json.Marshal(m)
+			s.mu.Lock()
+			if s.viewClients[c] == sink {
+				s.sendToSinkLocked(c, sink, data)
+			}
+			s.mu.Unlock()
+			continue
+		}
+		if req.Watch == "" {
 			continue
 		}
 		s.mu.Lock()

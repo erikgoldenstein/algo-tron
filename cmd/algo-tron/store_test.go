@@ -145,6 +145,24 @@ func TestLoadInitializesTrueSkill(t *testing.T) {
 	}
 }
 
+func TestLoadPersistsGeneratedUUID(t *testing.T) {
+	s := testDB(t)
+	_, err := s.db.Exec(`INSERT INTO players (username, pw_hash, elo, score_history, uuid) VALUES ('legacy', 'hash', 1000, '[]', '')`)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	s.load()
+	first := s.players["legacy"].UUID
+	if first == "" {
+		t.Fatal("legacy player did not get uuid")
+	}
+	s.players = map[string]*Player{}
+	s.load()
+	if got := s.players["legacy"].UUID; got != first {
+		t.Fatalf("uuid = %q after reload, want stable %q", got, first)
+	}
+}
+
 // — dirty-player tracking ————————————————————————————————————————————
 
 // storedUsernames returns the usernames currently present in the players
@@ -236,7 +254,7 @@ func TestGameEndPersistsPatchedElo(t *testing.T) {
 
 	// l dies; a store drains the death-time dirty mark before game end.
 	lSeat := g.seats[1]
-	g.markDeadLocked(lSeat)
+	g.markDeadLocked(lSeat, deathReasonCollision)
 	g.removeFromFields(lSeat)
 	s.releaseSeatLocked(lSeat)
 	lSeat.loseLocked()
@@ -263,9 +281,7 @@ func TestJoinMarksNewAccountDirty(t *testing.T) {
 	go s.handleConn(server, false)
 
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|alice|pw\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -302,9 +318,7 @@ func TestInactiveAccountPasswordCanReset(t *testing.T) {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -343,9 +357,7 @@ func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -412,9 +424,7 @@ func TestRecentAccountRejectsWrongPassword(t *testing.T) {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -448,9 +458,7 @@ func TestConnectedAccountRejectsPasswordReset(t *testing.T) {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -479,4 +487,219 @@ func TestStoreIsIdempotent(t *testing.T) {
 	if s.players["alice"] == nil {
 		t.Fatal("alice missing after double store + load")
 	}
+}
+
+// — game-ledger retention / flush ——————————————————————————————————————
+
+// The retention cutoff must be strictly older than the longest live board
+// window (halfyear, see computePeriodEntries) or archiveOldGameParticipants
+// would move rows a period board still reads. This guards that invariant so a
+// future window change can't silently start eating live leaderboard data.
+func TestLedgerRetentionExceedsLongestBoardWindow(t *testing.T) {
+	now := time.Now()
+	retentionCutoff := now.Add(-gameLedgerRetention)
+	halfyearCutoff := now.AddDate(0, -6, 0)
+	if !retentionCutoff.Before(halfyearCutoff) {
+		t.Fatalf("gameLedgerRetention (%s) must exceed the halfyear board window: retention cutoff %s is not before halfyear cutoff %s",
+			gameLedgerRetention, retentionCutoff, halfyearCutoff)
+	}
+}
+
+func TestArchiveOldGameParticipants(t *testing.T) {
+	s := testDB(t)
+	now := time.Now().UnixMilli()
+	oldMs := now - (gameLedgerRetention + time.Hour).Milliseconds()
+	recentMs := now - time.Hour.Milliseconds()
+	if _, err := s.db.Exec(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES
+		('g-old', 1, 'u1', 'alice', 0, 'disconnect', 1000, 25, 8, ?),
+		('g-new', 1, 'u2', 'bob', 1, '', 1000, 25, 8, ?)`, oldMs, recentMs); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	archiveOldGameParticipants(s.db, now-gameLedgerRetention.Milliseconds())
+
+	if got := countRows(t, s, "game_participants"); got != 1 {
+		t.Fatalf("game_participants has %d rows, want 1 (only the recent row)", got)
+	}
+	if got := countRows(t, s, "game_participants_archive"); got != 1 {
+		t.Fatalf("game_participants_archive has %d rows, want 1 (the aged-out row)", got)
+	}
+	var survivor string
+	if err := s.db.QueryRow(`SELECT game_id FROM game_participants`).Scan(&survivor); err != nil {
+		t.Fatalf("scan survivor: %v", err)
+	}
+	if survivor != "g-new" {
+		t.Fatalf("surviving hot row = %q, want g-new", survivor)
+	}
+	var archivedReason string
+	if err := s.db.QueryRow(`SELECT death_reason FROM game_participants_archive`).Scan(&archivedReason); err != nil {
+		t.Fatalf("scan archive: %v", err)
+	}
+	if archivedReason != "disconnect" {
+		t.Fatalf("archived death_reason = %q, want disconnect (explicit-column copy preserved it)", archivedReason)
+	}
+}
+
+func TestStoreFlushesPendingGameRows(t *testing.T) {
+	s := testDB(t)
+	now := time.Now().UnixMilli()
+	s.pendingGameRows = []gameParticipantRecord{
+		{gameID: "g1", boardIndex: 1, uuid: "u1", username: "alice", won: true, endedUnixMs: now},
+		{gameID: "g1", boardIndex: 1, uuid: "u2", username: "bob", deathReason: "disconnect", endedUnixMs: now},
+	}
+
+	s.store() // shutdown path must flush buffered ledger rows, not just players
+
+	if s.pendingGameRows != nil {
+		t.Fatalf("pendingGameRows not cleared after store: %d rows remain", len(s.pendingGameRows))
+	}
+	if got := countRows(t, s, "game_participants"); got != 2 {
+		t.Fatalf("game_participants has %d rows after store flush, want 2", got)
+	}
+}
+
+func countRows(t *testing.T, s *Server, table string) int {
+	t.Helper()
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return n
+}
+
+// — internal-bot exclusion from persistence ——————————————————————————
+
+// Filler bots are ephemeral and must never reach the players table — neither
+// via the shutdown snapshot (store) nor the incremental dirty flush.
+func TestStoreExcludesInternalBots(t *testing.T) {
+	s := testDB(t)
+	bot := &Player{Username: "bot1", PwHash: "h", InternalBot: true}
+	alice := &Player{Username: "alice", PwHash: "h"}
+	s.players = map[string]*Player{"bot1": bot, "alice": alice}
+
+	s.store()
+	got := storedUsernames(t, s)
+	if got["bot1"] {
+		t.Error("internal bot was persisted by store()")
+	}
+	if !got["alice"] {
+		t.Error("human player missing after store()")
+	}
+}
+
+func TestStoreDirtyExcludesInternalBots(t *testing.T) {
+	s := testDB(t)
+	bot := &Player{Username: "bot1", PwHash: "h", InternalBot: true}
+	alice := &Player{Username: "alice", PwHash: "h"}
+	s.players = map[string]*Player{"bot1": bot, "alice": alice}
+	s.mu.Lock()
+	s.markDirtyLocked(bot)
+	s.markDirtyLocked(alice)
+	s.mu.Unlock()
+
+	s.storeDirtyOnce()
+
+	got := storedUsernames(t, s)
+	if got["bot1"] {
+		t.Error("internal bot was persisted by storeDirtyOnce()")
+	}
+	if !got["alice"] {
+		t.Error("dirty human player missing after storeDirtyOnce()")
+	}
+}
+
+// — recordPlayerIP upsert ——————————————————————————————————————————————
+
+func playerIPRow(t *testing.T, s *Server, uuid string) (count int, first, last int64) {
+	t.Helper()
+	rows, err := s.db.Query(`SELECT first_seen_unix, last_seen_unix FROM player_ips WHERE uuid = ?`, uuid)
+	if err != nil {
+		t.Fatalf("query player_ips: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&first, &last); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		count++
+	}
+	return count, first, last
+}
+
+func TestRecordPlayerIPUpserts(t *testing.T) {
+	s := testDB(t)
+	now := time.Now()
+	recordPlayerIP(s.db, s.secret, nil, "u1", "1.2.3.4", now)
+
+	count, first, last := playerIPRow(t, s, "u1")
+	if count != 1 || first != now.Unix() || last != now.Unix() {
+		t.Fatalf("after insert: count=%d first=%d last=%d, want 1/%d/%d", count, first, last, now.Unix(), now.Unix())
+	}
+
+	// Same uuid + same canonical IP (here via the mapped form) updates the one
+	// row: last_seen advances, first_seen is preserved.
+	later := now.Add(time.Hour)
+	recordPlayerIP(s.db, s.secret, nil, "u1", "::ffff:1.2.3.4", later)
+	count, first, last = playerIPRow(t, s, "u1")
+	if count != 1 {
+		t.Fatalf("after upsert: count=%d, want 1 (mapped IP must hash to the same row)", count)
+	}
+	if first != now.Unix() {
+		t.Errorf("first_seen = %d, want preserved %d", first, now.Unix())
+	}
+	if last != later.Unix() {
+		t.Errorf("last_seen = %d, want advanced to %d", last, later.Unix())
+	}
+}
+
+func TestRecordPlayerIPNoOps(t *testing.T) {
+	s := testDB(t)
+	now := time.Now()
+	recordPlayerIP(nil, s.secret, nil, "u1", "1.2.3.4", now) // nil db
+	recordPlayerIP(s.db, s.secret, nil, "", "1.2.3.4", now)  // empty uuid
+	recordPlayerIP(s.db, s.secret, nil, "u1", "", now)       // empty ip
+	if n := countRows(t, s, "player_ips"); n != 0 {
+		t.Errorf("player_ips has %d rows, want 0 (all calls should be no-ops)", n)
+	}
+}
+
+// — idle takeover starts a fresh career identity ——————————————————————
+
+// A takeover must give the new owner a fresh UUID while the archived old career
+// keeps its original UUID — that split is what lets the period boards label the
+// reclaimed username's old rows as "(old owner)".
+func TestIdleTakeoverAssignsNewUUID(t *testing.T) {
+	s := testServer(t)
+	oldHash := hashPassword(s.secret, "old")
+	p := &Player{
+		Username: "alice",
+		UUID:     "old-uuid",
+		PwHash:   oldHash,
+		Elo:      1500,
+		LastSeen: time.Now().Add(-accountPasswordResetAfter - time.Hour),
+	}
+	s.players["alice"] = p
+
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	drainMotd(t, br)
+	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+		t.Fatalf("write join: %v", err)
+	}
+	go io.Copy(io.Discard, br)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		newUUID := p.UUID
+		s.mu.Unlock()
+		var archivedUUID string
+		_ = s.db.QueryRow(`SELECT COALESCE(MAX(uuid), '') FROM players_archive WHERE username = 'alice'`).Scan(&archivedUUID)
+		if newUUID != "" && newUUID != "old-uuid" && archivedUUID == "old-uuid" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("takeover did not assign a fresh UUID and archive the old one")
 }

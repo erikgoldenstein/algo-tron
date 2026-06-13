@@ -14,9 +14,7 @@ func joinAs(t *testing.T, s *Server, username, password string) *bufio.Reader {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil { // motd
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	if _, err := client.Write([]byte("join|" + username + "|" + password + "\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
@@ -28,9 +26,7 @@ func TestIPCountCleanedUpAfterDisconnect(t *testing.T) {
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
-	if _, err := br.ReadString('\n'); err != nil {
-		t.Fatalf("read motd: %v", err)
-	}
+	drainMotd(t, br)
 	client.Close()
 
 	deadline := time.Now().Add(2 * time.Second)

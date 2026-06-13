@@ -165,8 +165,8 @@ func TestLoseLocked(t *testing.T) {
 	}
 }
 
-// patchScoreEloLocked must update the entry this seat recorded — not a newer
-// one the player picked up in another game afterwards.
+// patchScoreRatingLocked must update the entry this seat recorded — not a
+// newer one the player picked up in another game afterwards.
 func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
 	p, _ := testPlayer("alice")
 	st := &Seat{player: p, game: &Game{server: &Server{}}}
@@ -174,7 +174,7 @@ func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
 	p.ScoreHistory = append(p.ScoreHistory, Score{Type: 0, Time: st.scoreTime + 5})
 
 	p.Elo = 990
-	st.patchScoreEloLocked()
+	st.patchScoreRatingLocked()
 
 	if p.ScoreHistory[0].Elo != 990 {
 		t.Errorf("entry 0 Elo = %v, want 990", p.ScoreHistory[0].Elo)

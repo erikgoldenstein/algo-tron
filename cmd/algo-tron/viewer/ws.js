@@ -32,6 +32,12 @@ function watchBoard(id) {
   }
 }
 
+function requestScoreboard(q) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ scoreboard: q }));
+  }
+}
+
 // stepBoard switches to the previous (-1) / next (+1) board, wrapping.
 function stepBoard(delta) {
   const ids = gameState.boards.map((b) => b.id);

@@ -19,14 +19,15 @@ package main
 //	misc   — lifecycle event identified by `content`; currently only "shutdown".
 
 type initMsg struct {
-	Type        string            `json:"type"` // "init"
-	ServerInfo  []ServerInfo      `json:"serverInfo"`
-	ViewInfo    []ServerInfo      `json:"viewInfo"`
-	Scoreboard  []ScoreboardEntry `json:"scoreboard"`
-	ChartData   []map[string]any  `json:"chartData"`
-	LastWinners []string          `json:"lastWinners"`
-	Boards      []boardMsg        `json:"boards"`
-	Game        *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
+	Type              string            `json:"type"` // "init"
+	ServerInfo        []ServerInfo      `json:"serverInfo"`
+	ViewInfo          []ServerInfo      `json:"viewInfo"`
+	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
+	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
+	ChartData         []map[string]any  `json:"chartData"`
+	LastWinners       []string          `json:"lastWinners"`
+	Boards            []boardMsg        `json:"boards"`
+	Game              *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
 }
 
 // boardMsg is one entry in the board list shown as tabs in the viewer.
@@ -70,9 +71,34 @@ type tickMsg struct {
 }
 
 type endMsg struct {
-	Type        string            `json:"type"` // "end"
-	GameID      string            `json:"gameId"`
-	Scoreboard  []ScoreboardEntry `json:"scoreboard"`
-	ChartData   []map[string]any  `json:"chartData"`
-	LastWinners []string          `json:"lastWinners"`
+	Type              string            `json:"type"` // "end"
+	GameID            string            `json:"gameId"`
+	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
+	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
+	ChartData         []map[string]any  `json:"chartData"`
+	LastWinners       []string          `json:"lastWinners"`
+}
+
+type scoreboardMsg struct {
+	Type    string            `json:"type"` // "scoreboard"
+	Period  string            `json:"period"`
+	Sort    string            `json:"sort"`
+	Search  string            `json:"search"`
+	Offset  int               `json:"offset"`
+	Entries []ScoreboardEntry `json:"entries"`
+	HasMore bool              `json:"hasMore"`
+	// ComputedAt is the unix-ms time the shown data was computed — for cached
+	// period boards the snapshot time, for the live online board ~now. The
+	// viewer renders it as the board's "as of" timestamp.
+	ComputedAt int64 `json:"computedAt,omitempty"`
+}
+
+type chatMsg struct {
+	Type       string `json:"type"` // "chat"
+	GameID     string `json:"gameId,omitempty"`
+	BoardIndex int    `json:"boardIndex,omitempty"`
+	Username   string `json:"username"`
+	Message    string `json:"message"`
+	Time       int64  `json:"time"`
+	System     bool   `json:"system,omitempty"`
 }

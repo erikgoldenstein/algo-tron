@@ -44,6 +44,16 @@ var (
 	metricDBErrors         = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_db_errors_total", Help: "SQLite errors, by operation."}, []string{"op"})
 	metricChatRateLimited  = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_chat_rate_limited_total", Help: "Chat packets refused because the player exceeded the per-tick rate."})
 	metricDisconnectKilled = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_player_disconnect_mid_game_total", Help: "Players that were killed mid-game because their TCP connection went away."})
+	metricPlayerDeaths     = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_player_deaths_total", Help: "Player deaths by reason and the board's ticks-per-second bucket at death. Disconnect ratio per bucket = rate(deaths{reason=\"disconnect\",tps_bucket=b}[w]) / rate(deaths{tps_bucket=b}[w])."}, []string{"reason", "tps_bucket"})
+
+	// Disconnect-death distribution gauges, recomputed each minute from the
+	// game-ledger (updateDisconnectStats) over trailing windows. They answer
+	// "is this one bad client or a server-wide problem?": top_user_share near
+	// 1 with few users = a single player's bad link; a low share spread across
+	// many users = likely a server-side issue.
+	metricDisconnectDeaths     = promauto.NewGaugeVec(prometheus.GaugeOpts{Name: "tron_disconnect_deaths_windowed", Help: "Disconnect deaths in the trailing window."}, []string{"window"})
+	metricDisconnectDeathUsers = promauto.NewGaugeVec(prometheus.GaugeOpts{Name: "tron_disconnect_death_users", Help: "Distinct users with at least one disconnect death in the trailing window."}, []string{"window"})
+	metricDisconnectTopShare   = promauto.NewGaugeVec(prometheus.GaugeOpts{Name: "tron_disconnect_death_top_user_share", Help: "Share of the window's disconnect deaths from the single most-affected user (1 = one user's problem, →0 = spread across many = likely server-side)."}, []string{"window"})
 
 	metricTickBudget = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "tron_tick_budget_used_ratio",
@@ -180,4 +190,73 @@ func (s *Server) tickIntervalLocked() time.Duration {
 		}
 	}
 	return interval
+}
+
+// tpsBucket maps a tick interval (ns) to a coarse ticks-per-second bucket, used
+// as the tps_bucket label on the death counter so disconnect rates can be
+// sliced by how fast the board was running. The rate ramps with game age
+// (baseTickrate + age/tickIncreaseSeconds, no cap), so the buckets roughly
+// track game age: 1-5 ≈ first 40s, 5-7 ≈ 40-60s, 7-10 ≈ 60-90s, 10+ = longer.
+func tpsBucket(intervalNs int64) string {
+	if intervalNs <= 0 {
+		return "1-5"
+	}
+	switch tps := int(time.Second / time.Duration(intervalNs)); {
+	case tps < 5:
+		return "1-5"
+	case tps < 7:
+		return "5-7"
+	case tps < 10:
+		return "7-10"
+	default:
+		return "10+"
+	}
+}
+
+var disconnectWindows = []struct {
+	label string
+	dur   time.Duration
+}{
+	{"15m", 15 * time.Minute},
+	{"1h", time.Hour},
+	{"2h", 2 * time.Hour},
+}
+
+// updateDisconnectStats recomputes the disconnect-distribution gauges from the
+// game-ledger over each trailing window. Runs off-lock (the ledger query needs
+// no server lock); called once a minute from statsLoop.
+func (s *Server) updateDisconnectStats() {
+	if s.db == nil {
+		return
+	}
+	now := time.Now()
+	for _, w := range disconnectWindows {
+		cutoff := now.Add(-w.dur).UnixMilli()
+		rows, err := s.db.Query(`SELECT COUNT(*) FROM game_participants
+			WHERE death_reason = ? AND ended_unix_ms >= ? GROUP BY uuid`, deathReasonDisconnect, cutoff)
+		if err != nil {
+			metricDBErrors.WithLabelValues("disconnect_stats").Inc()
+			continue
+		}
+		total, users, top := 0, 0, 0
+		for rows.Next() {
+			var c int
+			if err := rows.Scan(&c); err != nil {
+				continue
+			}
+			total += c
+			users++
+			if c > top {
+				top = c
+			}
+		}
+		rows.Close()
+		share := 0.0
+		if total > 0 {
+			share = float64(top) / float64(total)
+		}
+		metricDisconnectDeaths.WithLabelValues(w.label).Set(float64(total))
+		metricDisconnectDeathUsers.WithLabelValues(w.label).Set(float64(users))
+		metricDisconnectTopShare.WithLabelValues(w.label).Set(share)
+	}
 }

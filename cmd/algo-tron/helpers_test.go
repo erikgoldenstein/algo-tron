@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"log"
@@ -11,6 +12,25 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// motdLines is the number of "motd|…" packets handleConn writes before
+// waiting for the join packet. Tests can't Peek for more motd lines (the
+// server blocks waiting for join after sending these), so they read this
+// many lines exactly. Bump this if a motd line is added or removed in
+// tcp.go alongside the writePacket("motd", …) calls.
+const motdLines = 2
+
+// drainMotd reads and discards the fixed number of motd lines the server
+// sends before the join handshake. Tests use this so changes to the motd
+// line count only need a one-line bump above instead of edits everywhere.
+func drainMotd(t *testing.T, br *bufio.Reader) {
+	t.Helper()
+	for i := 0; i < motdLines; i++ {
+		if _, err := br.ReadString('\n'); err != nil {
+			t.Fatalf("read motd line %d: %v", i+1, err)
+		}
+	}
+}
 
 // TestMain silences slog and stdlib log so the production lifecycle/stats
 // log lines don't pollute test or benchmark output.

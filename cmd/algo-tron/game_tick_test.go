@@ -13,7 +13,7 @@ func TestMarkDeadThenReleaseQueuesPlayer(t *testing.T) {
 	a.conn = side
 
 	// Phase 1 marks the seat dead; phase 2 releases the player.
-	g.markDeadLocked(g.seats[0])
+	g.markDeadLocked(g.seats[0], deathReasonCollision)
 	if g.seats[0].alive {
 		t.Error("seat must be marked dead")
 	}
@@ -38,7 +38,7 @@ func TestReleaseDisconnectedPlayerNotQueued(t *testing.T) {
 	a, _ := testPlayer("a")
 	g := makeGame(s, []*Player{a}) // a.conn == nil
 
-	g.markDeadLocked(g.seats[0])
+	g.markDeadLocked(g.seats[0], deathReasonCollision)
 	s.releaseSeatLocked(g.seats[0])
 
 	if a.seat.Load() != nil {
@@ -60,7 +60,7 @@ func TestFinishTickSettlesDeaths(t *testing.T) {
 	s.players["b"] = b
 	aSeat := g.seats[0]
 
-	g.markDeadLocked(aSeat)
+	g.markDeadLocked(aSeat, deathReasonCollision)
 	g.removeFromFields(aSeat)
 	s.finishTickLocked(g, tickResult{dead: g.deadScratch, deathIDs: []int{aSeat.id}})
 

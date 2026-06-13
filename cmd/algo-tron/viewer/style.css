@@ -120,6 +120,16 @@ h2 {
 
 .section-header h2 { margin-bottom: 0; }
 
+.title-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.title-button:hover { color: var(--accent); }
+
 /* Scope switch on the left, follow-player control on the right; spans the
    full scoreboard width so the follow button lines up with the table edge. */
 .scoreboard-subline {
@@ -232,6 +242,7 @@ h2 {
 
 .scoreboard thead th { font-weight: 400; padding-bottom: 2px; }
 .scoreboard td.name { color: var(--text); }
+td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 .scoreboard th.sep,
 .scoreboard td.sep { color: var(--text-dim); padding: 0; }
 .scoreboard th.wr,
@@ -245,6 +256,20 @@ h2 {
 .scoreboard th.losses,
 .scoreboard td.losses { text-align: right; }
 .scoreboard .empty { color: var(--text-muted); text-align: center; padding: 8px 0; }
+.scoreboard-asof { color: var(--text-muted); font-size: 11px; margin-top: 6px; }
+.scoreboard-fineprint { color: var(--text-muted); font-size: 10px; margin-top: 12px; font-style: italic; }
+
+@media (min-width: 801px) {
+  .scoreboard-section {
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .scoreboard-section:hover,
+  .scoreboard-section:focus-within { scrollbar-width: thin; }
+  .scoreboard-section::-webkit-scrollbar { width: 0; }
+  .scoreboard-section:hover::-webkit-scrollbar { width: 6px; }
+}
 
 /* — Chart ——————————————————————————————————————————————————————————— */
 
@@ -283,6 +308,27 @@ h2 {
 #chat .msg .time { color: var(--text-muted); margin-left: 4px; }
 #chat .msg .body { color: var(--text-muted); display: block; margin-top: 1px; }
 #chat .chat-empty { color: var(--text-muted); font-style: italic; }
+
+.scoreboard-modal-window { width: min(720px, calc(100vw - 32px)); }
+.scoreboard-modal-window .modal-body {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+.scoreboard-modal-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.scoreboard-modal-controls select,
+.scoreboard-modal-controls input {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 2px 4px;
+}
+.scoreboard-modal-controls input { flex: 1; min-width: 0; }
+.modal-scoreboard-table { font-size: 12px; }
 
 /* — Board ——————————————————————————————————————————————————————————— */
 
@@ -363,7 +409,8 @@ canvas#game { display: block; }
   background: rgba(0, 0, 0, 0.5);
 }
 
-.modal-window {
+.modal-window,
+.scoreboard-window {
   position: relative;
   width: 100%;
   max-width: 700px;

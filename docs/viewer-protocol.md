@@ -6,7 +6,7 @@ The viewer SPA is served from `/`, and live updates are pushed over a WebSocket 
 { "watch": "<gameId>" }
 ```
 
-The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Unknown ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to the first running board.
+The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can also request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to the first running board.
 
 Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-only data and the viewer is a sibling SPA.
 
@@ -21,9 +21,10 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "type": "init",
   "serverInfo":  [{"host": "tron.erik.gdn", "port": 4000}],
   "viewInfo":    [{"host": "tron.erik.gdn", "port": 443, "scheme": "https"}],
-  "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61}],
-  "chartData":   [{"name": 0, "alice": 1024, "bob": 988}],
-  "lastWinners": ["alice"],
+  "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
+  "scoreboardHasMore": false,
+  "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}}],
+  "lastWinners": ["<winner username>"],
   "boards":      [{"id": "<hex>", "players": 16, "alive": 9}],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ] }
 }
@@ -78,8 +79,9 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
   "type": "end",
   "gameId":      "<hex>",
   "scoreboard":  [ … ],
+  "scoreboardHasMore": false,
   "chartData":   [ … ],
-  "lastWinners": ["alice"]
+  "lastWinners": ["<winner username>"]
 }
 ```
 
@@ -99,7 +101,15 @@ Each viewer has a 16-frame send buffer (`viewSinkBuf`). If `sendToSinkLocked` fi
 
 The read loop doubles as the `watch` handler — any frame that isn't a valid `{"watch": id}` JSON object is ignored, and any read error tears the viewer down.
 
-`chartData` is a 20-point series. Each point is `{name: i, [username]: elo, …}` where `elo` is the player's ELO at that historical slot. Players whose `ScoreHistory` predates elo tracking (`Score.Elo == 0`) are simply omitted from those points — the viewer treats a missing key as a gap.
+`scoreboard` messages answer lazy leaderboard requests: `{type:"scoreboard", period, sort, search, offset, entries, hasMore, computedAt}`. The default sidebar uses `period=online&sort=ts`; the daily/monthly/halfyear pages are backed by `game_participants` rows. The `all`/`daily`/`monthly`/`halfyear` boards are expensive and identical for every viewer, so the server caches one shared snapshot per period and recomputes it on a soft/hard TTL (`scoreboard_config.go`); sort/search/paging are applied per request on the cached snapshot, so they never trigger a recompute. `online` is never cached — it's the live sidebar, recomputed on every game end. `computedAt` (unix ms) is when the shown data was built; the viewer prints it under the modal table as "as of …".
+
+Leaderboards only contain accounts with a password (`pw_hash != ''`). Internal filler bots have an empty hash so the same filter covers them. `init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages.
+
+`chat` messages are viewer-only chat/system events: `{type:"chat", gameId, boardIndex, username, message, time, system}`. The old per-tick `chats` map still drives board chat bubbles.
+
+Player UUIDs stay backend-only and never reach the viewer; entries are keyed by `username`. In the daily/monthly pages a username that has been reclaimed since (idle takeover) can appear more than once — the retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, … The live `online`/`all` boards build from one career per username and never set it.
+
+`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 
 Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [game-mechanics.md § TrueSkill](game-mechanics.md#trueskill) for the update.
 

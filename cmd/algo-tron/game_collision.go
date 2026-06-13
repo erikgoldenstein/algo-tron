@@ -12,9 +12,11 @@ func (g *Game) applyCollisionsLocked() {
 		}
 		other := g.seats[occupant]
 		if other != st && other.pos == st.pos {
-			g.markDeadLocked(other)
+			g.markDeadLocked(other, deathReasonHeadOn)
+			g.markDeadLocked(st, deathReasonHeadOn)
+			continue
 		}
-		g.markDeadLocked(st)
+		g.markDeadLocked(st, deathReasonCollision)
 	}
 }
 

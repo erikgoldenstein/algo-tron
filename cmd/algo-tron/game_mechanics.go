@@ -5,11 +5,18 @@ import (
 	"time"
 )
 
+const (
+	deathReasonCollision  = "collision"
+	deathReasonHeadOn     = "head_on"
+	deathReasonDisconnect = "disconnect"
+	deathReasonBotRemoved = "bot_removed"
+)
+
 func (g *Game) killDisconnectedLocked() {
 	for _, st := range g.seats {
-		if st.alive && st.player.sink.Load() == nil {
+		if st.alive && !st.player.InternalBot && st.player.sink.Load() == nil {
 			snap := st.player.disconnectSnapshot(time.Now())
-			g.markDeadLocked(st)
+			g.markDeadLocked(st, deathReasonDisconnect)
 			g.removeFromFields(st)
 			metricDisconnectKilled.Inc()
 			slog.Warn("player killed after disconnect",
@@ -31,11 +38,12 @@ func (g *Game) killDisconnectedLocked() {
 // release (detaching Player.seat, re-queueing, the lose packet) happens in
 // finishTickLocked, which runs under Server.mu right after this phase.
 // Already-dead seats are ignored, which dedupes multi-collision marks.
-func (g *Game) markDeadLocked(st *Seat) {
+func (g *Game) markDeadLocked(st *Seat, reason string) {
 	if !st.alive {
 		return
 	}
 	st.alive = false
+	st.deathReason = reason
 	if _, ok := g.deathTick[st]; !ok {
 		g.deathTick[st] = g.tick
 	}

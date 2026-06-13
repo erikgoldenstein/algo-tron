@@ -6,9 +6,6 @@
 // dom_follow.js (updateFollowPlayer).
 // Provides: updateDom, showShutdownBanner.
 
-const chatPanel = [];
-const chatLast = {};
-
 // Last measured character capacity of the scoreboard name column. Used by
 // the row renderer and by the scrolling tick in render.js. Updated after
 // each render once the cell has a layout, and on window resize.
@@ -65,23 +62,21 @@ function updateDom() {
     }
   }
 
-  // Append any new chat lines to the rolling panel. We only render the
-  // server's currently-active chats; anything not echoed back has expired.
-  for (const p of Object.values(gameState.game?.players || {})) {
-    if (!p.chat) {
-      chatLast[p.name] = undefined;
-      continue;
-    }
-    if (chatLast[p.name] !== p.chat) {
-      chatLast[p.name] = p.chat;
-      chatPanel.push({ date: Date.now(), from: p.name, message: p.chat });
-      if (chatPanel.length > 30) chatPanel.shift();
-    }
-  }
+  const chatPanel = visibleChats();
   const chat = document.getElementById('chat');
   chat.innerHTML = chatPanel.length
     ? [...chatPanel].reverse().map(chatRow).join('')
     : '<div class="chat-empty">no messages yet</div>';
+  if (!document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
+    renderScoreboardModalRows();
+  }
+}
+
+function visibleChats() {
+  if (gameState.scoreboardScope === 'board' && gameState.game?.id) {
+    return gameState.chatLog.filter((m) => !m.gameId || m.gameId === gameState.game.id).slice(-30);
+  }
+  return gameState.chatLog.slice(-30);
 }
 
 function currentScoreboard() {
@@ -133,11 +128,12 @@ function updateTabs() {
 
 function scoreRow(p, i) {
   const winner = gameState.lastWinners.includes(p.username) ? ' 🎉' : '';
+  const old = p.oldOwner ? '<span class="old">(old owner' + p.oldOwner + ')</span>' : '';
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username);
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username, scoreNameChars)) + '</span>' + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username, scoreNameChars)) + '</span>' + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="wr">' + wr + '</td>'
     + '<td class="sep">|</td>'
@@ -152,13 +148,14 @@ function scoreRow(p, i) {
 }
 
 function chatRow(m) {
-  const d = new Date(m.date);
+  const d = new Date(m.time || Date.now());
   const time = d.toLocaleTimeString();
-  const c = playerColor(m.from);
+  const from = m.username || m.from || 'system';
+  const c = m.system ? 'var(--text-muted)' : playerColor(from);
   return '<div class="msg">'
-    + '<span class="from" style="color:' + c + '">' + esc(m.from) + '</span>'
+    + '<span class="from" style="color:' + c + '">' + esc(from) + '</span>'
     + ' <span class="time">(' + time + ')</span>'
-    + '<span class="body">' + esc(m.message) + '</span>'
+    + '<span class="body">' + esc(m.message || '') + '</span>'
     + '</div>';
 }
 

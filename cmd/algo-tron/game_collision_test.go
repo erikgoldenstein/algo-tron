@@ -54,6 +54,41 @@ func TestApplyCollisionsHeadOn(t *testing.T) {
 	}
 }
 
+// A head-on collision must tag BOTH seats with the head_on death reason, not
+// just one — the ledger and death metrics distinguish head_on from a plain
+// trail collision.
+func TestApplyCollisionsHeadOnReason(t *testing.T) {
+	s := testServer(t)
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 1, 0)
+	b := addSeat(g, "b", 1, 0)
+
+	g.applyCollisionsLocked()
+
+	if a.deathReason != deathReasonHeadOn {
+		t.Errorf("a deathReason = %q, want %q", a.deathReason, deathReasonHeadOn)
+	}
+	if b.deathReason != deathReasonHeadOn {
+		t.Errorf("b deathReason = %q, want %q", b.deathReason, deathReasonHeadOn)
+	}
+}
+
+// A seat that dies running into an existing trail is tagged with the plain
+// collision reason.
+func TestApplyCollisionsTrailHitReason(t *testing.T) {
+	s := testServer(t)
+	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
+	a := addSeat(g, "a", 2, 0)
+	b := addSeat(g, "b", 2, 2)
+	g.fields[2][0] = b.id // a moves into b's trail
+
+	g.applyCollisionsLocked()
+
+	if a.deathReason != deathReasonCollision {
+		t.Errorf("a deathReason = %q, want %q", a.deathReason, deathReasonCollision)
+	}
+}
+
 func TestApplyCollisionsSelfTrail(t *testing.T) {
 	s := testServer(t)
 	// a moves into a cell already owned by its own trail

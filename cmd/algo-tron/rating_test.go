@@ -111,3 +111,40 @@ func TestUpdateTrueSkillRanksLosersByDeathTick(t *testing.T) {
 		t.Errorf("winner (%v) should outrank both losers (late=%v)", winner.TsMu, late.TsMu)
 	}
 }
+
+// — bot exclusion (anti-farm) —————————————————————————————————————————
+
+// Internal filler bots must not affect rating math: padding a human game with
+// bots must produce exactly the same Elo and TrueSkill deltas as the same
+// humans playing alone. Otherwise a player could farm rating off the bots.
+func TestRatingIgnoresInternalBots(t *testing.T) {
+	// Baseline: two humans, no bots.
+	wBase := &Player{Username: "w", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+	lBase := &Player{Username: "l", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+	gBase := bareGame(nil, wBase, lBase)
+	gBase.updateEloLocked([]*Seat{wBase.seat.Load()})
+	gBase.updateTrueSkillLocked([]*Seat{wBase.seat.Load()})
+
+	// Same two humans, but the game is padded with two bots.
+	w := &Player{Username: "w", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+	l := &Player{Username: "l", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+	bot1 := &Player{Username: "bot1", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, InternalBot: true}
+	bot2 := &Player{Username: "bot2", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, InternalBot: true}
+	g := bareGame(nil, w, l, bot1, bot2)
+	g.updateEloLocked([]*Seat{w.seat.Load()})
+	g.updateTrueSkillLocked([]*Seat{w.seat.Load()})
+
+	if w.Elo != wBase.Elo || l.Elo != lBase.Elo {
+		t.Errorf("Elo changed by bot padding: w=%v (base %v) l=%v (base %v)", w.Elo, wBase.Elo, l.Elo, lBase.Elo)
+	}
+	if w.TsMu != wBase.TsMu || l.TsMu != lBase.TsMu {
+		t.Errorf("TsMu changed by bot padding: w=%v (base %v) l=%v (base %v)", w.TsMu, wBase.TsMu, l.TsMu, lBase.TsMu)
+	}
+	if w.TsSigma != wBase.TsSigma || l.TsSigma != lBase.TsSigma {
+		t.Errorf("TsSigma changed by bot padding: w=%v (base %v) l=%v (base %v)", w.TsSigma, wBase.TsSigma, l.TsSigma, lBase.TsSigma)
+	}
+	// Bots themselves never gain or lose rating.
+	if bot1.Elo != 1000 || bot1.TsMu != tsMu0 || bot1.TsSigma != tsSigma0 {
+		t.Errorf("bot1 rating changed: elo=%v mu=%v sigma=%v", bot1.Elo, bot1.TsMu, bot1.TsSigma)
+	}
+}
