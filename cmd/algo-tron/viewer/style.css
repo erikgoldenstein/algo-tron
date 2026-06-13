@@ -51,6 +51,7 @@ body.low-fatigue { filter: saturate(0.65) brightness(0.85); }
 
 a { color: var(--accent); }
 a:hover { opacity: 0.85; }
+button:focus { outline: none; }
 
 #shutdown-banner {
   position: fixed;
@@ -310,24 +311,107 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 #chat .chat-empty { color: var(--text-muted); font-style: italic; }
 
 .scoreboard-modal-window { width: min(720px, calc(100vw - 32px)); }
-.scoreboard-modal-window .modal-body {
-  max-height: min(60vh, 520px);
+.scoreboard-modal-window .modal-body { overflow: visible; }
+/* Only the rows scroll; controls and column header stay pinned. */
+.scoreboard-modal-scroll {
+  height: min(50vh, 440px);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.scoreboard-modal-scroll::-webkit-scrollbar { width: 8px; }
+.scoreboard-modal-scroll::-webkit-scrollbar-track { background: transparent; }
+.scoreboard-modal-scroll::-webkit-scrollbar-thumb { background: var(--border); }
+.scoreboard-modal-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+.modal-scoreboard-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
 }
 .scoreboard-modal-controls {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+  align-items: center;
 }
-.scoreboard-modal-controls select,
+.scoreboard-modal-controls .control-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .scoreboard-modal-controls input {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
   font: inherit;
   padding: 2px 4px;
+  flex: 1;
+  min-width: 0;
 }
-.scoreboard-modal-controls input { flex: 1; min-width: 0; }
+.scoreboard-modal-controls input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Custom dropdown — native <select> popups can't be themed on macOS, so
+   we render the option list ourselves. */
+.app-select { position: relative; display: inline-block; }
+.app-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.app-select-btn:hover { border-color: var(--text-muted); }
+.app-select.open .app-select-btn { border-color: var(--accent); }
+.app-select-btn:focus { outline: none; border-color: var(--accent); }
+.app-select-caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--text-muted);
+}
+.app-select-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  min-width: 100%;
+  margin-top: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.app-select-list::-webkit-scrollbar { width: 8px; }
+.app-select-list::-webkit-scrollbar-track { background: transparent; }
+.app-select-list::-webkit-scrollbar-thumb { background: var(--border); }
+.app-select-list[hidden] { display: none; }
+.app-select-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.app-select-list button:hover,
+.app-select-list button.selected { background: var(--border); }
 .modal-scoreboard-table { font-size: 12px; }
 
 /* — Board ——————————————————————————————————————————————————————————— */

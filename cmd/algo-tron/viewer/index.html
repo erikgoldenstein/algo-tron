@@ -76,11 +76,11 @@
             <th class="num">#</th>
             <th class="name">name</th>
             <th class="sep">|</th>
+            <th class="ts">ts</th>
+            <th class="sep">|</th>
             <th class="wr">wr</th>
             <th class="sep">|</th>
             <th class="elo">elo</th>
-            <th class="sep">|</th>
-            <th class="ts">ts</th>
             <th class="sep">|</th>
             <th class="wins">wins</th>
             <th class="sep">|</th>
@@ -167,18 +167,58 @@
     <div class="scoreboard-window scoreboard-modal-window" role="dialog" aria-modal="true" aria-labelledby="scoreboard-modal-title">
       <div class="modal-header">
         <span class="modal-title" id="scoreboard-modal-title"><b>scoreboard</b></span>
-        <button class="modal-close" data-scoreboard-close>close</button>
+        <button class="modal-close" data-scoreboard-close><span class="kbd">[q]</span> close</button>
       </div>
       <div class="modal-body">
         <section class="modal-section">
           <div class="scoreboard-modal-controls">
-            <select id="scoreboard-period"><option value="online">online</option><option value="all">all</option><option value="daily">daily</option><option value="monthly">monthly</option><option value="halfyear">y/2</option></select>
-            <select id="scoreboard-sort"><option value="ts">ts</option><option value="elo">elo</option><option value="wr">wr</option></select>
+            <span class="control-field">timespan:
+              <span class="app-select" id="scoreboard-period" data-value="online">
+                <button type="button" class="app-select-btn"><span class="app-select-value">online</span><span class="app-select-caret"></span></button>
+                <div class="app-select-list" hidden>
+                  <button type="button" data-value="online">online</button>
+                  <button type="button" data-value="all">all</button>
+                  <button type="button" data-value="daily">daily</button>
+                  <button type="button" data-value="monthly">monthly</button>
+                  <button type="button" data-value="halfyear">halfyear</button>
+                </div>
+              </span>
+            </span>
+            <span class="control-field">sort by:
+              <span class="app-select" id="scoreboard-sort" data-value="ts">
+                <button type="button" class="app-select-btn"><span class="app-select-value">ts</span><span class="app-select-caret"></span></button>
+                <div class="app-select-list" hidden>
+                  <button type="button" data-value="ts">ts</button>
+                  <button type="button" data-value="elo">elo</button>
+                  <button type="button" data-value="wr">wr</button>
+                </div>
+              </span>
+            </span>
             <input id="scoreboard-search" placeholder="search user" autocomplete="off" spellcheck="false">
           </div>
-          <table class="scoreboard modal-scoreboard-table"><tbody id="scoreboard-modal-rows"><tr><td class="empty">loading...</td></tr></tbody></table>
+          <div class="scoreboard-modal-scroll" id="scoreboard-modal-scroll">
+            <table class="scoreboard modal-scoreboard-table">
+              <thead>
+                <tr>
+                  <th class="num">#</th>
+                  <th class="name">name</th>
+                  <th class="sep">|</th>
+                  <th class="ts">ts</th>
+                  <th class="sep">|</th>
+                  <th class="wr">wr</th>
+                  <th class="sep">|</th>
+                  <th class="elo">elo</th>
+                  <th class="sep">|</th>
+                  <th class="wins">wins</th>
+                  <th class="sep">|</th>
+                  <th class="losses">losses</th>
+                </tr>
+              </thead>
+              <tbody id="scoreboard-modal-rows"><tr><td colspan="12" class="empty">loading...</td></tr></tbody>
+            </table>
+          </div>
           <div id="scoreboard-asof" class="scoreboard-asof"></div>
-          <div class="scoreboard-fineprint">Only accounts with a password appear here. Internal filler bots and unauthenticated joins are excluded.</div>
+          <div class="scoreboard-fineprint">Only accounts with a password appear here. Unauthenticated joins are excluded.</div>
         </section>
       </div>
     </div>

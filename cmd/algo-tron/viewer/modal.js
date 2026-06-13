@@ -69,12 +69,51 @@ function cycleScheme() {
 
 function scoreModalQuery(offset) {
   return {
-    period: document.getElementById('scoreboard-period')?.value || 'online',
-    sort: document.getElementById('scoreboard-sort')?.value || 'ts',
+    period: document.getElementById('scoreboard-period')?.dataset.value || 'online',
+    sort: document.getElementById('scoreboard-sort')?.dataset.value || 'ts',
     search: document.getElementById('scoreboard-search')?.value || '',
     offset: offset || 0,
     limit: 25,
   };
+}
+
+function closeAppSelect(root) {
+  root.classList.remove('open');
+  const list = root.querySelector('.app-select-list');
+  if (list) list.hidden = true;
+}
+
+// Custom dropdown: native <select> popups can't be themed on macOS, so we
+// drive an app-styled list ourselves. The chosen value lives in the wrapper's
+// data-value; onChange fires after each pick.
+function initAppSelect(id, onChange) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  const list = root.querySelector('.app-select-list');
+  const button = root.querySelector('.app-select-btn');
+  const valueEl = root.querySelector('.app-select-value');
+  if (!list || !button) return;
+  const sync = () => {
+    list.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('selected', b.dataset.value === root.dataset.value);
+    });
+  };
+  sync();
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = root.classList.toggle('open');
+    list.hidden = !open;
+    if (open) document.querySelectorAll('.app-select.open').forEach((o) => { if (o !== root) closeAppSelect(o); });
+  });
+  list.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      root.dataset.value = btn.dataset.value;
+      if (valueEl) valueEl.textContent = btn.textContent;
+      sync();
+      closeAppSelect(root);
+      onChange();
+    });
+  });
 }
 
 function renderScoreboardModalRows() {
@@ -102,6 +141,7 @@ function openScoreboardModal() {
 function closeScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (m) m.hidden = true;
+  document.querySelectorAll('#scoreboard-modal .app-select.open').forEach(closeAppSelect);
 }
 
 function loadMoreSidebarScores() {
@@ -124,11 +164,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('help-btn')?.addEventListener('click', () => toggleHelp(true));
   document.getElementById('scoreboard-title')?.addEventListener('click', openScoreboardModal);
   document.querySelectorAll('[data-scoreboard-close]').forEach((el) => el.addEventListener('click', closeScoreboardModal));
-  ['scoreboard-period', 'scoreboard-sort'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('change', () => requestScoreboard(scoreModalQuery(0)));
-  });
+  const refreshScoreboard = () => requestScoreboard(scoreModalQuery(0));
+  initAppSelect('scoreboard-period', refreshScoreboard);
+  initAppSelect('scoreboard-sort', refreshScoreboard);
+  document.addEventListener('click', () => document.querySelectorAll('.app-select.open').forEach(closeAppSelect));
   document.getElementById('scoreboard-search')?.addEventListener('input', () => requestScoreboard(scoreModalQuery(0)));
-  document.querySelector('#scoreboard-modal .modal-body')?.addEventListener('scroll', (e) => {
+  document.getElementById('scoreboard-modal-scroll')?.addEventListener('scroll', (e) => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreModalScores();
   });
@@ -153,7 +194,10 @@ document.addEventListener('keydown', (e) => {
       return;
     case 'q':
     case 'Escape':
-      if (!document.getElementById('help-modal').hidden) {
+      if (!document.getElementById('scoreboard-modal')?.hidden) {
+        e.preventDefault();
+        closeScoreboardModal();
+      } else if (!document.getElementById('help-modal')?.hidden) {
         e.preventDefault();
         toggleHelp(false);
       }
