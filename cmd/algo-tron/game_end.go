@@ -48,7 +48,7 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 		}
 		gameRows = append(gameRows, gameParticipantRecord{
 			gameID: g.id, boardIndex: boardIndex, uuid: ensureUUID(st.player), username: st.player.Username,
-			won: winners[st], deathReason: reason, elo: st.player.Elo, tsMu: st.player.TsMu, tsSigma: st.player.TsSigma, endedUnixMs: endedAt,
+			won: winners[st], deathReason: reason, elo: st.player.Elo, tsMu: st.player.TsMu, tsSigma: st.player.TsSigma, endedUnixMs: endedAt, tickCount: g.tick,
 		})
 	}
 	// Losers recorded their ScoreHistory entry at death with the pre-update

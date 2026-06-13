@@ -77,6 +77,8 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// tick_count (total ticks the game lasted) added later; ignore "duplicate column".
+	_, _ = db.Exec(`ALTER TABLE game_participants ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
 	// Indexes for scoreboard_cache.go's period aggregate (latest-per-uuid +
 	// windowed sum). Without them the halfyear board scans the full table.
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms)`)
@@ -101,6 +103,7 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
 	// game_winners was a duplicate of game_participants WHERE won=1; the
 	// participants table already answers "who won game X" via won=1. Drop
 	// if a previous build created it; new installs never see it.
@@ -189,8 +192,8 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO game_participants_archive
-		(game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
-		SELECT game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms
+		(game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		SELECT game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count
 		FROM game_participants WHERE ended_unix_ms < ?`, cutoffUnixMs); err != nil {
 		metricDBErrors.WithLabelValues("ledger_archive").Inc()
 		slog.Error("db ledger archive copy", "err", err)
@@ -441,6 +444,7 @@ type gameParticipantRecord struct {
 	tsMu        float64
 	tsSigma     float64
 	endedUnixMs int64
+	tickCount   int
 }
 
 func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
@@ -454,8 +458,8 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 		return
 	}
 	defer tx.Rollback()
-	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("game_rows_prepare").Inc()
 		slog.Error("db game rows prepare", "err", err)
@@ -467,7 +471,7 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 		if r.won {
 			won = 1
 		}
-		if _, err := part.Exec(r.gameID, r.boardIndex, r.uuid, r.username, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs); err != nil {
+		if _, err := part.Exec(r.gameID, r.boardIndex, r.uuid, r.username, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs, r.tickCount); err != nil {
 			metricDBErrors.WithLabelValues("game_participant").Inc()
 			slog.Error("db game participant", "uuid", r.uuid, "err", err)
 		}
