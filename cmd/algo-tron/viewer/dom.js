@@ -74,7 +74,7 @@ function updateDom() {
 
 function visibleChats() {
   if (gameState.scoreboardScope === 'board' && gameState.game?.id) {
-    return gameState.chatLog.filter((m) => !m.gameId || m.gameId === gameState.game.id).slice(-30);
+    return gameState.chatLog.filter((m) => m.system || !m.gameId || m.gameId === gameState.game.id).slice(-30);
   }
   return gameState.chatLog.slice(-30);
 }
