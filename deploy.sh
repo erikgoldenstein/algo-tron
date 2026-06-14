@@ -39,6 +39,8 @@ DOMAIN=""
 CLOUDFLARE_TOKEN=""
 TCP_PORT="4000"         # public raw-TCP game port (nginx listens here)
 VIEW_PORT="443"         # public HTTPS viewer port (nginx terminates TLS)
+TCP_PORT_SET=""         # set by --tcp-port, suppresses the interactive prompt
+VIEW_PORT_SET=""        # set by --view-port, suppresses the interactive prompt
 TCP_LOCAL_PORT="4001"   # localhost game port the app binds; nginx forwards to it
 VIEW_LOCAL_PORT="3000"  # localhost viewer port the app binds; nginx forwards to it
 SETUP_FIREWALL=1        # install+enable a host firewall (0 / --no-firewall to skip)
@@ -90,8 +92,8 @@ parse_args() {
     case "$1" in
       --domain)           DOMAIN="$2"; shift 2 ;;
       --cloudflare-token) CLOUDFLARE_TOKEN="$2"; shift 2 ;;
-      --tcp-port)         TCP_PORT="$2"; shift 2 ;;
-      --view-port)        VIEW_PORT="$2"; shift 2 ;;
+      --tcp-port)         TCP_PORT="$2"; TCP_PORT_SET=1; shift 2 ;;
+      --view-port)        VIEW_PORT="$2"; VIEW_PORT_SET=1; shift 2 ;;
       --repo)             REPO_SLUG="$2"; shift 2 ;;
       --ref)              REPO_REF="$2"; shift 2 ;;
       --no-firewall)      SETUP_FIREWALL=0; shift ;;
@@ -121,10 +123,11 @@ collect_input() {
   [ -n "$CLOUDFLARE_TOKEN" ] || prompt CLOUDFLARE_TOKEN "Cloudflare API token (Zone:DNS:Edit): " silent
   [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token is required"
 
-  # Ports have defaults; only ask when there is a terminal to ask at.
+  # Ports have defaults; only ask when there is a terminal to ask at and the
+  # value was not already pinned by a flag.
   if have_tty; then
-    prompt _in "Raw TCP game port [$TCP_PORT]: ";  TCP_PORT="${_in:-$TCP_PORT}"
-    prompt _in "HTTPS viewer port [$VIEW_PORT]: "; VIEW_PORT="${_in:-$VIEW_PORT}"
+    [ -n "$TCP_PORT_SET" ]  || { prompt _in "Raw TCP game port [$TCP_PORT]: ";  TCP_PORT="${_in:-$TCP_PORT}"; }
+    [ -n "$VIEW_PORT_SET" ] || { prompt _in "HTTPS viewer port [$VIEW_PORT]: "; VIEW_PORT="${_in:-$VIEW_PORT}"; }
   fi
 
   # What the viewer UI displays (omit :443 when standard).
@@ -331,21 +334,35 @@ setup_firewall() {
 
   # Detect the SSH port(s) actually in use so enabling the firewall can't lock
   # us out — covers non-standard ports. Falls back to 22.
-  local ssh_ports app_ports p
+  local ssh_ports app_ports ports p missing
   ssh_ports="$(sshd -T 2>/dev/null | awk '/^port /{print $2}')"
   [ -n "$ssh_ports" ] || ssh_ports=22
   app_ports="80 $VIEW_PORT $TCP_PORT"
+  ports="$ssh_ports $app_ports"
 
   if [ "$PKG" = apt ]; then
+    # Leave an already-active ufw alone when every required port is allowed, so
+    # a redeploy doesn't churn the firewall.
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+      missing=0
+      for p in $ports; do ufw status | grep -qw "$p/tcp" || missing=1; done
+      [ "$missing" = 0 ] && { log "Host firewall (ufw) already configured — leaving it untouched"; return 0; }
+    fi
     log "Configuring host firewall (ufw)"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw >/dev/null
-    for p in $ssh_ports $app_ports; do ufw allow "$p/tcp" >/dev/null; done
+    for p in $ports; do ufw allow "$p/tcp" >/dev/null; done
     ufw --force enable >/dev/null
   else
+    # Same for an already-running firewalld with every required port open.
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+      missing=0
+      for p in $ports; do firewall-cmd --query-port="$p/tcp" >/dev/null 2>&1 || missing=1; done
+      [ "$missing" = 0 ] && { log "Host firewall (firewalld) already configured — leaving it untouched"; return 0; }
+    fi
     log "Configuring host firewall (firewalld)"
     dnf install -y -q firewalld >/dev/null
     systemctl enable --now firewalld >/dev/null 2>&1
-    for p in $ssh_ports $app_ports; do firewall-cmd --permanent --add-port="$p/tcp" >/dev/null; done
+    for p in $ports; do firewall-cmd --permanent --add-port="$p/tcp" >/dev/null; done
     firewall-cmd --reload >/dev/null
   fi
 }
