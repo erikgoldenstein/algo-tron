@@ -65,11 +65,16 @@ fi
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# True only when /dev/tty can actually be opened for reading. A bare [ -r /dev/tty ]
+# is not enough: under a non-interactive SSH command the device node exists and
+# passes -r, but opening it fails with ENXIO (no controlling terminal).
+have_tty() { ( : < /dev/tty ) 2>/dev/null; }
+
 # Read into a variable from the terminal — works even when the script itself is
 # on stdin (curl | bash).  prompt <varname> <message> [silent]
 prompt() {
   local var="$1" msg="$2" silent="${3:-}" val
-  [ -r /dev/tty ] || err "no value for '$var' and no terminal to ask; pass it as a flag"
+  have_tty || err "no value for '$var' and no terminal to ask; pass it as a flag"
   if [ "$silent" = silent ]; then
     read -rsp "$msg" val < /dev/tty; printf '\n' > /dev/tty
   else
@@ -116,7 +121,7 @@ collect_input() {
   [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token is required"
 
   # Ports have defaults; only ask when there is a terminal to ask at.
-  if [ -r /dev/tty ]; then
+  if have_tty; then
     prompt _in "Raw TCP game port [$TCP_PORT]: ";  TCP_PORT="${_in:-$TCP_PORT}"
     prompt _in "HTTPS viewer port [$VIEW_PORT]: "; VIEW_PORT="${_in:-$VIEW_PORT}"
   fi
@@ -131,11 +136,14 @@ install_packages() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     # libnginx-mod-stream provides the stream{} module that fronts the game port.
-    apt-get install -y -qq nginx libnginx-mod-stream certbot python3-certbot-dns-cloudflare curl ca-certificates >/dev/null
+    # tar+gzip are needed to unpack the Go toolchain and the source tarball.
+    apt-get install -y -qq nginx libnginx-mod-stream certbot python3-certbot-dns-cloudflare curl ca-certificates tar gzip >/dev/null
   else
     # certbot and its Cloudflare plugin live in EPEL on Rocky/RHEL.
     dnf install -y -q epel-release >/dev/null
-    dnf install -y -q nginx certbot python3-certbot-dns-cloudflare curl ca-certificates >/dev/null
+    # nginx-mod-stream provides (and auto-loads) the stream{} module that fronts
+    # the game port; tar+gzip unpack the Go toolchain and the source tarball.
+    dnf install -y -q nginx nginx-mod-stream certbot python3-certbot-dns-cloudflare curl ca-certificates tar gzip >/dev/null
   fi
 }
 
@@ -153,8 +161,16 @@ fetch_source() {
 
 install_go() {
   command -v go >/dev/null 2>&1 && return
+  # A Go installed by a previous run persists under /usr/local/go but isn't on
+  # PATH in a fresh shell; reuse it instead of re-downloading on every redeploy.
+  if [ -x /usr/local/go/bin/go ]; then export PATH="/usr/local/go/bin:$PATH"; return; fi
   local ver arch
-  ver="$(awk '/^go /{print $2; exit}' "$REPO_DIR/go.mod")"
+  # go.mod's "go" directive may be only major.minor (e.g. 1.26), but the toolchain
+  # tarball needs a full version (go1.26.0). Prefer an explicit toolchain line;
+  # otherwise append .0 when the patch level is missing.
+  ver="$(awk '/^toolchain go/{sub(/^go/,"",$2); print $2; exit}' "$REPO_DIR/go.mod")"
+  [ -n "$ver" ] || ver="$(awk '/^go /{print $2; exit}' "$REPO_DIR/go.mod")"
+  case "$ver" in *.*.*) ;; *.*) ver="$ver.0" ;; esac
   case "$(uname -m)" in
     x86_64|amd64)  arch=amd64 ;;
     aarch64|arm64) arch=arm64 ;;
