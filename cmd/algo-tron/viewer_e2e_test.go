@@ -51,14 +51,17 @@ func browser(t *testing.T) context.Context {
 	ctx, cancelCtx := chromedp.NewContext(allocCtx)
 	t.Cleanup(cancelCtx)
 
-	timed, cancelTimed := context.WithTimeout(ctx, 15*time.Second)
-	t.Cleanup(cancelTimed)
-
-	// Warm Chrome up. If the binary isn't available, surface that as a
-	// skip rather than a flaky failure later in the test body.
-	if err := chromedp.Run(timed); err != nil {
+	// Warm Chrome up on the long-lived ctx so the browser's lifetime is tied
+	// to it (chromedp binds the browser to the context of the first Run). If
+	// the binary isn't available, surface that as a skip rather than a flaky
+	// failure later. Doing startup here means a slow cold start doesn't eat
+	// into the test body's deadline below.
+	if err := chromedp.Run(ctx); err != nil {
 		t.Skipf("chrome unavailable, skipping UI test: %v", err)
 	}
+
+	timed, cancelTimed := context.WithTimeout(ctx, 15*time.Second)
+	t.Cleanup(cancelTimed)
 	return timed
 }
 
