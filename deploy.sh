@@ -22,7 +22,8 @@
 # if an external/cloud firewall already guards the box.
 #
 # Security model: nginx and certbot run as root; the Cloudflare token lives only
-# in /root/.secrets/cloudflare.ini (root-only, 600). The game binary runs as the
+# in /root/.secrets/cloudflare.ini (root-only, 600) and is reused automatically on
+# redeploys, so it need not be re-entered. The game binary runs as the
 # unprivileged 'tron' user (no password, no login shell, no sudo), so a
 # compromise of the game process cannot read the token or escalate.
 
@@ -46,6 +47,7 @@ APP_USER="tron"
 APP_HOME="/opt/algo-tron"
 DATA_DIR="/var/lib/algo-tron"
 BIN="$APP_HOME/algo-tron"
+CF_INI="/root/.secrets/cloudflare.ini"  # saved Cloudflare token (root-only, 600)
 
 # Source to build. Used only when not run from a checkout.
 REPO_SLUG="${REPO_SLUG:-erikgoldenstein/algo-tron}"
@@ -103,6 +105,13 @@ preflight() {
 collect_input() {
   [ -n "$DOMAIN" ]           || prompt DOMAIN "Domain (e.g. tron.example.com): "
   [ -n "$DOMAIN" ]           || err "domain is required"
+
+  # On redeploys, reuse the token saved on a previous run so it need not be
+  # re-entered (a flag still overrides it).
+  if [ -z "$CLOUDFLARE_TOKEN" ] && [ -r "$CF_INI" ]; then
+    CLOUDFLARE_TOKEN="$(sed -n 's/^[[:space:]]*dns_cloudflare_api_token[[:space:]]*=[[:space:]]*//p' "$CF_INI")"
+    [ -n "$CLOUDFLARE_TOKEN" ] && log "Reusing saved Cloudflare token from $CF_INI"
+  fi
   [ -n "$CLOUDFLARE_TOKEN" ] || prompt CLOUDFLARE_TOKEN "Cloudflare API token (Zone:DNS:Edit): " silent
   [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token is required"
 
@@ -173,10 +182,10 @@ build() {
 
 issue_cert() {
   log "Obtaining TLS certificate for $DOMAIN"
-  install -d -m 700 /root/.secrets
-  ( umask 077; printf 'dns_cloudflare_api_token = %s\n' "$CLOUDFLARE_TOKEN" > /root/.secrets/cloudflare.ini )
+  install -d -m 700 "$(dirname "$CF_INI")"
+  ( umask 077; printf 'dns_cloudflare_api_token = %s\n' "$CLOUDFLARE_TOKEN" > "$CF_INI" )
   certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
-    --dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+    --dns-cloudflare --dns-cloudflare-credentials "$CF_INI" \
     -d "$DOMAIN" --deploy-hook "systemctl reload nginx"
 }
 
