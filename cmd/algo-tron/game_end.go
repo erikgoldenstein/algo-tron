@@ -73,7 +73,11 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 		}
 	}
 	s.viewState.LastWinners = append([]string(nil), names...)
-	s.addSystemChatLocked(g.id, boardIndex, winnerChatText(names, boardIndex))
+	// Only announce when a human won: bot-only games end constantly and would
+	// flood the chat with messages that scroll away almost instantly.
+	if len(names) > 0 {
+		s.addSystemChatLocked(g.id, boardIndex, winnerChatText(names, boardIndex))
+	}
 	s.pendingGameRows = append(s.pendingGameRows, gameRows...)
 	s.queueStoreLocked()
 	s.updateScoreboardLocked()

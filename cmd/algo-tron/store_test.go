@@ -282,7 +282,7 @@ func TestJoinMarksNewAccountDirty(t *testing.T) {
 
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|pw\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|pw\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	go io.Copy(io.Discard, br) // drain so the server side never blocks
@@ -290,7 +290,7 @@ func TestJoinMarksNewAccountDirty(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		s.mu.Lock()
-		p := s.players["alice"]
+		p := s.players["carol"]
 		_, dirty := s.dirty[p]
 		s.mu.Unlock()
 		if p != nil && dirty {
@@ -306,20 +306,20 @@ func TestInactiveAccountPasswordCanReset(t *testing.T) {
 	oldHash := hashPassword(s.secret, "old")
 	newHash := hashPassword(s.secret, "new")
 	p := &Player{
-		Username: "alice",
+		Username: "carol",
 		PwHash:   oldHash,
 		Elo:      1000,
 		TsMu:     tsMu0,
 		TsSigma:  tsSigma0,
 		LastSeen: time.Now().Add(-accountPasswordResetAfter - time.Hour),
 	}
-	s.players["alice"] = p
+	s.players["carol"] = p
 
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	go io.Copy(io.Discard, br)
@@ -344,7 +344,7 @@ func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
 	oldHash := hashPassword(s.secret, "old")
 	newHash := hashPassword(s.secret, "new")
 	p := &Player{
-		Username:     "alice",
+		Username:     "carol",
 		PwHash:       oldHash,
 		Elo:          1500,
 		TsMu:         400,
@@ -352,13 +352,13 @@ func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
 		ScoreHistory: []Score{{Type: 1, Time: time.Now().UnixMilli(), Elo: 1500}},
 		LastSeen:     time.Now().Add(-accountPasswordResetAfter - time.Hour),
 	}
-	s.players["alice"] = p
+	s.players["carol"] = p
 
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	go io.Copy(io.Discard, br)
@@ -371,7 +371,7 @@ func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
 		s.mu.Unlock()
 		var n int
 		var elo float64
-		_ = s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'alice'`).Scan(&n, &elo)
+		_ = s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'carol'`).Scan(&n, &elo)
 		if reset && n == 1 && elo == 1500 {
 			return
 		}
@@ -412,20 +412,20 @@ func TestRecentAccountRejectsWrongPassword(t *testing.T) {
 	s := testServer(t)
 	oldHash := hashPassword(s.secret, "old")
 	p := &Player{
-		Username: "alice",
+		Username: "carol",
 		PwHash:   oldHash,
 		Elo:      1000,
 		TsMu:     tsMu0,
 		TsSigma:  tsSigma0,
 		LastSeen: time.Now().Add(-accountPasswordResetAfter + time.Hour),
 	}
-	s.players["alice"] = p
+	s.players["carol"] = p
 
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	line, err := br.ReadString('\n')
@@ -444,7 +444,7 @@ func TestConnectedAccountRejectsPasswordReset(t *testing.T) {
 	s := testServer(t)
 	oldHash := hashPassword(s.secret, "old")
 	p := &Player{
-		Username: "alice",
+		Username: "carol",
 		PwHash:   oldHash,
 		Elo:      1000,
 		TsMu:     tsMu0,
@@ -453,13 +453,13 @@ func TestConnectedAccountRejectsPasswordReset(t *testing.T) {
 	}
 	_, activeConn := mustPipe(t)
 	p.conn = activeConn
-	s.players["alice"] = p
+	s.players["carol"] = p
 
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	line, err := br.ReadString('\n')
@@ -672,19 +672,19 @@ func TestIdleTakeoverAssignsNewUUID(t *testing.T) {
 	s := testServer(t)
 	oldHash := hashPassword(s.secret, "old")
 	p := &Player{
-		Username: "alice",
+		Username: "carol",
 		UUID:     "old-uuid",
 		PwHash:   oldHash,
 		Elo:      1500,
 		LastSeen: time.Now().Add(-accountPasswordResetAfter - time.Hour),
 	}
-	s.players["alice"] = p
+	s.players["carol"] = p
 
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|alice|new\n")); err != nil {
+	if _, err := client.Write([]byte("join|carol|new\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	go io.Copy(io.Discard, br)
@@ -695,7 +695,7 @@ func TestIdleTakeoverAssignsNewUUID(t *testing.T) {
 		newUUID := p.UUID
 		s.mu.Unlock()
 		var archivedUUID string
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(uuid), '') FROM players_archive WHERE username = 'alice'`).Scan(&archivedUUID)
+		_ = s.db.QueryRow(`SELECT COALESCE(MAX(uuid), '') FROM players_archive WHERE username = 'carol'`).Scan(&archivedUUID)
 		if newUUID != "" && newUUID != "old-uuid" && archivedUUID == "old-uuid" {
 			return
 		}

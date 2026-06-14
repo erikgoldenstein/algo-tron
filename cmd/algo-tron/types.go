@@ -75,6 +75,9 @@ type Player struct {
 	lastDisconnectRemote atomic.Value
 
 	InternalBot bool
+	// botRandom selects which example-bot tactic a filler bot plays for its
+	// current game (see botMoveLocked); rolled fresh each time it is enqueued.
+	botRandom bool
 }
 
 // Seat is one player's participation in one game. The id doubles as the

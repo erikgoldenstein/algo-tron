@@ -240,7 +240,7 @@ func BenchmarkBotMove(b *testing.B) {
 			}
 		}
 	}
-	st := &Seat{pos: Vec2{X: w / 2, Y: h / 2}}
+	st := &Seat{pos: Vec2{X: w / 2, Y: h / 2}, player: &Player{}}
 	g.fields[st.pos.X][st.pos.Y] = -1 // keep the start cell open
 	b.ReportAllocs()
 	b.ResetTimer()

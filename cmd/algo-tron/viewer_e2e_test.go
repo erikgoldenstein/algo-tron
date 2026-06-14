@@ -239,6 +239,59 @@ func TestE2ESpectatorAdvancesOnBoardEnd(t *testing.T) {
 	}
 }
 
+// A who-won notice is a system message: it must render as a compact, italic
+// info line (the smaller text style), not a coloured chat row.
+func TestE2ESystemChatRendersAsSmallNotice(t *testing.T) {
+	url, s := e2eViewer(t)
+	ctx := browser(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#chat`),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the viewer's WS to register before pushing through the real
+	// broadcast path; addSystemChatLocked is a no-op with no view clients.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s.mu.Lock()
+		n := len(s.viewClients)
+		s.mu.Unlock()
+		if n > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	s.mu.Lock()
+	s.addSystemChatLocked("", 0, "carol won on board1.")
+	s.mu.Unlock()
+
+	var (
+		text     string
+		fontSize string
+		italic   bool
+	)
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(`#chat .msg.system`),
+		chromedp.Text(`#chat .msg.system .body`, &text),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('#chat .msg.system')).fontSize`, &fontSize),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('#chat .msg.system')).fontStyle === 'italic'`, &italic),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if text != "carol won on board1." {
+		t.Errorf("system chat body = %q, want the winner notice", text)
+	}
+	if fontSize != "11px" {
+		t.Errorf("system chat font-size = %q, want 11px (smaller notice style)", fontSize)
+	}
+	if !italic {
+		t.Error("system chat should render italic as a system notice")
+	}
+}
+
 func TestE2ESchemePersistsAcrossReload(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)

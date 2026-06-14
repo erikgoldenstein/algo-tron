@@ -16,6 +16,10 @@ import (
 var (
 	validString = regexp.MustCompile(`^[a-zA-Z0-9 _\-\.!?,:#]+$`)
 	botName     = regexp.MustCompile(`^bot\d*$`)
+	// reservedName matches usernames owned by the built-in filler bots
+	// (alice/bob); real, remote users may not claim them. Case-insensitive so
+	// "Alice" can't impersonate the filler bot either.
+	reservedName = regexp.MustCompile(`^(?i:alice|bob)$`)
 )
 
 func validateJoin(username, password, ip string) string {
@@ -34,7 +38,7 @@ func validateJoin(username, password, ip string) string {
 	if len(password) > 128 {
 		return "ERROR_PASSWORD_TOO_LONG"
 	}
-	if botName.MatchString(username) && !isLocalhost(ip) {
+	if (botName.MatchString(username) || reservedName.MatchString(username)) && !isLocalhost(ip) {
 		return "ERROR_NO_PERMISSION"
 	}
 	return ""

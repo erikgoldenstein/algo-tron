@@ -308,6 +308,9 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 #chat .msg .from { color: var(--text); font-weight: 500; }
 #chat .msg .time { color: var(--text-muted); margin-left: 4px; }
 #chat .msg .body { color: var(--text-muted); display: block; margin-top: 1px; }
+#chat .msg.system { font-size: 11px; font-style: italic; margin-bottom: 6px; }
+#chat .msg.system .body { display: inline; margin-top: 0; }
+#chat .msg.system .time { margin-left: 0; }
 #chat .chat-empty { color: var(--text-muted); font-style: italic; }
 
 .scoreboard-modal-window { width: min(720px, calc(100vw - 32px)); }

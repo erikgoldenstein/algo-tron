@@ -150,8 +150,16 @@ function scoreRow(p, i) {
 function chatRow(m) {
   const d = new Date(m.time || Date.now());
   const time = d.toLocaleTimeString();
+  // System notices (e.g. who-won) read as terse info, not chat: one small
+  // muted line with no coloured author.
+  if (m.system) {
+    return '<div class="msg system">'
+      + '<span class="body">' + esc(m.message || '') + '</span>'
+      + ' <span class="time">(' + time + ')</span>'
+      + '</div>';
+  }
   const from = m.username || m.from || 'system';
-  const c = m.system ? 'var(--text-muted)' : playerColor(from);
+  const c = playerColor(from);
   return '<div class="msg">'
     + '<span class="from" style="color:' + c + '">' + esc(from) + '</span>'
     + ' <span class="time">(' + time + ')</span>'

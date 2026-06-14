@@ -32,7 +32,7 @@ func TestValidateJoin(t *testing.T) {
 		username, password, ip string
 		wantErr                string
 	}{
-		{"valid", "alice", "pass", "1.2.3.4", ""},
+		{"valid", "charlie", "pass", "1.2.3.4", ""},
 		{"empty username", "", "pass", "1.2.3.4", "ERROR_USERNAME_TOO_SHORT"},
 		{"username too long", strings.Repeat("a", 33), "pass", "1.2.3.4", "ERROR_USERNAME_TOO_LONG"},
 		{"username invalid symbols", "alice|bob", "pass", "1.2.3.4", "ERROR_USERNAME_INVALID_SYMBOLS"},
@@ -43,8 +43,12 @@ func TestValidateJoin(t *testing.T) {
 		{"bot from IPv6 localhost", "bot", "pass", "::1", ""},
 		{"bot1 from remote IP", "bot1", "pass", "1.2.3.4", "ERROR_NO_PERMISSION"},
 		{"bots is not a bot name", "bots", "pass", "1.2.3.4", ""},
+		{"reserved alice from remote IP", "alice", "pass", "1.2.3.4", "ERROR_NO_PERMISSION"},
+		{"reserved bob from remote IP", "bob", "pass", "1.2.3.4", "ERROR_NO_PERMISSION"},
+		{"reserved name is case-insensitive", "Alice", "pass", "1.2.3.4", "ERROR_NO_PERMISSION"},
+		{"reserved name allowed from localhost", "alice", "pass", "127.0.0.1", ""},
 		{"max length username", strings.Repeat("a", 32), "pass", "1.2.3.4", ""},
-		{"max length password", "alice", strings.Repeat("x", 128), "1.2.3.4", ""},
+		{"max length password", "charlie", strings.Repeat("x", 128), "1.2.3.4", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

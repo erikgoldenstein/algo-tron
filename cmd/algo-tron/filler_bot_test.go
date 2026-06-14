@@ -34,7 +34,7 @@ func TestNextPosWraps(t *testing.T) {
 // neighbours blocked it must take the one open direction.
 func TestBotMovePicksOpenDirection(t *testing.T) {
 	g := &Game{width: 5, height: 5, fields: makeFields(5, 5)}
-	st := &Seat{pos: Vec2{2, 2}}
+	st := &Seat{pos: Vec2{2, 2}, player: &Player{}}
 	g.fields[2][1] = 0 // up blocked
 	g.fields[3][2] = 0 // right blocked
 	g.fields[2][3] = 0 // down blocked
@@ -49,7 +49,7 @@ func TestBotMovePicksOpenDirection(t *testing.T) {
 // MoveUp rather than reporting a bogus score.
 func TestBotMoveAllBlockedFallsBack(t *testing.T) {
 	g := &Game{width: 3, height: 3, fields: makeFields(3, 3)}
-	st := &Seat{pos: Vec2{1, 1}}
+	st := &Seat{pos: Vec2{1, 1}, player: &Player{}}
 	for x := 0; x < 3; x++ {
 		for y := 0; y < 3; y++ {
 			if !(x == 1 && y == 1) {
@@ -59,6 +59,21 @@ func TestBotMoveAllBlockedFallsBack(t *testing.T) {
 	}
 	if got := g.botMoveLocked(st); got != MoveUp {
 		t.Errorf("botMoveLocked all-blocked = %d, want MoveUp (%d)", got, MoveUp)
+	}
+}
+
+// A bot on the random tactic must still never steer into an occupied cell:
+// with only one open neighbour it can only pick that one.
+func TestBotRandomTacticAvoidsBlocked(t *testing.T) {
+	g := &Game{width: 5, height: 5, fields: makeFields(5, 5)}
+	st := &Seat{pos: Vec2{2, 2}, player: &Player{botRandom: true}}
+	g.fields[2][1] = 0 // up blocked
+	g.fields[3][2] = 0 // right blocked
+	g.fields[2][3] = 0 // down blocked
+	for i := 0; i < 50; i++ {
+		if got := g.botMoveLocked(st); got != MoveLeft {
+			t.Fatalf("random tactic = %d, want the only open dir MoveLeft (%d)", got, MoveLeft)
+		}
 	}
 }
 

@@ -1,10 +1,19 @@
 package main
 
-import "time"
+import (
+	"math/rand/v2"
+	"time"
+)
 
 const fillerBotCount = 2
 
-var fillerBotNames = []string{"bot1", "bot2"}
+var fillerBotNames = []string{"alice", "bob"}
+
+// botRandomTacticChance is the per-game probability a filler bot plays the
+// bot1_random tactic (pick a uniformly random free neighbour) instead of the
+// bot2_bfs_depth8 tactic (steer toward the most open space). Mirrors the two
+// example bots so the filler bots aren't all identical.
+const botRandomTacticChance = 0.30
 
 func (s *Server) ensureFillerBotsLocked() {
 	realOnline := 0
@@ -25,6 +34,7 @@ func (s *Server) ensureFillerBotsLocked() {
 	for i, p := range s.filler {
 		if i < needed {
 			if p.seat.Load() == nil && p.queuedSince.IsZero() {
+				p.botRandom = rand.Float64() < botRandomTacticChance
 				s.enqueueLocked(p)
 			}
 			continue
@@ -57,6 +67,31 @@ func (g *Game) applyBotMovesLocked() {
 }
 
 func (g *Game) botMoveLocked(st *Seat) Move {
+	if st.player.botRandom {
+		return g.botRandomMoveLocked(st)
+	}
+	return g.botReachMoveLocked(st)
+}
+
+// botRandomMoveLocked mirrors bot1_random: pick a uniformly random direction
+// whose next cell is free, falling back to MoveUp when boxed in.
+func (g *Game) botRandomMoveLocked(st *Seat) Move {
+	var options []Move
+	for _, m := range []Move{MoveUp, MoveRight, MoveDown, MoveLeft} {
+		n := g.nextPos(st.pos, m)
+		if g.fields[n.X][n.Y] == -1 {
+			options = append(options, m)
+		}
+	}
+	if len(options) == 0 {
+		return MoveUp
+	}
+	return options[rand.IntN(len(options))]
+}
+
+// botReachMoveLocked mirrors bot2_bfs_depth8: steer toward the direction that
+// opens the most reachable space within 8 steps.
+func (g *Game) botReachMoveLocked(st *Seat) Move {
 	dirs := []Move{MoveUp, MoveRight, MoveDown, MoveLeft}
 	bestMove := MoveUp
 	bestScore := -1
