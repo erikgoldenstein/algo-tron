@@ -15,15 +15,25 @@
 #
 # Flags (anything omitted is asked for interactively):
 #   --domain --cloudflare-token --tcp-port --view-port --repo --ref --no-firewall
+#   --no-metrics --reset-metrics-creds
 #
 # By default a host firewall (firewalld on Rocky/RHEL, ufw on Debian/Ubuntu) is
 # installed and enabled, allowing only SSH and the public app ports — meant for
 # a single directly-exposed host with nothing in front of it. Pass --no-firewall
 # if an external/cloud firewall already guards the box.
 #
+# By default Prometheus /metrics is exposed via nginx at https://<domain>/metrics
+# protected by HTTP basic auth. The app binds the metrics endpoint on a separate
+# localhost-only port (127.0.0.1:9100) and nginx fronts it with auth. Credentials
+# are auto-generated on the first deploy and reused on every subsequent run; pass
+# --reset-metrics-creds to roll them, or --no-metrics to skip the whole thing.
+# The credentials are printed at the end of the deploy and logged once by
+# algo-tron on startup so `journalctl -u algo-tron` can recover them.
+#
 # Security model: nginx and certbot run as root; the Cloudflare token lives only
 # in /root/.secrets/cloudflare.ini (root-only, 600) and is reused automatically on
-# redeploys, so it need not be re-entered. The game binary runs as the
+# redeploys, so it need not be re-entered. The metrics credentials live next to
+# it at /root/.secrets/algo-tron-metrics.{creds,env}. The game binary runs as the
 # unprivileged 'tron' user (no password, no login shell, no sudo), so a
 # compromise of the game process cannot read the token or escalate.
 
@@ -43,7 +53,10 @@ TCP_PORT_SET=""         # set by --tcp-port, suppresses the interactive prompt
 VIEW_PORT_SET=""        # set by --view-port, suppresses the interactive prompt
 TCP_LOCAL_PORT="4001"   # localhost game port the app binds; nginx forwards to it
 VIEW_LOCAL_PORT="3000"  # localhost viewer port the app binds; nginx forwards to it
+METRICS_LOCAL_PORT="9100" # localhost /metrics port the app binds; nginx fronts it with basic auth
 SETUP_FIREWALL=1        # install+enable a host firewall (0 / --no-firewall to skip)
+SETUP_METRICS=1         # expose /metrics via nginx with basic auth (0 / --no-metrics to skip)
+RESET_METRICS_CREDS=0   # 1 / --reset-metrics-creds to roll the saved metrics password
 
 APP_USER="tron"
 APP_HOME="/opt/algo-tron"
@@ -51,6 +64,9 @@ DATA_DIR="/var/lib/algo-tron"
 BIN="$APP_HOME/algo-tron"
 CF_INI="/root/.secrets/cloudflare.ini"  # saved Cloudflare token (root-only, 600)
 GEO_DIR="$DATA_DIR/geo"                  # GeoLite2 .mmdb files (downloaded license-less)
+METRICS_CREDS_FILE="/root/.secrets/algo-tron-metrics.creds" # "metrics:<plaintext>" (root, 600)
+METRICS_ENV_FILE="/root/.secrets/algo-tron-metrics.env"     # ALGO_TRON_METRICS_CREDS=... for systemd
+METRICS_HTPASSWD="/etc/nginx/algo-tron-metrics.htpasswd"    # bcrypt hash nginx reads
 
 # Source to build. Used only when not run from a checkout.
 REPO_SLUG="${REPO_SLUG:-erikgoldenstein/algo-tron}"
@@ -97,6 +113,8 @@ parse_args() {
       --repo)             REPO_SLUG="$2"; shift 2 ;;
       --ref)              REPO_REF="$2"; shift 2 ;;
       --no-firewall)      SETUP_FIREWALL=0; shift ;;
+      --no-metrics)       SETUP_METRICS=0; shift ;;
+      --reset-metrics-creds) RESET_METRICS_CREDS=1; shift ;;
       -h|--help)          grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) err "unknown argument: $1 (try --help)" ;;
     esac
@@ -211,6 +229,40 @@ setup_geo() {
     || log "geo database setup failed (non-fatal) — geo/IP lookups stay disabled"
 }
 
+# Generate (or reuse) the basic-auth credentials nginx uses to gate /metrics.
+# Plaintext lives in /root/.secrets so a redeploy can reuse it without churning
+# the password, and the deploy script can print it; nginx only needs the salted
+# hash in /etc/nginx/algo-tron-metrics.htpasswd. METRICS_CREDS is exported for
+# later steps that need to embed it (systemd env file, summary).
+setup_metrics_creds() {
+  [ "$SETUP_METRICS" = 1 ] || return 0
+  install -d -m 700 "$(dirname "$METRICS_CREDS_FILE")"
+
+  if [ "$RESET_METRICS_CREDS" = 1 ] || [ ! -s "$METRICS_CREDS_FILE" ]; then
+    log "Generating new /metrics basic-auth credentials"
+    local pass
+    pass="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+    ( umask 077; printf 'metrics:%s\n' "$pass" > "$METRICS_CREDS_FILE" )
+  else
+    log "Reusing saved /metrics basic-auth credentials from $METRICS_CREDS_FILE"
+  fi
+
+  METRICS_CREDS="$(cat "$METRICS_CREDS_FILE")"
+  local user="${METRICS_CREDS%%:*}" pass="${METRICS_CREDS#*:}"
+
+  # Env file consumed by the algo-tron systemd unit so the app can echo the
+  # creds into journald on startup (auth itself is enforced by nginx).
+  ( umask 077; printf 'ALGO_TRON_METRICS_CREDS=%s\n' "$METRICS_CREDS" > "$METRICS_ENV_FILE" )
+
+  # Use openssl (already pulled in by certbot/nginx) to write the salted apr1
+  # hash nginx's auth_basic expects, avoiding an apache2-utils/httpd-tools
+  # dependency just for `htpasswd`.
+  local hash
+  hash="$(openssl passwd -apr1 "$pass")"
+  ( umask 022; printf '%s:%s\n' "$user" "$hash" > "$METRICS_HTPASSWD.tmp" )
+  mv "$METRICS_HTPASSWD.tmp" "$METRICS_HTPASSWD"
+}
+
 issue_cert() {
   log "Obtaining TLS certificate for $DOMAIN"
   install -d -m 700 "$(dirname "$CF_INI")"
@@ -235,6 +287,25 @@ selinux_allow() {
 
 configure_nginx() {
   log "Configuring nginx"
+  # /metrics is gated by basic auth at the nginx layer and proxied to the
+  # localhost-only listener the app binds for it. Skipped when --no-metrics is
+  # set, in which case the path is not exposed at all.
+  local metrics_block=""
+  if [ "$SETUP_METRICS" = 1 ]; then
+    metrics_block=$(cat <<EOF
+
+  location = /metrics {
+    auth_basic           "algo-tron metrics";
+    auth_basic_user_file $METRICS_HTPASSWD;
+    proxy_pass           http://127.0.0.1:$METRICS_LOCAL_PORT/metrics;
+    proxy_set_header     Host \$host;
+    proxy_hide_header    X-Powered-By;
+    proxy_hide_header    Server;
+  }
+EOF
+)
+  fi
+
   # conf.d/*.conf is included inside http{}; server_tokens here applies to every
   # server block, hiding the nginx version (and name) from clients.
   cat > /etc/nginx/conf.d/algo-tron.conf <<EOF
@@ -254,7 +325,7 @@ server {
 
   ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-
+$metrics_block
   location / {
     proxy_pass http://127.0.0.1:$VIEW_LOCAL_PORT;
     proxy_http_version 1.1;
@@ -295,6 +366,15 @@ EOF
 
 install_service() {
   log "Installing systemd service"
+  # When metrics is enabled the app binds a localhost-only /metrics listener
+  # (nginx enforces auth) and reads the credentials from an EnvironmentFile so
+  # they can be echoed into journald on startup without leaking via `ps`.
+  local metrics_flag="" env_line=""
+  if [ "$SETUP_METRICS" = 1 ]; then
+    metrics_flag="  -metrics 127.0.0.1:$METRICS_LOCAL_PORT \\
+"
+    env_line="EnvironmentFile=$METRICS_ENV_FILE"
+  fi
   cat > /etc/systemd/system/algo-tron.service <<EOF
 [Unit]
 Description=algo-tron game server
@@ -304,8 +384,9 @@ Wants=network-online.target
 [Service]
 User=$APP_USER
 Group=$APP_USER
+$env_line
 ExecStart=$BIN \\
-  -tcp 127.0.0.1:$TCP_LOCAL_PORT \\
+$metrics_flag  -tcp 127.0.0.1:$TCP_LOCAL_PORT \\
   -view 127.0.0.1:$VIEW_LOCAL_PORT \\
   -proxy-protocol \\
   -public-tcp $DOMAIN:$TCP_PORT \\
@@ -371,6 +452,11 @@ summary() {
   log "Done."
   echo "  Viewer:     https://$PUBLIC_VIEW"
   echo "  Game (TCP): $DOMAIN:$TCP_PORT"
+  if [ "$SETUP_METRICS" = 1 ]; then
+    echo "  Metrics:    https://$PUBLIC_VIEW/metrics  (basic auth)"
+    echo "    creds:    $METRICS_CREDS"
+    echo "    saved at: $METRICS_CREDS_FILE  (also in journalctl -u algo-tron)"
+  fi
   echo "  Logs:       journalctl -u algo-tron -f"
 }
 
@@ -385,6 +471,7 @@ main() {
   create_user
   build
   setup_geo
+  setup_metrics_creds
   issue_cert
   configure_nginx
   install_service

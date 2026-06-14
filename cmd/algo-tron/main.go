@@ -117,6 +117,12 @@ func run() error {
 	}
 
 	slog.Info("listening", "tcp", *tcpAddr, "view", *viewAddr, "metrics", *metricsAddr, "view_metrics", *viewMetricsAuth != "")
+	// Surface the nginx-side basic-auth credentials in journald so an operator
+	// who lost the deploy-script output can still recover them with
+	// `journalctl -u algo-tron`. The actual auth is enforced by nginx.
+	if creds := os.Getenv("ALGO_TRON_METRICS_CREDS"); creds != "" {
+		slog.Info("metrics basic-auth credentials (served via nginx at /metrics)", "creds", creds)
+	}
 	err = g.Wait()
 	// Final synchronous store so ratings from games that ended since the
 	// persister's last run survive the shutdown.
