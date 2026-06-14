@@ -48,6 +48,7 @@ APP_HOME="/opt/algo-tron"
 DATA_DIR="/var/lib/algo-tron"
 BIN="$APP_HOME/algo-tron"
 CF_INI="/root/.secrets/cloudflare.ini"  # saved Cloudflare token (root-only, 600)
+GEO_DIR="$DATA_DIR/geo"                  # GeoLite2 .mmdb files (downloaded license-less)
 
 # Source to build. Used only when not run from a checkout.
 REPO_SLUG="${REPO_SLUG:-erikgoldenstein/algo-tron}"
@@ -196,6 +197,17 @@ build() {
   chown "$APP_USER:$APP_USER" "$BIN"
 }
 
+# Download the GeoLite2 databases so client geo/IP lookups work. License-less by
+# default (a redistributed mirror); set MAXMIND_LICENSE_KEY or GEO_DATABASE_URL
+# to override. Idempotent (skips existing files) and best-effort: a download
+# failure must never block the deploy.
+setup_geo() {
+  log "Setting up GeoLite2 databases in $GEO_DIR"
+  install -d -o "$APP_USER" -g "$APP_USER" "$GEO_DIR"
+  runuser -u "$APP_USER" -- "$BIN" -setup-geo -geo-dir "$GEO_DIR" \
+    || log "geo database setup failed (non-fatal) — geo/IP lookups stay disabled"
+}
+
 issue_cert() {
   log "Obtaining TLS certificate for $DOMAIN"
   install -d -m 700 "$(dirname "$CF_INI")"
@@ -296,7 +308,8 @@ ExecStart=$BIN \\
   -public-tcp $DOMAIN:$TCP_PORT \\
   -public-view $PUBLIC_VIEW \\
   -public-view-scheme https \\
-  -data-dir $DATA_DIR
+  -data-dir $DATA_DIR \\
+  -geo-dir $GEO_DIR
 Restart=always
 RestartSec=2
 
@@ -354,6 +367,7 @@ main() {
   install_go
   create_user
   build
+  setup_geo
   issue_cert
   configure_nginx
   install_service
