@@ -46,30 +46,10 @@ function renderChart() {
   ctx.lineJoin = 'round';
   for (const name of names) {
     const color = playerColor(name);
-    ctx.beginPath();
-    let started = false;
-    data.forEach((point, i) => {
-      const v = chartPoint(point[name]);
-      if (!v) return;
-      if (!started) { ctx.moveTo(x(i), y(v.mu - v.sigma)); started = true; }
-      else ctx.lineTo(x(i), y(v.mu - v.sigma));
-    });
-    if (started) {
-      for (let i = data.length - 1; i >= 0; i--) {
-        const v = chartPoint(data[i][name]);
-        if (v) ctx.lineTo(x(i), y(v.mu + v.sigma));
-      }
-      ctx.closePath();
-      ctx.globalAlpha = 0.08;
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-
     ctx.lineWidth = 1.25;
     ctx.strokeStyle = color;
     ctx.beginPath();
-    started = false;
+    let started = false;
     data.forEach((point, i) => {
       const v = chartPoint(point[name]);
       if (!v) return;
