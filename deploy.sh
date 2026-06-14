@@ -241,7 +241,10 @@ setup_metrics_creds() {
   if [ "$RESET_METRICS_CREDS" = 1 ] || [ ! -s "$METRICS_CREDS_FILE" ]; then
     log "Generating new /metrics basic-auth credentials"
     local pass
-    pass="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+    # Subshell with pipefail off: head closes the pipe after 32 bytes, which
+    # makes tr exit with SIGPIPE (141); under the script's `set -o pipefail`
+    # that would abort the whole deploy.
+    pass="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
     ( umask 077; printf 'metrics:%s\n' "$pass" > "$METRICS_CREDS_FILE" )
   else
     log "Reusing saved /metrics basic-auth credentials from $METRICS_CREDS_FILE"
