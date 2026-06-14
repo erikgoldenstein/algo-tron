@@ -8,6 +8,7 @@
 - [Matchmaking](matchmaking.md) — queue, multi-board scheduling, skill banding.
 - [Persistence](persistence.md) — `-data-dir` layout, SQLite schema, secret.
 - [Metrics](metrics.md) — Prometheus metric inventory.
+- [Deployment](deployment.md) — build, flags, NixOS module, nginx, running your own server.
 - [Testing](testing.md) — validation checklist, unit tests, e2e tests, benchmarks.
 
 The bot protocol is a near-faithful reimplementation of

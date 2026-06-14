@@ -21,7 +21,7 @@ Started from `main()`:
 | `matchmakerLoop`     | Polls every 1s; clears expired chats, then groups queued players onto new boards. See [matchmaking.md](matchmaking.md). |
 | `Game.run` × boards  | One per running board. Sleeps until an absolute deadline (`next += interval`), then runs the two tick phases; exits on game end. Re-anchors instead of bursting if it falls a full interval behind. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
 | `storeLoop`          | Persister. On signal, snapshots the dirty players under the lock, then writes SQLite with no lock held. |
-| `statsLoop`          | Emits one stats line per minute while any board is active.       |
+| `statsLoop`          | Emits one stats line per minute while any board is active, and recomputes the windowed disconnect-distribution gauges (off-lock, from the game ledger) each minute and at boot. |
 | `listenMetrics`      | Prometheus HTTP server, only if `-metrics` is set.               |
 
 All goroutines except the game loops are I/O- or scrape-driven; only `Game.run` is on a tight time budget. Crucially, nothing on a tick's critical path performs blocking I/O: bot frames are enqueued on per-bot sinks, viewer deltas on per-viewer sinks, and persistence runs in `storeLoop` — a stalled client or a slow disk can no longer delay a tick.
@@ -93,7 +93,8 @@ Each viewer subscribes to one board (`viewerSink.gameID`); `broadcastTickLocked`
 | `schemes.js`   | Color schemes, palette expansion, theme application.        |
 | `gameState.js` | WS message → in-memory `gameState` (no DOM/canvas).         |
 | `dom.js`       | Scoreboard / chat / shutdown-banner DOM updates.            |
-| `render.js`    | Canvas board + ELO chart on a 30fps loop.                   |
+| `render.js`    | Canvas board rendering (board only) on a 30fps loop.        |
+| `render_chart.js` | Canvas TrueSkill chart (`renderChart`), driven by the same loop. |
 | `modal.js`     | Help/settings modal + keyboard shortcuts.                   |
 | `ws.js`        | WebSocket entry, board subscription, auto-reload on reconnect. |
 | `schedule.js`  | Optional GPN-style talk schedule pane.                      |

@@ -1,6 +1,9 @@
 # Game mechanics
 
-All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
+All tunables live in `cmd/algo-tron/*_config.go` as `const` (`game_config.go`,
+`rating_config.go`, `tcp_config.go`, `matchmaker_config.go`,
+`scoreboard_config.go`, `view_config.go`). Source of truth. `types.go` holds
+only the type definitions.
 
 ## Board
 
@@ -9,6 +12,32 @@ All tunables live in `cmd/algo-tron/types.go` as `const`. Source of truth.
 - Coordinates wrap (toroidal): moving off any edge re-enters the opposite edge.
 - Spawn for seat `i` (0-indexed after random shuffle) is `(2i, 2i)`. No two spawns collide.
 - `fields[x][y]` stores the seat id that owns the cell, or `-1` for empty. The owner's trail (`Seat.trail`) is the authoritative record; `fields` is the per-cell index used by collision resolution.
+
+## Filler bots
+
+Two server-internal filler bots, `alice` and `bob` (`fillerBotCount = 2`,
+`InternalBot: true`), keep tiny populations playable. They are **always
+enabled** in production (`fillerBots: true` in `main.go`) and live in
+`filler_bot.go`.
+
+- **When they play.** `ensureFillerBotsLocked` runs once per matchmaker tick
+  (1 Hz). When fewer than `minBoardSize` (4) *real* bots are connected it
+  queues up to `fillerBotCount` fillers to top the field up to four; once
+  enough real players are around again, surplus fillers are flagged
+  `removeRequested` and killed on the next tick (`bot_removed`). A filler
+  sitting in the queue that's no longer needed is simply de-queued.
+- **How they play.** Each game a filler picks one of two tactics mirroring
+  the example bots: with probability `botRandomTacticChance` (0.30) the
+  `bot1_random` tactic (uniform random free neighbour), otherwise the
+  `bot2_bfs_depth8` tactic (steer toward the most reachable space within 8
+  steps). Moves are computed server-side in `applyBotMovesLocked`, so fillers
+  never speak the wire protocol.
+- **They never count.** Filler bots have an empty `PwHash`, so they are
+  excluded from every leaderboard, the TrueSkill chart, and — explicitly — the
+  ELO/TrueSkill updates (`updateEloLocked` / `updateTrueSkillLocked` skip them
+  on both sides), so a board padded with fillers can't be farmed for rating.
+  Their reserved names are protected from impersonation — see
+  [bot-protocol.md § Reserved usernames](bot-protocol.md#reserved-usernames).
 
 ## Tick rate
 
@@ -22,12 +51,14 @@ So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interv
 
 ## Move resolution (one tick)
 
+Before the steps below, two filler-bot phases run first each tick (no-ops when no filler bot is seated — see [§ Filler bots](#filler-bots)): the seated filler bots pick their move (`applyBotMovesLocked`), then any filler bot the matchmaker no longer needs is killed (`killRequestedBotsLocked`, death reason `bot_removed`).
+
 1. **Kill disconnected.** Any player whose TCP connection dropped during the tick is marked dead.
 2. **Read moves.** Each alive player's queued direction is consumed (replaced with `MoveNone`). If none queued, `ERROR_NO_MOVE` is sent and the player's `lastMove` is reused (or `up` if there's no last move).
 3. **Step.** Each alive player moves one cell in the queued direction, with modular wrap.
 4. **Collisions.**
    - If the destination cell is empty, the player claims it.
-   - If occupied by **another player at the same cell this tick** (head-on swap), both die.
+   - If **another player also moved into this same cell this tick** (not a standing trail), both die (head-on). This covers a swap, but any two players landing on one cell collide — it needn't be a swap.
    - Otherwise the moving player dies and the trail owner survives.
 5. **Process dead.** Dead players' trails are cleared from `fields` (only cells they still own — avoids erasing cells that another player has reclaimed mid-tick). Each gets `lose|<wins>|<losses>` and immediately re-enters the matchmaking queue ([matchmaking.md](matchmaking.md)) — their dead seat stays in this game for the rating math at game end.
 6. **End check.** Game ends when:
@@ -53,7 +84,7 @@ For every pair `(p, q)` of players in the game, the pair result for `p` is `1.0`
 
 A player who outlived another loser claims a partial win against them even though both lost the game — that's the whole point of ranking by survival. Total delta across all players sums to zero (pair scores sum to `nC2`, pair expecteds sum to `nC2`).
 
-New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endGameLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends. The viewer chart reconstructs the trajectory from these snapshots (see § Scoreboard below; persistence in [persistence.md](persistence.md)).
+New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endGameLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends (the same entry also carries the post-game TrueSkill; persistence in [persistence.md](persistence.md)). ELO is still tracked per game and selectable as the `elo` scoreboard sort, but the default sidebar sort and the viewer chart are TrueSkill — see § Scoreboard below.
 
 `wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
 
@@ -90,7 +121,7 @@ $$
 
 where $\varphi$ and $\Phi$ are the standard normal PDF and CDF. After all pairs, $\sigma^2 \leftarrow \sigma^2 + \tau^2$ so ratings stay responsive over time. New players are initialized to $(\mu_0, \sigma_0)$ on account creation (legacy DB rows with $\sigma = 0$ get the same defaults at load), so the matchmaker can sort by $\mu$ from their very first game.
 
-The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. ELO remains the primary sort key and chart series; TrueSkill additionally drives matchmaking ([matchmaking.md](matchmaking.md)).
+The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. TrueSkill is the primary metric: it is the default scoreboard sort key (`μ − 3σ`), the viewer chart series, and the matchmaking band key (plain `μ`, not `μ − 3σ` — see [matchmaking.md](matchmaking.md)). ELO is still computed every game and remains available as the opt-in `elo` sort.
 
 ## Chat
 
@@ -102,7 +133,7 @@ The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. EL
 
 ## Rate limits & abuse policy
 
-Three per-connection budgets are enforced inside `handlePacket`. Limits and constants live in `types.go`; the [bot protocol page](bot-protocol.md#rate-limits) has the full table.
+Three per-connection budgets are enforced inside `handlePacket`. Limits and constants live in `tcp_config.go`; the [bot protocol page](bot-protocol.md#rate-limits) has the full table.
 
 | What's allowed                                                                                      | What's not                                                                                                          |
 |-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
@@ -113,16 +144,17 @@ Three per-connection budgets are enforced inside `handlePacket`. Limits and cons
 | Reconnecting cleanly after a normal disconnect or kick from `ERROR_ALREADY_CONNECTED`.              | Reconnecting inside the penalty window after a rate-limit kick — `ERROR_RECONNECT_PENALTY\|<seconds>`.              |
 | Unknown packet types (you'll get `ERROR_UNKNOWN_PACKET` per packet, but the connection stays).      | Flooding unknown packets to avoid the move/chat budgets — caught by the global limiter, same strike track.          |
 
-**Strike track.** Each over-budget packet adds one strike. At `rateLimitWarnStrikes` (1) the bot gets `WARNING_RATE_LIMIT`; at `rateLimitErrorStrikes` (3) the bot gets `ERROR_RATE_LIMIT` and the connection is closed. Any allowed packet resets the strike counter to 0 — short, accidental bursts are forgiven.
-
-**Reconnect penalty.** When the strike cap kicks a connection, the account's `reconnectPenalty` doubles (start `reconnectPenaltyBase = 1s`, cap `reconnectPenaltyMax = 60s`). The next `join` for that username inside the window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>`. The penalty is keyed by account (username), held in memory, and survives reconnects but not a server restart. It only grows — once you've been kicked twice, you stay at ≥2s minimum cool-off until the process restarts.
+**Strike track & reconnect penalty.** Over-budget packets accrue strikes; at `rateLimitErrorStrikes` (3) the bot gets `ERROR_RATE_LIMIT`, the connection closes, and the account's reconnect penalty doubles (`reconnectPenaltyBase` 1s … `reconnectPenaltyMax` 60s), enforced on the next `join`. The penalty decays with good behavior (`reconnectPenaltyRedemption`), so it isn't permanent. The full strike → warn → kick → penalty → redemption flow is documented once, in [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits) — the canonical reference; it is not repeated here.
 
 ## Scoreboard
 
-`updateScoreboardLocked` rebuilds the top 10 from in-memory `players` at startup and after every game end:
+`updateScoreboardLocked` rebuilds the top 10 online players from in-memory `players` at startup and after every game end:
 
-1. Take wins/losses from the rolling 2-hour window.
-2. Sort by win ratio desc, then wins desc, then losses desc.
-3. Truncate to 10.
+1. Keep only connected, leaderboard-eligible players (a non-empty `PwHash`; filler bots have none).
+2. Compute each player's wins/losses over the rolling 2-hour window — for display and as a sort tiebreaker, not the primary key.
+3. Sort by **TrueSkill conservative estimate `μ − 3σ` desc** (the default `sort=ts`), then `μ` desc, then win ratio / wins / losses as tiebreakers.
+4. Truncate to `defaultScoreboardLimit` (10).
 
-The chart shows a 20-point **ELO** history per top player. Each `Score` record carries the post-game ELO (`Score.Elo`); `updateChartDataLocked` walks `ScoreHistory` backward to find the latest non-zero ELO for each chart slot. Losers in a game get their post-update ELO backfilled into the `Score` entry their seat recorded at death (matched by timestamp), so winners and losers report a consistent value. `Score` records written before ELO tracking existed (`Elo == 0`) are skipped — the chart simply starts later for those players.
+This is the live `online` sidebar. The opt-in `elo` and `wr` sort modes (and the cached `daily`/`monthly`/`halfyear`/`all` period boards) are described in [viewer-protocol.md](viewer-protocol.md#backpressure).
+
+The chart shows a 20-point **TrueSkill** history per top player. Each `Score` record carries the post-game TrueSkill (`Score.TsMu` / `Score.TsSigma`); `buildChartDataLocked` walks each player's `ScoreHistory` backward to find the latest non-zero `TsMu` for every chart slot and emits `{mu, sigma}`. Losers in a game get their post-update rating backfilled into the `Score` entry their seat recorded at death (matched by timestamp), so winners and losers report a consistent value. `Score` records written before TrueSkill tracking existed (`TsMu == 0`) are skipped — the chart simply starts later for those players. The viewer draws `μ` as the line and `μ ± σ` as the uncertainty halo (see [viewer-protocol.md](viewer-protocol.md)).

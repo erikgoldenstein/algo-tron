@@ -27,11 +27,13 @@ CREATE TABLE IF NOT EXISTS players (
   username      TEXT PRIMARY KEY,
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
-  score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float}, …]
+  score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float, tsMu?: float, tsSigma?: float}, …]
   ts_mu          REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
   ts_sigma       REAL NOT NULL DEFAULT 0,    -- TrueSkill uncertainty; 0 = uninitialized
-  last_seen_unix INTEGER NOT NULL DEFAULT 0  -- last join/disconnect; drives idle takeover + pruning
+  last_seen_unix INTEGER NOT NULL DEFAULT 0, -- last join/disconnect; drives idle takeover + pruning
+  uuid           TEXT NOT NULL DEFAULT ''    -- stable per-career identity
 );
+CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> '';
 
 CREATE TABLE IF NOT EXISTS players_archive (
   username         TEXT NOT NULL,   -- same username can appear once per retirement
@@ -54,10 +56,16 @@ CREATE TABLE IF NOT EXISTS game_participants (
   elo           REAL NOT NULL,
   ts_mu         REAL NOT NULL,
   ts_sigma      REAL NOT NULL,
-  ended_unix_ms INTEGER NOT NULL
+  ended_unix_ms INTEGER NOT NULL,
+  tick_count    INTEGER NOT NULL DEFAULT 0 -- total ticks the game lasted
 );
 CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms);
 CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ended_unix_ms);
+
+-- game_participants_archive: identical columns to game_participants. Aged-out
+-- ledger rows (older than gameLedgerRetention, ~7 months) are moved here by
+-- archiveOldGameParticipants so the hot table stays bounded; kept for history,
+-- never queried by the server.
 
 CREATE TABLE IF NOT EXISTS player_ips (
   uuid            TEXT NOT NULL,
@@ -79,10 +87,11 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 
 - `pw_hash` is hex-encoded HMAC-SHA256 of the password with `secret` as key.
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
-- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo` is the player's ELO after that game; it's `omitempty` for backward compatibility, so records written before ELO tracking lack the field and parse as `0`. The viewer's ELO chart simply skips slots with `Elo == 0`. Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
+- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo`, `tsMu`, and `tsSigma` are the player's ratings after that game; all three are `omitempty` for backward compatibility, so records written before a given metric existed lack the field and parse as `0`. The viewer's TrueSkill chart skips slots with `TsMu == 0` (see [game-mechanics.md § Scoreboard](game-mechanics.md#scoreboard)). Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
 - `uuid` is the stable identity for persistence/audit rows. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username a new UUID.
-- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` at the time, and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
+- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
+- `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; kept for history, never read by the server.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
 
 ### GeoLite setup

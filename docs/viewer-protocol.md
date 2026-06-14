@@ -25,8 +25,8 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "scoreboardHasMore": false,
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
-  "boards":      [{"id": "<hex>", "players": 16, "alive": 9}],
-  "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ] }
+  "boards":      [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob", …]}],
+  "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ], "boardScoreboard": [ … ], "boardChartData": [ … ] }
 }
 ```
 
@@ -35,10 +35,10 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 ### `boards` — board list changed
 
 ```json
-{ "type": "boards", "boards": [{"id": "<hex>", "players": 16, "alive": 9}] }
+{ "type": "boards", "boards": [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob", …]}] }
 ```
 
-Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `players`/`alive` are a snapshot from when the message was built, not live counters.
+Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `players`/`alive`/`names` are a snapshot from when the message was built, not live counters. `names` is the full per-board username list (seat order), used for tab tooltips/labels.
 
 ### `game` — board snapshot (on subscribe)
 
@@ -49,11 +49,15 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
   "width":  8, "height": 8,
   "players": [
     {"id": 0, "name": "alice", "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
-  ]
+  ],
+  "boardScoreboard": [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
+  "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}}]
 }
 ```
 
 Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior board state in the viewer.
+
+`boardScoreboard` and `boardChartData` scope the leaderboard and TrueSkill chart to **this board's players only** (top-`defaultScoreboardLimit`, `ts` sort), so a viewer watching one board sees its participants ranked among themselves. Same entry/point shapes as the global `scoreboard` / `chartData` in `init`. Internal filler bots are excluded. These are per-board and ride along with the snapshot — distinct from the global `scoreboard`/`chartData` carried by `init` and `end`.
 
 ### `tick` — per-tick delta (subscribed board only)
 

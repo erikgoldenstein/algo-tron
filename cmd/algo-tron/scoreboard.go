@@ -152,12 +152,12 @@ func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {
 	s.viewState.ChartData = buildChartDataLocked(s.players, entries)
 }
 
-// buildChartDataLocked computes a 20-point elo history per scoreboard entry
-// by reading the elo snapshot saved on each ScoreHistory entry. Plotted by
-// viewer/render_chart.js. Score entries written before elo tracking existed
-// have Elo == 0; those points are omitted so the chart shows a partial
-// series rather than a misleading zero. Caller holds Server.mu (ScoreHistory
-// is player state).
+// buildChartDataLocked computes a 20-point TrueSkill history per scoreboard
+// entry by reading the {mu, sigma} snapshot saved on each ScoreHistory entry.
+// Plotted by viewer/render_chart.js. Score entries written before TrueSkill
+// tracking existed have TsMu == 0; those points are omitted so the chart shows
+// a partial series rather than a misleading zero. Caller holds Server.mu
+// (ScoreHistory is player state).
 func buildChartDataLocked(players map[string]*Player, entries []ScoreboardEntry) []map[string]any {
 	const chartPoints = 20
 	data := make([]map[string]any, chartPoints)

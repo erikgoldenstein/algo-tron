@@ -1,8 +1,8 @@
-// Canvas rendering for the game board. render_chart.js draws the ELO chart;
-// render_loop.js owns timers.
+// Canvas rendering for the game board. render_chart.js draws the TrueSkill
+// chart; render_loop.js owns timers.
 //
-// The board is one canvas; the ELO chart is another. Both are redrawn each
-// frame from current gameState — no incremental damage tracking.
+// The board is one canvas; the TrueSkill chart is another. Both are redrawn
+// each frame from current gameState — no incremental damage tracking.
 //
 // Depends on: helpers.js (contrastText), schemes.js (currentScheme,
 // SCHEMES, playerColor, canvasFont), gameState.js (gameState).

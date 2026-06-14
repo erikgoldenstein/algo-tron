@@ -19,10 +19,11 @@ All metric definitions and the call sites that update them live in `cmd/algo-tro
 | `tron_tcp_accept_errors_total`              | —           | Errors from the TCP `Accept` loop (retried with exponential backoff up to 1s).            |
 | `tron_tcp_panics_total`                     | —           | Panics recovered in per-connection bot handlers.                                          |
 | `tron_tcp_rejected_total`                   | `reason`    | Bots rejected pre-game. `reason` is one of: `proxy_protocol`, `max_connections`, `join_timeout`, `expected_join`, `invalid_join`, `wrong_password`, `reconnect_penalty`. |
-| `tron_db_errors_total`                      | `op`        | SQLite errors. `op` ∈ `load`, `load_row`, `store_begin`, `store_prepare`, `store_row`, `store_commit`. |
+| `tron_db_errors_total`                      | `op`        | SQLite errors, labeled by the failing operation. Groups: player table (`load`, `load_row`, `store_begin`, `store_prepare`, `store_row`, `store_commit`), game ledger (`game_rows_begin`, `game_rows_prepare`, `game_rows_commit`, `game_participant`, `ledger_archive`), plus `player_ip`, `scoreboard_period`, `scoreboard_period_row`, `archive`, `prune`, `disconnect_stats`. Grep `metricDBErrors.WithLabelValues` for the authoritative set. |
 | `tron_chat_rate_limited_total`              | —           | Chat packets refused by the per-tick rate limit.                                          |
 | `tron_player_disconnect_mid_game_total`     | —           | Players killed mid-game because their TCP connection went away.                           |
 | `tron_bots_kicked_total`                    | —           | Bot connections dropped because their per-bot send buffer (`botSinkBuf` packets) overflowed — the bot stopped reading or its link stalled. The bot-side analog of `tron_viewers_kicked_total`. |
+| `tron_player_deaths_total`                  | `reason`, `tps_bucket` | Player deaths by cause (`collision`, `head_on`, `disconnect`, `bot_removed`) and the board's ticks-per-second bucket at death (`1-5`, `5-7`, `7-10`, `10+`). The disconnect ratio per bucket = `rate(deaths{reason="disconnect",tps_bucket=b}) / rate(deaths{tps_bucket=b})`. |
 
 ## Histograms
 
@@ -55,6 +56,16 @@ These are `GaugeFunc`s that take `s.mu` briefly when Prometheus scrapes, so they
 | `tron_players_queued`     | Connected bots waiting in the matchmaking queue.          |
 | `tron_tick_rate`          | Ticks per second of the fastest running board.            |
 
+## Windowed gauges (disconnect distribution)
+
+Recomputed once a minute (and at boot) by `updateDisconnectStats`, which queries the `game_participants` ledger off-lock over trailing windows. They answer "is a rash of disconnect deaths one bad client or a server-wide problem?" — a high `top_user_share` with few users points at a single bad link; a low share spread across many users points at the server.
+
+| Name                                       | Labels   | Meaning                                                                         |
+|--------------------------------------------|----------|---------------------------------------------------------------------------------|
+| `tron_disconnect_deaths_windowed`          | `window` | Disconnect deaths in the trailing window. `window` ∈ `15m`, `1h`, `2h`.         |
+| `tron_disconnect_death_users`              | `window` | Distinct users with ≥1 disconnect death in the window.                          |
+| `tron_disconnect_death_top_user_share`     | `window` | Share of the window's disconnect deaths from the single most-affected user (`1` = one user's problem, →`0` = spread across many = likely server-side). |
+
 ## Alerting suggestions
 
 - `rate(tron_viewers_kicked_total[5m]) > 0` — viewers are overloaded.
@@ -63,3 +74,4 @@ These are `GaugeFunc`s that take `s.mu` briefly when Prometheus scrapes, so they
 - `histogram_quantile(0.99, sum(rate(tron_tick_budget_used_ratio_bucket[5m])) by (le)) >= 1.0` — server is missing tick deadlines at p99.
 - `increase(tron_tcp_panics_total[1h]) > 0` — bug; check stderr (e.g. `journalctl -u algo-tron`).
 - `rate(tron_db_errors_total[5m]) > 0` — SQLite or disk problem.
+- `tron_disconnect_deaths_windowed{window="1h"} > N and tron_disconnect_death_top_user_share{window="1h"} < 0.5` — a rash of disconnect deaths spread across many users (low top-user share) points at the server rather than one bad client; tune `N` to your traffic.

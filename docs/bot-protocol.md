@@ -95,7 +95,7 @@ A **contiguous run** of dropped packets costs **one strike**, no matter how long
 
 Strikes are forgiven after `rateLimitStrikeExpiry` (1 minute) without a new one — strikes only matter when denial runs keep happening.
 
-When a connection is closed for hitting the strike cap, the account's **reconnect penalty** doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives across reconnects — it only stops growing when the bot stops getting kicked.
+When a connection is closed for hitting the strike cap, the account's **reconnect penalty** doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives across reconnects, but it is **not** permanent: it decays with good behavior. Before each doubling, the saved-up penalty is reduced by `(time since the last ban window ended) / reconnectPenaltyRedemption` (`reconnectPenaltyRedemption = 5`), and once `reconnectPenaltyRedemption ×` the previous ban length has elapsed clean the penalty is fully forgiven — the next ban starts again at `reconnectPenaltyBase`. So the penalty only grows while the bot keeps getting kicked; behave for long enough and it resets.
 
 Sequence example:
 

@@ -27,6 +27,8 @@ Options:
 - `-public-view`: public viewer endpoint shown in the viewer UI.
 - `-public-view-scheme`: `http` or `https`, only affects what the viewer UI displays.
 - `-data-dir`: directory holding the SQLite player database and HMAC secret. Defaults to a temp directory; set this for persistence.
+- `-geo-dir`: directory holding the GeoLite2 `.mmdb` files (default `geo`). Read-only enrichment, kept separate from `-data-dir`. See [persistence.md](persistence.md#geolite-setup).
+- `-setup-geo`: download the GeoLite2 databases into `-geo-dir` and exit (one-off setup; normal startup never downloads). See [persistence.md](persistence.md#geolite-setup).
 - `-schedule-url`: URL for an optional talk schedule JSON shown in the viewer (only used at chaos events). Omit to hide the schedule panel.
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
 - `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.

@@ -1,6 +1,6 @@
 # Matchmaking
 
-`cmd/algo-tron/matchmaker.go`. Constants live in `types.go`; source of truth.
+`cmd/algo-tron/matchmaker.go`. Constants live in `matchmaker_config.go`; source of truth.
 
 Several boards run in parallel. The matchmaker's job is to decide *when* to
 start boards and *who* plays on which one. It runs once per second under the
@@ -21,6 +21,13 @@ Players enter the queue:
 
 Re-queue-on-death is what keeps waits short: a bot that dies in the first
 seconds of a 100-second game doesn't idle until that game ends.
+
+When fewer than `minBoardSize` real bots are connected, `matchmakeLocked`
+first calls `ensureFillerBotsLocked` to pad the queue with the internal
+filler bots (`alice`/`bob`) so a near-empty server still produces a real
+game; surplus fillers are pulled back out as real players arrive. Fillers are
+excluded from ratings and leaderboards — see
+[game-mechanics.md § Filler bots](game-mechanics.md#filler-bots).
 
 ## Hard constraints
 
