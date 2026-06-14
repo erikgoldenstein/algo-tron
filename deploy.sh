@@ -14,7 +14,12 @@
 #   curl -fsSL https://raw.githubusercontent.com/erikgoldenstein/algo-tron/main/deploy.sh | sudo bash
 #
 # Flags (anything omitted is asked for interactively):
-#   --domain --cloudflare-token --tcp-port --view-port --repo --ref
+#   --domain --cloudflare-token --tcp-port --view-port --repo --ref --no-firewall
+#
+# By default a host firewall (firewalld on Rocky/RHEL, ufw on Debian/Ubuntu) is
+# installed and enabled, allowing only SSH and the public app ports — meant for
+# a single directly-exposed host with nothing in front of it. Pass --no-firewall
+# if an external/cloud firewall already guards the box.
 #
 # Security model: nginx and certbot run as root; the Cloudflare token lives only
 # in /root/.secrets/cloudflare.ini (root-only, 600). The game binary runs as the
@@ -35,6 +40,7 @@ TCP_PORT="4000"         # public raw-TCP game port (nginx listens here)
 VIEW_PORT="443"         # public HTTPS viewer port (nginx terminates TLS)
 TCP_LOCAL_PORT="4001"   # localhost game port the app binds; nginx forwards to it
 VIEW_LOCAL_PORT="3000"  # localhost viewer port the app binds; nginx forwards to it
+SETUP_FIREWALL=1        # install+enable a host firewall (0 / --no-firewall to skip)
 
 APP_USER="tron"
 APP_HOME="/opt/algo-tron"
@@ -80,6 +86,7 @@ parse_args() {
       --view-port)        VIEW_PORT="$2"; shift 2 ;;
       --repo)             REPO_SLUG="$2"; shift 2 ;;
       --ref)              REPO_REF="$2"; shift 2 ;;
+      --no-firewall)      SETUP_FIREWALL=0; shift ;;
       -h|--help)          grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) err "unknown argument: $1 (try --help)" ;;
     esac
@@ -276,16 +283,32 @@ EOF
   systemctl restart algo-tron
 }
 
-# Open the public ports, but only in whichever firewall is already active.
-open_firewall() {
-  local ports="80 $VIEW_PORT $TCP_PORT" p
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-    log "Opening firewall ports in ufw"
-    for p in $ports; do ufw allow "$p/tcp" >/dev/null || true; done
-  elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-    log "Opening firewall ports in firewalld"
-    for p in $ports; do firewall-cmd --permanent --add-port="$p/tcp" >/dev/null || true; done
-    firewall-cmd --reload >/dev/null || true
+# Install and enable a host firewall that allows only SSH and the public app
+# ports. Default on, for a single directly-exposed host; skip with --no-firewall.
+setup_firewall() {
+  if [ "$SETUP_FIREWALL" != 1 ]; then
+    log "Skipping host firewall (--no-firewall)"
+    return 0
+  fi
+
+  # Detect the SSH port(s) actually in use so enabling the firewall can't lock
+  # us out — covers non-standard ports. Falls back to 22.
+  local ssh_ports app_ports p
+  ssh_ports="$(sshd -T 2>/dev/null | awk '/^port /{print $2}')"
+  [ -n "$ssh_ports" ] || ssh_ports=22
+  app_ports="80 $VIEW_PORT $TCP_PORT"
+
+  if [ "$PKG" = apt ]; then
+    log "Configuring host firewall (ufw)"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw >/dev/null
+    for p in $ssh_ports $app_ports; do ufw allow "$p/tcp" >/dev/null; done
+    ufw --force enable >/dev/null
+  else
+    log "Configuring host firewall (firewalld)"
+    dnf install -y -q firewalld >/dev/null
+    systemctl enable --now firewalld >/dev/null 2>&1
+    for p in $ssh_ports $app_ports; do firewall-cmd --permanent --add-port="$p/tcp" >/dev/null; done
+    firewall-cmd --reload >/dev/null
   fi
 }
 
@@ -309,7 +332,7 @@ main() {
   issue_cert
   configure_nginx
   install_service
-  open_firewall
+  setup_firewall
   summary
 }
 
