@@ -268,7 +268,7 @@ func TestE2ESystemChatRendersAsSmallNotice(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	s.mu.Lock()
-	s.addSystemChatLocked("", 0, "carol won on board1.")
+	s.addSystemChatLocked("", 0, "carol won on board-1.")
 	s.mu.Unlock()
 
 	var (
@@ -284,7 +284,7 @@ func TestE2ESystemChatRendersAsSmallNotice(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if text != "carol won on board1." {
+	if text != "carol won on board-1." {
 		t.Errorf("system chat body = %q, want the winner notice", text)
 	}
 	if fontSize != "11px" {

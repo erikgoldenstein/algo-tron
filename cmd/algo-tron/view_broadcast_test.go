@@ -44,7 +44,7 @@ func TestSystemChatBroadcast(t *testing.T) {
 	waitViewerRegistered(t, s, 1)
 
 	s.mu.Lock()
-	s.addSystemChatLocked("g1", 2, "alice won on board2.")
+	s.addSystemChatLocked("g1", 2, "alice won on board-2.")
 	s.mu.Unlock()
 
 	var m chatMsg
@@ -54,7 +54,7 @@ func TestSystemChatBroadcast(t *testing.T) {
 	if !m.System || m.Username != "system" {
 		t.Errorf("system chat = system=%v user=%q, want system=true user=system", m.System, m.Username)
 	}
-	if m.BoardIndex != 2 || m.Message != "alice won on board2." {
+	if m.BoardIndex != 2 || m.Message != "alice won on board-2." {
 		t.Errorf("system chat board=%d msg=%q, unexpected", m.BoardIndex, m.Message)
 	}
 }

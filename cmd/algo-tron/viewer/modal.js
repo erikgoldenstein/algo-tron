@@ -187,6 +187,8 @@ document.addEventListener('keydown', (e) => {
   // Don't steal shortcuts while the user is typing in a field.
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  // Leave modifier combos (Ctrl+C copy, Cmd+C, etc.) to the browser.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   switch (e.key) {
     case '?':
       e.preventDefault();
@@ -220,8 +222,13 @@ document.addEventListener('keydown', (e) => {
       return;
     case 'f': {
       e.preventDefault();
-      const leader = gameState.scoreboard[0]?.username;
-      if (leader) { setFollowName(leader); updateDom(); }
+      if (gameState.followName) {
+        setFollowName('');
+      } else {
+        const leader = gameState.scoreboard[0]?.username;
+        if (leader) setFollowName(leader);
+      }
+      updateDom();
       return;
     }
     case 'j':

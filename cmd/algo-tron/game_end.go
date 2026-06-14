@@ -100,9 +100,9 @@ func (s *Server) boardIndexLocked(g *Game) int {
 
 func winnerChatText(names []string, boardIndex int) string {
 	if len(names) == 0 {
-		return "nobody won on board" + strconv.Itoa(boardIndex) + "."
+		return "nobody won on board-" + strconv.Itoa(boardIndex) + "."
 	}
-	return strings.Join(names, ", ") + " won on board" + strconv.Itoa(boardIndex) + "."
+	return strings.Join(names, ", ") + " won on board-" + strconv.Itoa(boardIndex) + "."
 }
 
 func (s *Server) removeGameLocked(g *Game) {

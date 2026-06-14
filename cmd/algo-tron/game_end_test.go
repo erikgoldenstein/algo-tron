@@ -128,9 +128,9 @@ func TestWinnerChatText(t *testing.T) {
 		board int
 		want  string
 	}{
-		{nil, 2, "nobody won on board2."},
-		{[]string{"alice"}, 1, "alice won on board1."},
-		{[]string{"alice", "bob"}, 3, "alice, bob won on board3."},
+		{nil, 2, "nobody won on board-2."},
+		{[]string{"alice"}, 1, "alice won on board-1."},
+		{[]string{"alice", "bob"}, 3, "alice, bob won on board-3."},
 	}
 	for _, c := range cases {
 		if got := winnerChatText(c.names, c.board); got != c.want {
