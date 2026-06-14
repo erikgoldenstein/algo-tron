@@ -60,8 +60,10 @@ function renderChart() {
         if (v) ctx.lineTo(x(i), y(v.mu + v.sigma));
       }
       ctx.closePath();
-      ctx.fillStyle = color + '14';
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = color;
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
     ctx.lineWidth = 1.25;
