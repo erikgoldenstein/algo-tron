@@ -59,6 +59,8 @@ type Server struct {
 	geo           *geoLookup
 	scheduleURL   string
 	publicViewURL string // absolute base URL of the viewer, for og:image etc.
+	communityURL  string
+	communityName string
 	fillerBots    bool
 	tickDurNs     atomic.Int64 // last tick build+broadcast duration, for stats log
 	fanoutDurNs   atomic.Int64 // last viewer fanout duration, for stats log
@@ -131,4 +133,10 @@ type tickResult struct {
 	deathIDs  []int    // their wire ids
 	positions [][3]int // alive {id,x,y} snapshot for the viewer delta
 	alive     []*Seat  // winners; only set when done
+}
+
+// communityInfo holds optional community display info for the viewer.
+type communityInfo struct {
+	Name string
+	URL  string
 }

@@ -38,6 +38,8 @@ func run() error {
 	geoDir := flag.String("geo-dir", "geo", "directory for GeoLite2 .mmdb files; env GEO_DATABASE_URL/GEO_ASN_DATABASE_URL/MAXMIND_LICENSE_KEY can populate it")
 	setupGeoOnly := flag.Bool("setup-geo", false, "download GeoLite2 databases into -geo-dir and exit")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
+	communityName := flag.String("community-name", "discord", "display name for community link")
+	communityURL := flag.String("community-url", "https://discord.gg/EYTuZ7M5", "URL for community link")
 	flag.Parse()
 	if *viewMetricsAuth == "" {
 		*viewMetricsAuth = os.Getenv("ALGO_TRON_VIEW_METRICS_AUTH")
@@ -78,6 +80,8 @@ func run() error {
 		geo:           geo,
 		scheduleURL:   *scheduleURL,
 		publicViewURL: *publicViewScheme + "://" + *publicView,
+		communityURL:  *communityURL,
+		communityName: *communityName,
 		fillerBots:    true,
 		storeSignal:   make(chan struct{}, 1),
 	}
