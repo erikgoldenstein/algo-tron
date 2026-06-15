@@ -72,10 +72,9 @@ function updateDom() {
   }
 }
 
+// Chat is purely client-side state: it stays put across round and board
+// changes, capped only by message count (see applyChat's 100-cap).
 function visibleChats() {
-  if (gameState.scoreboardScope === 'board' && gameState.game?.id) {
-    return gameState.chatLog.filter((m) => m.system || !m.gameId || m.gameId === gameState.game.id).slice(-30);
-  }
   return gameState.chatLog.slice(-30);
 }
 
