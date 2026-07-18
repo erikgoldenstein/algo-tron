@@ -13,7 +13,7 @@ const roomSize = floorSize + wallSize;
 
 function line(ctx, radius, color, from, to) {
   ctx.strokeStyle = color;
-  ctx.lineWidth = radius * 2;
+  ctx.lineWidth = (radius * 2) +1;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
