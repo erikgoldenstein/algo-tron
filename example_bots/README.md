@@ -83,3 +83,9 @@ respect the topology, model your opponents, and stay inside the tick budget.
   cell, who reaches it first, and maximise your own share.
 - Plug in a minimax search over the next few enemy moves rather than the
   symmetric BFS frontier above.
+
+## Hosting
+
+Want to keep your bot running after you close your laptop? See
+[`hosting.md`](hosting.md) for self-hosting, free, and low-cost deployment
+options and their tradeoffs.
