@@ -17,7 +17,7 @@ this page documents how `algo-tron` implements it and the small divergences.
     |                                            |
     | ─── TCP connect ──────────────────────────►|
     |                                            |
-    |◄──── motd|<message>                        |
+    |◄──── motd|<message>                        | at least once
     |                                            |
     |  (≤ 5s join window — joinTimeout)          |
     | ──── join|<username>|<password> ──────────►|
@@ -52,7 +52,7 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 
 | Packet           | Args                          | When                                                            |
 |------------------|-------------------------------|-----------------------------------------------------------------|
-| `motd`           | `text`                        | Once, immediately after connect.                                |
+| `motd`           | `text`                        | Sequence of packages (at least one), immediately after connect. |
 | `error`          | `CODE`                        | See [error-codes.md](error-codes.md).                           |
 | `game`           | `width\|height\|your_id`      | Once per game, sent to each bot individually with its own ID.   |
 | `player`         | `id\|name`                    | Once per alive player at game start.                            |
