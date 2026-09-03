@@ -24,24 +24,30 @@ SQLite, schema created on first open:
 
 ```sql
 CREATE TABLE IF NOT EXISTS players (
-  username      TEXT PRIMARY KEY,
+  username      TEXT NOT NULL,
+  version       TEXT NOT NULL DEFAULT 'v1',
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
   score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float, tsMu?: float, tsSigma?: float}, …]
   ts_mu          REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
   ts_sigma       REAL NOT NULL DEFAULT 0,    -- TrueSkill uncertainty; 0 = uninitialized
+  first_seen_unix INTEGER NOT NULL DEFAULT 0, -- first join for this career/UUID
   last_seen_unix INTEGER NOT NULL DEFAULT 0, -- last join/disconnect; drives idle takeover + pruning
-  uuid           TEXT NOT NULL DEFAULT ''    -- stable per-career identity
+  uuid           TEXT NOT NULL DEFAULT '',   -- stable per-career identity
+  PRIMARY KEY (username, version)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> '';
 
 CREATE TABLE IF NOT EXISTS players_archive (
+  uuid             TEXT NOT NULL DEFAULT '',
   username         TEXT NOT NULL,   -- same username can appear once per retirement
+  version          TEXT NOT NULL DEFAULT 'v1',
   pw_hash          TEXT NOT NULL,
   elo              REAL NOT NULL,
   score_history    TEXT NOT NULL,
   ts_mu            REAL NOT NULL,
   ts_sigma         REAL NOT NULL,
+  first_seen_unix  INTEGER NOT NULL,
   last_seen_unix   INTEGER NOT NULL,
   archived_at_unix INTEGER NOT NULL
 );
@@ -51,6 +57,7 @@ CREATE TABLE IF NOT EXISTS game_participants (
   board_index   INTEGER NOT NULL,
   uuid          TEXT NOT NULL,
   username      TEXT NOT NULL, -- display name at game end
+  version       TEXT NOT NULL DEFAULT 'v1',
   won           INTEGER NOT NULL, -- 1 for winners, 0 otherwise; winners derive from this
   death_reason  TEXT NOT NULL,
   elo           REAL NOT NULL,
@@ -89,8 +96,9 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
 - `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo`, `tsMu`, and `tsSigma` are the player's ratings after that game; all three are `omitempty` for backward compatibility, so records written before a given metric existed lack the field and parse as `0`. The viewer's TrueSkill chart skips slots with `TsMu == 0` (see [game-mechanics.md § Scoreboard](game-mechanics.md#scoreboard)). Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
-- `uuid` is the stable identity for persistence/audit rows. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username a new UUID.
-- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
+- `uuid` is the stable identity for persistence/audit rows. `first_seen_unix` records when that career/UUID was first created; `last_seen_unix` records the most recent join or disconnect. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username/version a new UUID and first-seen timestamp. Existing databases without first-seen data are backfilled from their last-seen timestamp, the earliest timestamp available.
+- `version` distinguishes independent careers under one username; omitted/legacy values are `v1`. The composite `(username, version)` key allows multiple versions to be online concurrently.
+- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
 - `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; kept for history, never read by the server.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
 
@@ -108,12 +116,12 @@ Run `algo-tron -setup-geo -geo-dir geo` to ensure `GeoLite2-City.mmdb` and `GeoL
 ### Read/write cadence
 
 - At boot, `pruneIdleAccounts` first moves accounts idle for more than `accountPruneAfter` (180 days) into `players_archive` and deletes them from `players` — one transaction, so a career is never lost mid-move. Then `s.load()` reads the remaining live rows.
-- `players_archive` is the soft-delete side of account recycling: an **idle takeover** (a join with a new password after `accountPasswordResetAfter`, 30 days) snapshots the old career into the archive and resets the live row's stats for the new owner. The server never reads the archive; it exists so history survives on disk (`sqlite3 players.db "SELECT * FROM players_archive"`).
+- `players_archive` is the soft-delete side of account recycling: an **idle takeover** (a join with a new password after `accountPasswordResetAfter`, 30 days) snapshots the old career, including UUID and first-seen timestamp, into the archive and resets the live row's stats for the new owner. The server never reads the archive; it exists so history survives on disk (`sqlite3 players.db "SELECT * FROM players_archive"`).
 - Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the **dirty players** (those whose ratings/history/account changed since the last store — see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
 - On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** players, not just dirty ones, so a missed dirty mark costs freshness, never data.
 - One accepted staleness: `trimScores` rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty, so an inactive player's DB row keeps expired score entries until their next game (or shutdown). Harmless — the trim re-applies in memory after every load. Don't "fix" it by marking everyone dirty per rebuild; that reintroduces the full-table write this design removes.
 
-DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server keeps running. There is no migration system — the schema only ever gets new columns by direct ALTER (TrueSkill is the first such case; `ts_mu` / `ts_sigma` are added via `ALTER TABLE players ADD COLUMN … DEFAULT 0` on every `openDB` and the duplicate-column error is intentionally swallowed).
+DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server keeps running. Schema additions use idempotent `ALTER TABLE` statements on open; the pre-version `players` table is rebuilt once to change its primary key to `(username, version)`. Existing first-seen values are preserved, while legacy rows without them use their last-seen timestamp as a fallback.
 
 ## Logs
 

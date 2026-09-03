@@ -1,7 +1,7 @@
 // Render timers and layout-driven scoreboard name reflow.
 //
 // Depends on: render.js (render), render_chart.js (renderChart), helpers.js
-// (displayName, getSwitch, fitChars), dom.js (scoreNameChars).
+// (displayName, getSwitch, fitChars), dom.js (scoreNameChars, renderScoreName).
 
 setInterval(() => { render(); renderChart(); }, 1000 / 30);
 
@@ -10,7 +10,7 @@ setInterval(() => { render(); renderChart(); }, 1000 / 30);
 setInterval(() => {
   if (!getSwitch('scrollNames')) return;
   document.querySelectorAll('#scoreboard .namestr').forEach((el) => {
-    el.textContent = displayName(el.dataset.name, scoreNameChars);
+    renderScoreName(el);
   });
 }, 250);
 
@@ -25,6 +25,6 @@ window.addEventListener('resize', () => {
   if (cap === scoreNameChars) return;
   scoreNameChars = cap;
   scoreboardEl.querySelectorAll('.namestr').forEach((el) => {
-    el.textContent = displayName(el.dataset.name, scoreNameChars);
+    renderScoreName(el);
   });
 });

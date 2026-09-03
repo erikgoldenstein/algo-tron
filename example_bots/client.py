@@ -8,7 +8,9 @@ The full protocol lives in ../docs/bot-protocol.md, but the short version is:
   * Example incoming line:    pos|3|5|7\n        ("player 3 is at (5,7)")
   * Example outgoing line:    move|left\n         ("I want to move left")
 
-That's it. There is no JSON, no handshake, no length prefixes.
+That's it. There is no JSON, no handshake, no length prefixes. The optional
+fourth join field is a bot version; omitting it means `v1`. The client sends
+the optional attribute form `|version <value>`.
 
 This file gives you two things:
 
@@ -48,11 +50,12 @@ class Client:
     whatever direction you return back to the server.
     """
 
-    def __init__(self, host: str, port: int, username: str, password: str):
+    def __init__(self, host: str, port: int, username: str, password: str, version: str | None = None):
         self.host = host
         self.port = port
         self.username = username
         self.password = password
+        self.version = version
 
         self.sock: socket.socket | None = None
         self.buf = b""
@@ -113,7 +116,10 @@ class Client:
         self.alive.clear()
         self.trails.clear()
 
-        self._send("join", self.username, self.password)
+        join = ["join", self.username, self.password]
+        if self.version:
+            join.append("version " + self.version)
+        self._send(*join)
 
     def _reconnect(self) -> None:
         while True:

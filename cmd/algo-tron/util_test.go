@@ -61,6 +61,49 @@ func TestValidateJoin(t *testing.T) {
 	}
 }
 
+func TestValidateVersion(t *testing.T) {
+	cases := []struct {
+		name, version, wantErr string
+	}{
+		{"omitted", "", ""},
+		{"valid", "v8", ""},
+		{"valid punctuation", "r-2.0_rc", ""},
+		{"space", "v 2", "ERROR_VERSION_INVALID"},
+		{"pipe", "v|2", "ERROR_VERSION_INVALID"},
+		{"too long", strings.Repeat("v", 9), "ERROR_VERSION_INVALID"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := validateVersion(c.version); got != c.wantErr {
+				t.Errorf("validateVersion(%q) = %q, want %q", c.version, got, c.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseJoinAttributes(t *testing.T) {
+	cases := []struct {
+		fields               []string
+		wantVersion, wantErr string
+	}{
+		{nil, "v1", ""},
+		{[]string{"version abcdefgh"}, "abcdefgh", ""},
+		{[]string{"other value", "version v2"}, "v2", ""},
+		{[]string{"v2"}, "v2", ""}, // legacy bare fourth field remains accepted
+		{[]string{"version abcdefghi"}, "", "ERROR_VERSION_INVALID"},
+		{[]string{"version v 2"}, "", "ERROR_VERSION_INVALID"},
+		{[]string{"version v1", "version v2"}, "", "ERROR_VERSION_INVALID"},
+	}
+	for _, c := range cases {
+		t.Run(strings.Join(c.fields, "|"), func(t *testing.T) {
+			gotVersion, gotErr := parseJoinAttributes(c.fields)
+			if gotVersion != c.wantVersion || gotErr != c.wantErr {
+				t.Errorf("parseJoinAttributes(%q) = (%q, %q), want (%q, %q)", c.fields, gotVersion, gotErr, c.wantVersion, c.wantErr)
+			}
+		})
+	}
+}
+
 func TestHostOnly(t *testing.T) {
 	cases := []struct{ input, want string }{
 		{"example.com:443", "example.com"},

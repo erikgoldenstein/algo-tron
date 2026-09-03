@@ -23,7 +23,7 @@ func (s *Server) boardListLocked() []boardMsg {
 		g.mu.Lock()
 		names := make([]string, 0, len(g.seats))
 		for _, st := range g.seats {
-			names = append(names, st.player.Username)
+			names = append(names, s.displayNameLocked(st.player))
 		}
 		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
 		g.mu.Unlock()
@@ -36,23 +36,23 @@ func (s *Server) boardListLocked() []boardMsg {
 // deltas update from there. This is the only message that scales with trail
 // length. Caller holds Server.mu; the board state is read under g.mu.
 func buildGameMsgLocked(g *Game) *gameMsg {
+	s := g.server
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	m := &gameMsg{ID: g.id, Width: g.width, Height: g.height}
 	players := make([]*Player, 0, len(g.seats))
-	byName := make(map[string]*Player, len(g.seats))
 	for _, st := range g.seats {
 		if !st.player.InternalBot {
 			players = append(players, st.player)
-			byName[st.player.Username] = st.player
 		}
 		m.Players = append(m.Players, playerMsg{
-			ID: st.id, Name: st.player.Username, Pos: st.pos,
+			ID: st.id, Name: s.displayNameLocked(st.player), Version: versionOf(st.player), Pos: st.pos,
 			Moves: append([]Vec2(nil), st.trail...),
 			Alive: st.alive, Chat: st.player.Chat,
 		})
 	}
 	m.BoardScoreboard = buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
-	m.BoardChartData = buildChartDataLocked(byName, m.BoardScoreboard)
+	s.annotateVersionTagsLocked(m.BoardScoreboard)
+	m.BoardChartData = buildChartDataLocked(s.players, m.BoardScoreboard)
 	return m
 }

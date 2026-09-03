@@ -21,11 +21,11 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "type": "init",
   "serverInfo":  [{"host": "tron.erik.gdn", "port": 4000}],
   "viewInfo":    [{"host": "tron.erik.gdn", "port": 443, "scheme": "https"}],
-  "scoreboard":  [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
+  "scoreboard":  [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "scoreboardHasMore": false,
-  "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}}],
+  "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
-  "boards":      [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob", …]}],
+  "boards":      [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ], "boardScoreboard": [ … ], "boardChartData": [ … ] }
 }
 ```
@@ -35,10 +35,10 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 ### `boards` — board list changed
 
 ```json
-{ "type": "boards", "boards": [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob", …]}] }
+{ "type": "boards", "boards": [{"id": "<hex>", "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}] }
 ```
 
-Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `players`/`alive`/`names` are a snapshot from when the message was built, not live counters. `names` is the full per-board username list (seat order), used for tab tooltips/labels.
+Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `players`/`alive`/`names` are a snapshot from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
 
 ### `game` — board snapshot (on subscribe)
 
@@ -48,10 +48,10 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
   "id":     "<hex>",
   "width":  8, "height": 8,
   "players": [
-    {"id": 0, "name": "alice", "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
+    {"id": 0, "name": "alice", "version": "v1", "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
   ],
-  "boardScoreboard": [{"username":"…","winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
-  "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}}]
+  "boardScoreboard": [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
+  "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}]
 }
 ```
 
@@ -111,9 +111,9 @@ Leaderboards only contain accounts with a password (`pw_hash != ''`). Internal f
 
 `chat` messages are viewer-only chat/system events: `{type:"chat", gameId, boardIndex, username, message, time, system}`. The old per-tick `chats` map still drives board chat bubbles.
 
-Player UUIDs stay backend-only and never reach the viewer; entries are keyed by `username`. In the daily/monthly pages a username that has been reclaimed since (idle takeover) can appear more than once — the retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, … The live `online`/`all` boards build from one career per username and never set it.
+Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username` and optional `version`; `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. In the daily/monthly pages a username/version career that has been reclaimed since (idle takeover) can appear more than once — retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, …
 
-`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
+`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 
 Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [game-mechanics.md § TrueSkill](game-mechanics.md#trueskill) for the update.
 

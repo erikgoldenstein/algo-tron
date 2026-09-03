@@ -11,10 +11,11 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | `ERROR_PROXY_PROTOCOL`     | `-proxy-protocol` enabled and the first line wasn't a valid PROXY v1 header. *algo-tron-specific.*    |
 | `ERROR_MAX_CONNECTIONS`    | Same source IP already has `maxConnections` (=5) live connections. Localhost is exempt.                |
 | `ERROR_JOIN_TIMEOUT`       | No line received within `joinTimeout` (5s) of connect.                                                |
-| `ERROR_EXPECTED_JOIN`      | First line wasn't a `join` packet or had ≠ 3 fields.                                                  |
+| `ERROR_EXPECTED_JOIN`      | First line wasn't a `join` packet, had fewer than 3 fields, or had a malformed optional attribute.    |
 | `ERROR_USERNAME_TOO_SHORT` | Empty username.                                                                                       |
 | `ERROR_USERNAME_TOO_LONG`  | Username > 32 chars.                                                                                  |
 | `ERROR_USERNAME_INVALID_SYMBOLS` | Username doesn't match `^[a-zA-Z0-9 _\-\.!?,:#]+$`.                                              |
+| `ERROR_VERSION_INVALID`     | Explicit version contains characters outside `[a-zA-Z0-9._-]` or is longer than 8 bytes.              |
 | `ERROR_PASSWORD_TOO_SHORT` | Empty password.                                                                                       |
 | `ERROR_PASSWORD_TOO_LONG`  | Password > 128 chars.                                                                                 |
 | `ERROR_NO_PERMISSION`      | Username matches `^bot\d*$` (`bot`, `bot1`, …) or is a reserved filler-bot name (`alice`/`bob`) and connection isn't from `127.0.0.1` / `::1`. |
