@@ -2,7 +2,7 @@
 // it is intentionally separate from the live WebSocket/render loop.
 //
 // Depends on: gameState.js, helpers.js (esc), schemes.js (playerColor),
-// ws.js (requestScoreboard). Provides: setScoreboardModalView,
+// modal.js (fetchScoreboardPage). Provides: setScoreboardModalView,
 // updateScorePlotUsers.
 
 let scorePlotView = 'scoreboard';
@@ -42,7 +42,8 @@ function setScoreboardModalView(view) {
   }
   if (scorePlotView === 'scoreplot') {
     updateScorePlotUsers();
-    requestScoreboard({ period: 'all', sort: 'ts', search: '', offset: 0, limit: 50 });
+    fetchScoreboardPage({ period: 'all', sort: 'ts', search: '', offset: 0, limit: 50 })
+      .then(() => updateScorePlotUsers());
     validateScorePlotRange();
     renderScorePlot();
   } else {
@@ -357,7 +358,8 @@ function initScorePlot() {
   input?.addEventListener('input', () => {
     renderScorePlotUserOptions(true);
     clearTimeout(scorePlotSearchTimer);
-    scorePlotSearchTimer = setTimeout(() => requestScoreboard({ period: 'all', sort: 'ts', search: input.value, offset: 0, limit: 50 }), 150);
+    scorePlotSearchTimer = setTimeout(() => fetchScoreboardPage({ period: 'all', sort: 'ts', search: input.value, offset: 0, limit: 50 })
+      .then(() => updateScorePlotUsers()), 150);
   });
   options?.addEventListener('click', (event) => {
     const button = event.target.closest?.('[data-scoreplot-user]');

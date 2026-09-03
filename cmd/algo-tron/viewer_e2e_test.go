@@ -128,6 +128,31 @@ func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 	}
 }
 
+func TestE2EColdScoreboardRequestRendersFirstResponse(t *testing.T) {
+	url, s := e2eViewer(t)
+	now := time.Now().UnixMilli()
+	if _, err := s.db.Exec(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
+		VALUES ('cold-scoreboard', 1, 'u-alice', 'alice', 1, '', 1000, 300, 20, ?)`, now); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	ctx := browser(t)
+
+	var found bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#scoreboard-title`),
+		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Click(`#scoreboard-period .app-select-btn`),
+		chromedp.Click(`#scoreboard-period .app-select-list button[data-value="daily"]`),
+		chromedp.Poll(`document.querySelector('#scoreboard-modal-rows td.name')?.textContent.includes('alice')`, &found),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Error("cold-cache scoreboard response was not rendered on the first request")
+	}
+}
+
 func TestE2ESchemePickerListsAllSchemes(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)
