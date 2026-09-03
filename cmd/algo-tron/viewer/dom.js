@@ -15,7 +15,7 @@ let scoreNameChars = 0;
 // updateDom before the rows render.
 let tsSigmaChars = 0;
 
-function updateDom({ scoreboard = true } = {}) {
+function updateDom({ scoreboard = true, renderModal = true } = {}) {
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
 
@@ -38,7 +38,7 @@ function updateDom({ scoreboard = true } = {}) {
   updateScoreboardTools();
 
   if (scoreboard) {
-    renderScoreboardDom();
+    renderScoreboardDom({ renderModal });
     if (typeof updateScorePlotUsers === 'function') updateScorePlotUsers();
   }
 
@@ -49,7 +49,7 @@ function updateDom({ scoreboard = true } = {}) {
     : '<div class="chat-empty">no messages yet</div>';
 }
 
-function renderScoreboardDom() {
+function renderScoreboardDom({ renderModal = true } = {}) {
   hideScoreHover();
   const scoreboardEl = document.getElementById('scoreboard');
   const scores = currentScoreboard();
@@ -75,7 +75,7 @@ function renderScoreboardDom() {
       });
     }
   }
-  if (!document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
+  if (renderModal && !document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
     renderScoreboardModalRows();
   }
 }

@@ -90,7 +90,18 @@ function connect() {
     }
     applyMessage(msg);
     if (msg.type === 'init' || msg.type === 'boards') ensureWatched();
-    updateDom({ scoreboard: !['tick', 'chat', 'misc'].includes(msg.type) });
+    const scoreboardResponse = msg.type === 'scoreboard';
+    updateDom({
+      scoreboard: !['tick', 'chat', 'misc'].includes(msg.type),
+      renderModal: !scoreboardResponse,
+    });
+    // A period scoreboard may be the first uncached response and can arrive
+    // after a slow cache fill. Render it directly from the state just applied
+    // so the open modal never waits for another open or unrelated frame.
+    if (scoreboardResponse && !document.getElementById('scoreboard-modal')?.hidden
+        && typeof renderScoreboardModalRows === 'function') {
+      renderScoreboardModalRows();
+    }
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();

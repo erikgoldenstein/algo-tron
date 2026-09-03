@@ -8,6 +8,12 @@ The viewer SPA is served from `/`, and live updates are pushed over a WebSocket 
 
 The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can also request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to the first running board.
 
+The on-demand scoreboard modal uses the read-only HTTP endpoint
+`GET /api/scoreboard?period=...&sort=...&search=...&offset=...&limit=...`.
+It returns the same scoreboard page fields as the WebSocket response. The
+WebSocket scoreboard request remains supported for existing viewers and for
+the live/main-page scoreboard.
+
 ## History API
 
 The scoreboard history tab uses the separate read-only HTTP endpoint
