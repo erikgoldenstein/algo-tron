@@ -58,6 +58,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secret: %w", err)
 	}
+	adminPassword, err := loadOrCreateAdminPassword(*dataDir)
+	if err != nil {
+		return fmt.Errorf("admin password: %w", err)
+	}
 
 	db, err := openDB(filepath.Join(*dataDir, "players.db"))
 	if err != nil {
@@ -74,6 +78,7 @@ func run() error {
 		ipCount:       map[string]int{},
 		viewClients:   map[*websocket.Conn]*viewerSink{},
 		secret:        secret,
+		adminPassword: adminPassword,
 		db:            db,
 		geo:           geo,
 		scheduleURL:   *scheduleURL,
