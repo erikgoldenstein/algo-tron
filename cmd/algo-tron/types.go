@@ -197,6 +197,13 @@ func cloneBio(bio map[string]string) map[string]string {
 	return copy
 }
 
+func firstSeenMillis(p *Player) int64 {
+	if p == nil || p.FirstSeen.IsZero() {
+		return 0
+	}
+	return p.FirstSeen.UnixMilli()
+}
+
 // Seat is one player's participation in one game. The id doubles as the
 // wire-protocol player id (index into Game.seats and Game.fields). A Seat
 // outlives the player's interest in it: after death the player re-queues
@@ -236,6 +243,7 @@ type ScoreboardEntry struct {
 	Version     string            `json:"version,omitempty"`
 	ShowVersion bool              `json:"showVersion,omitempty"`
 	Bio         map[string]string `json:"bio,omitempty"`
+	FirstSeen   int64             `json:"firstSeen,omitempty"`
 	WinRatio    float64           `json:"winRatio"`
 	Wins        int               `json:"wins"`
 	Losses      int               `json:"losses"`

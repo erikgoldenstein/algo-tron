@@ -1,7 +1,10 @@
 // WebSocket entry point + board subscription.
 //
 // On every incoming frame we forward to gameState.applyMessage (which
-// mutates state) and then call updateDom (which writes to the page).
+// mutates state) and then update the parts of the page affected by that
+// message. Scoreboard rows are deliberately not rebuilt for ticks: the board
+// table changes at round/lifecycle events, while the canvas and chat change
+// every tick.
 // The canvas redraws on its own 30fps loop in render.js — it reads gameState
 // directly, so we don't need to nudge it here.
 //
@@ -15,7 +18,8 @@
 // redeployed server come into effect.
 //
 // Depends on: dom.js (updateDom, showShutdownBanner), gameState.js
-// (applyMessage, gameState).
+// (applyMessage, gameState). `updateDom({scoreboard:false})` keeps the
+// scoreboard rows and their hover targets intact during tick frames.
 // Provides: watchBoard, stepBoard, ensureWatched.
 
 let hadActiveSession = false;
@@ -86,7 +90,7 @@ function connect() {
     }
     applyMessage(msg);
     if (msg.type === 'init' || msg.type === 'boards') ensureWatched();
-    updateDom();
+    updateDom({ scoreboard: !['tick', 'chat', 'misc'].includes(msg.type) });
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();

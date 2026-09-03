@@ -65,7 +65,7 @@ func boardEntriesFromPlayers(players []*Player) []ScoreboardEntry {
 		if games > 0 {
 			wr = float64(w) / float64(games)
 		}
-		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, Version: versionOf(p), Bio: cloneBio(p.Bio), WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
+		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, Version: versionOf(p), Bio: cloneBio(p.Bio), FirstSeen: firstSeenMillis(p), WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
 	}
 	return entries
 }
