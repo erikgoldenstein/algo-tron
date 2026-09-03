@@ -35,6 +35,7 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	s.players["alice"] = &Player{
 		Username:  "alice",
 		PwHash:    hashPassword(s.secret, "pass"),
+		Bio:       map[string]string{"contact": "mail@erik.gdn", "src": "https://github.com/erikgoldenstein/tron-bot"},
 		Elo:       1234.5,
 		FirstSeen: firstSeen,
 		LastSeen:  lastSeen,
@@ -60,6 +61,9 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	}
 	if p.PwHash != hashPassword(s.secret, "pass") {
 		t.Error("PwHash mismatch after round-trip")
+	}
+	if p.Bio["contact"] != "mail@erik.gdn" || p.Bio["src"] != "https://github.com/erikgoldenstein/tron-bot" {
+		t.Errorf("Bio = %#v, want contact and src metadata", p.Bio)
 	}
 	if !p.LastSeen.Equal(lastSeen) {
 		t.Errorf("LastSeen = %v, want %v", p.LastSeen, lastSeen)

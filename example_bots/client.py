@@ -137,6 +137,14 @@ class Client:
         line = "|".join(fields) + "\n"
         self.sock.sendall(line.encode())
 
+    def send_bio(self, field: str, value: str) -> None:
+        """Publish or clear optional bot metadata after joining.
+
+        Supported fields are ``contact`` and ``src``. Pass an empty value to
+        clear a field. The server validates the field and its length.
+        """
+        self._send("bio", field, value)
+
     def _read_line(self) -> str:
         """Read exactly one packet from the server.
 

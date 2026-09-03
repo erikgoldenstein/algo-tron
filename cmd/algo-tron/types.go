@@ -43,6 +43,7 @@ type Player struct {
 	UUID         string
 	Username     string
 	Version      string
+	Bio          map[string]string
 	PwHash       string
 	Chat         string
 	chatExpiry   time.Time
@@ -168,6 +169,7 @@ func (s *Server) resetAccountLocked(username, version, pwHash string, now time.T
 	target.Version = version
 	target.UUID = randUUID()
 	target.PwHash = pwHash
+	target.Bio = nil
 	target.Elo = 1000
 	target.TsMu, target.TsSigma = tsMu0, tsSigma0
 	target.ScoreHistory = nil
@@ -182,6 +184,17 @@ func normalizeVersion(version string) string {
 		return defaultBotVersion
 	}
 	return version
+}
+
+func cloneBio(bio map[string]string) map[string]string {
+	if len(bio) == 0 {
+		return nil
+	}
+	copy := make(map[string]string, len(bio))
+	for key, value := range bio {
+		copy[key] = value
+	}
+	return copy
 }
 
 // Seat is one player's participation in one game. The id doubles as the
@@ -218,17 +231,18 @@ type ServerInfo struct {
 type ScoreboardEntry struct {
 	// UUID is backend-only (kept off the wire) — it identifies a career for
 	// old-owner detection but must not leak to viewers. See OldOwner.
-	UUID        string  `json:"-"`
-	Username    string  `json:"username"`
-	Version     string  `json:"version,omitempty"`
-	ShowVersion bool    `json:"showVersion,omitempty"`
-	WinRatio    float64 `json:"winRatio"`
-	Wins        int     `json:"wins"`
-	Losses      int     `json:"losses"`
-	Elo         float64 `json:"elo"`
-	TsMu        float64 `json:"tsMu"`
-	TsSigma     float64 `json:"tsSigma"`
-	Online      bool    `json:"online"`
+	UUID        string            `json:"-"`
+	Username    string            `json:"username"`
+	Version     string            `json:"version,omitempty"`
+	ShowVersion bool              `json:"showVersion,omitempty"`
+	Bio         map[string]string `json:"bio,omitempty"`
+	WinRatio    float64           `json:"winRatio"`
+	Wins        int               `json:"wins"`
+	Losses      int               `json:"losses"`
+	Elo         float64           `json:"elo"`
+	TsMu        float64           `json:"tsMu"`
+	TsSigma     float64           `json:"tsSigma"`
+	Online      bool              `json:"online"`
 	// OldOwner > 0 marks a retired career whose username has since been
 	// reclaimed by a different account (idle takeover). The viewer renders it
 	// as "(old owner{OldOwner})", numbering duplicates of the same name. Set

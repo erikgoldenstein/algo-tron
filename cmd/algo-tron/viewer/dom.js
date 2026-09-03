@@ -108,6 +108,17 @@ function renderScoreName(el) {
   );
 }
 
+function scoreBioMarkup(bio) {
+  if (!bio) return '';
+  const contact = bio.contact
+    ? '<span class="bio-contact" title="contact">' + esc(bio.contact) + '</span>'
+    : '';
+  const src = bio.src
+    ? '<a class="bio-src" href="' + esc(bio.src) + '" target="_blank" rel="noopener noreferrer" title="bot source">↗</a>'
+    : '';
+  return contact + src;
+}
+
 function updateScoreboardTools() {
   const tools = document.getElementById('scoreboard-tools');
   if (!tools) return;
@@ -154,9 +165,10 @@ function scoreRow(p, i) {
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username);
   const label = scoreNameLabel(p);
+  const bio = scoreBioMarkup(p.bio);
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + bio + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

@@ -129,6 +129,7 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 		if p := s.players[playerKey(e.Username, e.Version)]; p != nil {
 			if p.UUID == e.UUID {
 				e.Online = p.conn != nil
+				e.Bio = cloneBio(p.Bio)
 				e.Elo, e.TsMu, e.TsSigma = p.Elo, p.TsMu, p.TsSigma
 			} else {
 				// Username reclaimed since: this is a retired career.

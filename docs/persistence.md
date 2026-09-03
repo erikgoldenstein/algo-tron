@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS players (
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
   score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float, tsMu?: float, tsSigma?: float}, …]
+  bio            TEXT NOT NULL DEFAULT '{}', -- JSON: {contact?: string, src?: string}
   ts_mu          REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
   ts_sigma       REAL NOT NULL DEFAULT 0,    -- TrueSkill uncertainty; 0 = uninitialized
   first_seen_unix INTEGER NOT NULL DEFAULT 0, -- first join for this career/UUID
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS players_archive (
   pw_hash          TEXT NOT NULL,
   elo              REAL NOT NULL,
   score_history    TEXT NOT NULL,
+  bio              TEXT NOT NULL,       -- JSON: {contact?: string, src?: string}
   ts_mu            REAL NOT NULL,
   ts_sigma         REAL NOT NULL,
   first_seen_unix  INTEGER NOT NULL,
@@ -98,6 +100,7 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
 - `uuid` is the stable identity for persistence/audit rows. `first_seen_unix` records when that career/UUID was first created; `last_seen_unix` records the most recent join or disconnect. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username/version a new UUID and first-seen timestamp. Existing databases without first-seen data are backfilled from their last-seen timestamp, the earliest timestamp available.
 - `version` distinguishes independent careers under one username; omitted/legacy values are `v1`. The composite `(username, version)` key allows multiple versions to be online concurrently.
+- `bio` stores the optional post-join `contact` and GitHub `src` metadata for that career. It is JSON so absent fields remain absent; validation limits contact to 32 printable ASCII characters and source URLs to 48 characters.
 - `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
 - `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; kept for history, never read by the server.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).

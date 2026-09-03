@@ -10,7 +10,7 @@
 // Wire protocol — see view.go for the canonical definition.
 //   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
 //   {type:"boards", boards:[{id,players,alive,names}...]} — a board started or ended
-//   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,pos,moves,alive,chat?}]}
+//   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
 //   {type:"misc",   content:"shutdown"} — lifecycle event; "shutdown" → banner.
@@ -134,6 +134,8 @@ function buildGame(m) {
     players[p.id] = {
       id: p.id,
       name: p.name,
+      version: p.version || '',
+      bio: p.bio || {},
       pos: p.pos,
       moves: p.moves ? p.moves.slice() : [p.pos],
       alive: p.alive !== false,

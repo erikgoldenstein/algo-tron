@@ -21,7 +21,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "type": "init",
   "serverInfo":  [{"host": "tron.erik.gdn", "port": 4000}],
   "viewInfo":    [{"host": "tron.erik.gdn", "port": 443, "scheme": "https"}],
-  "scoreboard":  [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
+  "scoreboard":  [{"username":"…","version":"v2","showVersion":true,"bio":{"contact":"mail@erik.gdn","src":"https://github.com/erikgoldenstein/tron-bot"},"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "scoreboardHasMore": false,
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
@@ -48,7 +48,7 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
   "id":     "<hex>",
   "width":  8, "height": 8,
   "players": [
-    {"id": 0, "name": "alice", "version": "v1", "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
+    {"id": 0, "name": "alice", "version": "v1", "bio":{"contact":"mail@erik.gdn"}, "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
   ],
   "boardScoreboard": [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}]
@@ -111,7 +111,7 @@ Leaderboards only contain accounts with a password (`pw_hash != ''`). Internal f
 
 `chat` messages are viewer-only chat/system events: `{type:"chat", gameId, boardIndex, username, message, time, system}`. The old per-tick `chats` map still drives board chat bubbles.
 
-Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username` and optional `version`; `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. In the daily/monthly pages a username/version career that has been reclaimed since (idle takeover) can appear more than once — retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, …
+Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, and optional `bio` object. `bio.contact` is plain text and `bio.src` is a validated GitHub repository link; the viewer shows contact text and a source-link marker beside the name. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. In the daily/monthly pages a username/version career that has been reclaimed since (idle takeover) can appear more than once — retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, …
 
 `chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 

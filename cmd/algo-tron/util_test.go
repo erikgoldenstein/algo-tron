@@ -81,6 +81,33 @@ func TestValidateVersion(t *testing.T) {
 	}
 }
 
+func TestValidateBio(t *testing.T) {
+	cases := []struct {
+		name, field, value, wantErr string
+	}{
+		{"contact", "contact", "mail@erik.gdn", ""},
+		{"contact max length", "contact", strings.Repeat("x", 32), ""},
+		{"contact too long", "contact", strings.Repeat("x", 33), "ERROR_INVALID_BIO"},
+		{"contact allows colon", "contact", "dect:8323", ""},
+		{"contact control character", "contact", "mail\n", "ERROR_INVALID_BIO"},
+		{"source", "src", "https://github.com/erikgoldenstein/tron-bot", ""},
+		{"source max length", "src", "https://github.com/a/" + strings.Repeat("x", 27), ""},
+		{"source too long", "src", "https://github.com/a/" + strings.Repeat("x", 28), "ERROR_INVALID_BIO"},
+		{"source must be https", "src", "http://github.com/a/b", "ERROR_INVALID_BIO"},
+		{"source must be github", "src", "https://gitlab.com/a/b", "ERROR_INVALID_BIO"},
+		{"unknown field", "about", "hello", "ERROR_INVALID_BIO"},
+		{"clear contact", "contact", "", ""},
+		{"clear source", "src", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := validateBio(c.field, c.value); got != c.wantErr {
+				t.Errorf("validateBio(%q, %q) = %q, want %q", c.field, c.value, got, c.wantErr)
+			}
+		})
+	}
+}
+
 func TestParseJoinAttributes(t *testing.T) {
 	cases := []struct {
 		fields               []string

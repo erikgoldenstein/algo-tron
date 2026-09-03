@@ -54,13 +54,14 @@ type gameMsg struct {
 }
 
 type playerMsg struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version,omitempty"`
-	Pos     Vec2   `json:"pos"`
-	Moves   []Vec2 `json:"moves,omitempty"`
-	Alive   bool   `json:"alive"`
-	Chat    string `json:"chat,omitempty"`
+	ID      int               `json:"id"`
+	Name    string            `json:"name"`
+	Version string            `json:"version,omitempty"`
+	Bio     map[string]string `json:"bio,omitempty"`
+	Pos     Vec2              `json:"pos"`
+	Moves   []Vec2            `json:"moves,omitempty"`
+	Alive   bool              `json:"alive"`
+	Chat    string            `json:"chat,omitempty"`
 }
 
 type tickMsg struct {
