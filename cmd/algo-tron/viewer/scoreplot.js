@@ -12,6 +12,7 @@ let scorePlotCandidates = new Map();
 let scorePlotRequest = null;
 let scorePlotRequestID = 0;
 let scorePlotSearchTimer = 0;
+let scorePlotModalHeight = 0;
 
 function setScoreboardModalView(view) {
   scorePlotView = view === 'scoreplot' ? 'scoreplot' : 'scoreboard';
@@ -20,8 +21,16 @@ function setScoreboardModalView(view) {
   const modal = document.querySelector('.scoreboard-modal-window');
   const scoreboardTab = document.getElementById('scoreboard-tab');
   const scoreplotTab = document.getElementById('scoreplot-tab');
+  // Measure before hiding the scoreboard. Its fixed rows viewport is the
+  // canonical modal height; the alternate view adopts that exact height.
+  if (scorePlotView === 'scoreplot' && scoreboard && !scoreboard.hidden) {
+    scorePlotModalHeight = scoreboard.offsetHeight;
+  }
   if (scoreboard) scoreboard.hidden = scorePlotView !== 'scoreboard';
   if (scoreplot) scoreplot.hidden = scorePlotView !== 'scoreplot';
+  if (scoreplot && scorePlotView === 'scoreplot' && scorePlotModalHeight) {
+    scoreplot.style.height = scorePlotModalHeight + 'px';
+  }
   if (modal) modal.classList.toggle('scoreplot-open', scorePlotView === 'scoreplot');
   if (scoreboardTab) {
     scoreboardTab.classList.toggle('active', scorePlotView === 'scoreboard');
@@ -322,6 +331,18 @@ function renderScorePlot() {
   ctx.setLineDash([]);
 }
 
+function resizeScorePlotModal() {
+  const scoreboard = document.getElementById('scoreboard-view');
+  if (scorePlotView === 'scoreboard' && scoreboard && !scoreboard.hidden) {
+    scorePlotModalHeight = scoreboard.offsetHeight;
+  }
+  const scoreplot = document.getElementById('scoreplot-view');
+  if (scoreplot && scorePlotView === 'scoreplot' && scorePlotModalHeight) {
+    scoreplot.style.height = scorePlotModalHeight + 'px';
+  }
+  renderScorePlot();
+}
+
 function initScorePlot() {
   document.getElementById('scoreboard-tab')?.addEventListener('click', () => setScoreboardModalView('scoreboard'));
   document.getElementById('scoreplot-tab')?.addEventListener('click', () => setScoreboardModalView('scoreplot'));
@@ -347,7 +368,7 @@ function initScorePlot() {
     if (button) removeScorePlotUser(button.dataset.scoreplotRemove);
   });
   document.addEventListener('click', () => hideScorePlotOptions());
-  window.addEventListener('resize', renderScorePlot);
+  window.addEventListener('resize', resizeScorePlotModal);
 }
 
 document.addEventListener('DOMContentLoaded', initScorePlot);

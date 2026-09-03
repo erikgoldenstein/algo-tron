@@ -106,19 +106,25 @@ func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 	ctx := browser(t)
 
 	var scoreboardHidden, scoreplotHidden bool
+	var scoreboardHeight, scoreplotHeight int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.Click(`#scoreboard-title`),
 		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Evaluate(`document.getElementById('scoreboard-view').offsetHeight`, &scoreboardHeight),
 		chromedp.Click(`#scoreplot-tab`),
 		chromedp.WaitVisible(`#scoreplot-view:not([hidden])`),
 		chromedp.Evaluate(`document.getElementById('scoreboard-view').hidden`, &scoreboardHidden),
 		chromedp.Evaluate(`document.getElementById('scoreplot-view').hidden`, &scoreplotHidden),
+		chromedp.Evaluate(`document.getElementById('scoreplot-view').offsetHeight`, &scoreplotHeight),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if !scoreboardHidden || scoreplotHidden {
 		t.Errorf("scoreplot tab visibility = scoreboard hidden %t, scoreplot hidden %t", scoreboardHidden, scoreplotHidden)
+	}
+	if scoreplotHeight != scoreboardHeight {
+		t.Errorf("scoreplot height = %d, scoreboard height = %d", scoreplotHeight, scoreboardHeight)
 	}
 }
 
