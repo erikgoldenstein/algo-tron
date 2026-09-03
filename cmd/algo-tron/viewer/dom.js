@@ -15,7 +15,7 @@ let scoreNameChars = 0;
 // updateDom before the rows render.
 let tsSigmaChars = 0;
 
-function updateDom() {
+function updateDom({ scoreboard = true } = {}) {
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
 
@@ -37,13 +37,24 @@ function updateDom() {
   updateTabs();
   updateScoreboardTools();
 
+  if (scoreboard) renderScoreboardDom();
+
+  const chatPanel = visibleChats();
+  const chat = document.getElementById('chat');
+  chat.innerHTML = chatPanel.length
+    ? [...chatPanel].reverse().map(chatRow).join('')
+    : '<div class="chat-empty">no messages yet</div>';
+}
+
+function renderScoreboardDom() {
+  hideScoreHover();
   const scoreboardEl = document.getElementById('scoreboard');
-  const scoreboard = currentScoreboard();
+  const scores = currentScoreboard();
   // Pad every sigma to the widest one so the ± lines up down the ts column
   // (no-break spaces — plain ones would collapse in HTML).
-  tsSigmaChars = Math.max(0, ...scoreboard.map((p) => String(Math.round(p.tsSigma)).length));
-  scoreboardEl.innerHTML = scoreboard.length
-    ? scoreboard.map(scoreRow).join('')
+  tsSigmaChars = Math.max(0, ...scores.map((p) => String(Math.round(p.tsSigma)).length));
+  scoreboardEl.innerHTML = scores.length
+    ? scores.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
 
   // The name cell now exists in the DOM, so we can measure its actual width
@@ -61,12 +72,6 @@ function updateDom() {
       });
     }
   }
-
-  const chatPanel = visibleChats();
-  const chat = document.getElementById('chat');
-  chat.innerHTML = chatPanel.length
-    ? [...chatPanel].reverse().map(chatRow).join('')
-    : '<div class="chat-empty">no messages yet</div>';
   if (!document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
     renderScoreboardModalRows();
   }
@@ -108,16 +113,90 @@ function renderScoreName(el) {
   );
 }
 
-function scoreBioMarkup(bio) {
-  if (!bio) return '';
-  const contact = bio.contact
-    ? '<span class="bio-contact" title="contact">' + esc(bio.contact) + '</span>'
-    : '';
-  const src = bio.src
-    ? '<a class="bio-src" href="' + esc(bio.src) + '" target="_blank" rel="noopener noreferrer" title="bot source">↗</a>'
-    : '';
-  return contact + src;
+let scoreHoverCard = null;
+let scoreHoverTarget = null;
+let scoreHoverHideTimer = 0;
+
+function formatFirstSeen(value) {
+  const millis = Number(value);
+  if (!Number.isFinite(millis) || millis <= 0) return '—';
+  return new Date(millis).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+function scoreHoverMarkup(target) {
+  const username = target.dataset.username || '';
+  const version = target.dataset.version || '';
+  const contact = target.dataset.contact || '';
+  const src = target.dataset.src || '';
+  const versionTag = version ? '<span class="score-hover-version">-' + esc(version) + '</span>' : '';
+  const srcRow = src
+    ? '<div class="score-hover-row"><span class="score-hover-label">src</span><a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">repository ↗</a></div>'
+    : '';
+  const contactRow = contact
+    ? '<div class="score-hover-row"><span class="score-hover-label">contact</span><span>' + esc(contact) + '</span></div>'
+    : '';
+  return '<div class="score-hover-title">' + esc(username) + versionTag + '</div>'
+    + '<div class="score-hover-row"><span class="score-hover-label">version</span><span>' + esc(version || '—') + '</span></div>'
+    + '<div class="score-hover-row"><span class="score-hover-label">first seen</span><span>' + formatFirstSeen(target.dataset.firstSeen) + '</span></div>'
+    + contactRow + srcRow;
+}
+
+function ensureScoreHoverCard() {
+  if (scoreHoverCard) return scoreHoverCard;
+  scoreHoverCard = document.createElement('div');
+  scoreHoverCard.className = 'score-hover-card';
+  scoreHoverCard.hidden = true;
+  scoreHoverCard.addEventListener('pointerenter', () => clearTimeout(scoreHoverHideTimer));
+  scoreHoverCard.addEventListener('pointerleave', scheduleScoreHoverHide);
+  document.body.appendChild(scoreHoverCard);
+  return scoreHoverCard;
+}
+
+function hideScoreHover() {
+  clearTimeout(scoreHoverHideTimer);
+  scoreHoverTarget = null;
+  if (scoreHoverCard) scoreHoverCard.hidden = true;
+}
+
+function scheduleScoreHoverHide() {
+  clearTimeout(scoreHoverHideTimer);
+  scoreHoverHideTimer = setTimeout(hideScoreHover, 100);
+}
+
+function showScoreHover(target) {
+  clearTimeout(scoreHoverHideTimer);
+  const card = ensureScoreHoverCard();
+  scoreHoverTarget = target;
+  card.innerHTML = scoreHoverMarkup(target);
+  card.hidden = false;
+  const rect = target.getBoundingClientRect();
+  const gap = 6;
+  let left = rect.left;
+  let top = rect.bottom + gap;
+  if (left + card.offsetWidth > window.innerWidth - 8) left = window.innerWidth - card.offsetWidth - 8;
+  if (left < 8) left = 8;
+  if (top + card.offsetHeight > window.innerHeight - 8) top = rect.top - card.offsetHeight - gap;
+  if (top < 8) top = 8;
+  card.style.left = Math.round(left) + 'px';
+  card.style.top = Math.round(top) + 'px';
+}
+
+function initScoreHover() {
+  document.addEventListener('pointerover', (event) => {
+    const target = event.target.closest?.('.score-hover-target');
+    if (!target || target === scoreHoverTarget) return;
+    showScoreHover(target);
+  });
+  document.addEventListener('pointerout', (event) => {
+    const target = event.target.closest?.('.score-hover-target');
+    if (!target || target !== scoreHoverTarget) return;
+    const related = event.relatedTarget;
+    if (related && (target.contains(related) || scoreHoverCard?.contains(related))) return;
+    scheduleScoreHoverHide();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initScoreHover);
 
 function updateScoreboardTools() {
   const tools = document.getElementById('scoreboard-tools');
@@ -165,10 +244,11 @@ function scoreRow(p, i) {
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username);
   const label = scoreNameLabel(p);
-  const bio = scoreBioMarkup(p.bio);
+  const contact = p.bio?.contact || '';
+  const src = p.bio?.src || '';
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + bio + old + winner + '</td>'
+    + '<td class="name score-hover-target" style="color:' + c + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

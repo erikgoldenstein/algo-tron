@@ -244,10 +244,29 @@ h2 {
 .scoreboard thead th { font-weight: 400; padding-bottom: 2px; }
 .scoreboard td.name { color: var(--text); }
 .scoreboard td.name .version-tag { font-weight: 300; opacity: 0.7; }
-.scoreboard td.name .bio-contact,
-.scoreboard td.name .bio-src { color: var(--text-muted); font-size: 0.8em; margin-left: 5px; }
-.scoreboard td.name .bio-src { text-decoration: none; }
 td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
+.score-hover-card {
+  position: fixed;
+  z-index: 3000;
+  min-width: 180px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+.score-hover-card[hidden] { display: none; }
+.score-hover-title { margin-bottom: 4px; color: var(--text); font-weight: 500; }
+.score-hover-version { color: var(--text-muted); font-weight: 300; }
+.score-hover-row { display: flex; gap: 10px; white-space: normal; }
+.score-hover-label { flex: 0 0 58px; color: var(--text-muted); }
+.score-hover-row > span:last-child,
+.score-hover-row > a { overflow-wrap: anywhere; }
+.score-hover-row a { color: var(--accent); }
 .scoreboard th.sep,
 .scoreboard td.sep { color: var(--text-dim); padding: 0; }
 .scoreboard th.wr,

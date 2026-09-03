@@ -119,6 +119,7 @@ function initAppSelect(id, onChange) {
 function renderScoreboardModalRows() {
   const root = document.getElementById('scoreboard-modal-rows');
   if (!root) return;
+  hideScoreHover();
   const q = scoreModalQuery(0);
   const key = scorePageKey(q.period, q.sort, q.search);
   const page = gameState.scorePages[key];

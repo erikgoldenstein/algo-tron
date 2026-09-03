@@ -9,11 +9,12 @@ import (
 func TestUpdateScoreboardOrdering(t *testing.T) {
 	s := testServer(t)
 	now := time.Now().UnixMilli()
+	firstSeen := time.Now().Add(-24 * time.Hour).Truncate(time.Second)
 	_, c1 := mustPipe(t)
 	_, c2 := mustPipe(t)
 	_, c3 := mustPipe(t)
 	s.players = map[string]*Player{
-		"p1": {Username: "p1", Elo: 1100, TsMu: 300, TsSigma: 20, PwHash: "h", conn: c1, ScoreHistory: []Score{
+		"p1": {Username: "p1", Elo: 1100, TsMu: 300, TsSigma: 20, PwHash: "h", FirstSeen: firstSeen, conn: c1, ScoreHistory: []Score{
 			{Type: 1, Time: now}, {Type: 1, Time: now}, {Type: 1, Time: now}, {Type: 0, Time: now},
 		}},
 		"p2": {Username: "p2", Elo: 1000, TsMu: 280, TsSigma: 20, PwHash: "h", conn: c2, ScoreHistory: []Score{
@@ -41,6 +42,9 @@ func TestUpdateScoreboardOrdering(t *testing.T) {
 	}
 	if sb[0].Wins != 3 || sb[0].Losses != 1 {
 		t.Errorf("p1: wins=%d losses=%d, want 3/1", sb[0].Wins, sb[0].Losses)
+	}
+	if sb[0].FirstSeen != firstSeen.UnixMilli() {
+		t.Errorf("p1 first seen = %d, want %d", sb[0].FirstSeen, firstSeen.UnixMilli())
 	}
 }
 
