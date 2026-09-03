@@ -2,7 +2,7 @@
 
 Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that emits it. Codes are sent inside `error|<CODE>\n` packets — see [bot-protocol.md](bot-protocol.md).
 
-`ERROR_*` is sent then the connection is closed. `WARNING_*` is informational and the connection stays open.
+Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-join validation errors such as `ERROR_INVALID_BIO` are informational and the connection stays open. `WARNING_*` is also informational and the connection stays open.
 
 ## Pre-join (connection-fatal)
 
@@ -33,6 +33,7 @@ Every `ERROR_*` and `WARNING_*` the server can emit, with the exact site that em
 | `ERROR_DEAD_CANNOT_CHAT`     | `chat` from a player who is dead this game.                                                         |
 | `WARNING_CHAT_RATE_LIMIT`    | `chat` arrived less than one tick interval after the last accepted chat. *algo-tron-specific.*      |
 | `ERROR_INVALID_CHAT_MESSAGE` | Chat fails the same character-class regex used for usernames, or is longer than 64 chars.           |
+| `ERROR_INVALID_BIO`          | `bio` is malformed, uses an unsupported field, or exceeds the field's validation rules. The connection stays open. |
 | `WARNING_RATE_LIMIT`         | A run of packets was dropped for exceeding a per-connection budget — one strike per contiguous run. Connection stays open. *algo-tron-specific.* |
 | `ERROR_RATE_LIMIT`           | Strike count reached `rateLimitErrorStrikes` (3). Connection is closed and the account's reconnect penalty doubles. *algo-tron-specific.* |
 

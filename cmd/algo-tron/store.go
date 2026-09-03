@@ -31,6 +31,7 @@ func openDB(path string) (*sql.DB, error) {
 		pw_hash       TEXT NOT NULL,
 		elo           REAL NOT NULL DEFAULT 1000,
 		score_history TEXT NOT NULL DEFAULT '[]',
+		bio           TEXT NOT NULL DEFAULT '{}',
 		PRIMARY KEY (username, version)
 	)`)
 	if err != nil {
@@ -41,6 +42,7 @@ func openDB(path string) (*sql.DB, error) {
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_mu REAL NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN bio TEXT NOT NULL DEFAULT '{}'`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN last_seen_unix INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
 	if err := migratePlayersTable(db); err != nil {
@@ -60,6 +62,7 @@ func openDB(path string) (*sql.DB, error) {
 		pw_hash          TEXT NOT NULL,
 		elo              REAL NOT NULL,
 		score_history    TEXT NOT NULL,
+		bio              TEXT NOT NULL,
 		ts_mu            REAL NOT NULL,
 		ts_sigma         REAL NOT NULL,
 		first_seen_unix  INTEGER NOT NULL,
@@ -73,6 +76,7 @@ func openDB(path string) (*sql.DB, error) {
 	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
 	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN bio TEXT NOT NULL DEFAULT '{}'`)
 	_, _ = db.Exec(`UPDATE players_archive SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE archived_at_unix END WHERE first_seen_unix = 0`)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS game_participants (
 		game_id       TEXT NOT NULL,
@@ -201,6 +205,7 @@ func migratePlayersTable(db *sql.DB) error {
 		pw_hash       TEXT NOT NULL,
 		elo           REAL NOT NULL DEFAULT 1000,
 		score_history TEXT NOT NULL DEFAULT '[]',
+		bio           TEXT NOT NULL DEFAULT '{}',
 		ts_mu         REAL NOT NULL DEFAULT 0,
 		ts_sigma      REAL NOT NULL DEFAULT 0,
 		first_seen_unix INTEGER NOT NULL DEFAULT 0,
@@ -211,8 +216,8 @@ func migratePlayersTable(db *sql.DB) error {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO players_versioned
-		(username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid)
-		SELECT username, COALESCE(NULLIF(version, ''), 'v1'), pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid
+		(username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid)
+		SELECT username, COALESCE(NULLIF(version, ''), 'v1'), pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid
 		FROM players`); err != nil {
 		return err
 	}
@@ -230,9 +235,10 @@ func migratePlayersTable(db *sql.DB) error {
 // caller. Failure is logged and counted; the takeover proceeds regardless.
 func archiveRow(db *sql.DB, r playerRow) {
 	scores, _ := json.Marshal(r.scores)
-	_, err := db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.uuid, r.username, r.version, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, time.Now().Unix())
+	bio := marshalBio(r.bio)
+	_, err := db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.uuid, r.username, r.version, r.pwHash, r.elo, string(scores), bio, r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, time.Now().Unix())
 	if err != nil {
 		metricDBErrors.WithLabelValues("archive").Inc()
 		slog.Error("db archive", "user", r.username, "err", err)
@@ -251,8 +257,8 @@ func pruneIdleAccounts(db *sql.DB, cutoffUnix int64) {
 		return
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
-		SELECT uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
+	if _, err := tx.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
+		SELECT uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
 		time.Now().Unix(), cutoffUnix); err != nil {
 		metricDBErrors.WithLabelValues("prune").Inc()
 		slog.Error("db prune archive", "err", err)
@@ -312,7 +318,7 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 }
 
 func (s *Server) load() {
-	rows, err := s.db.Query("SELECT uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix FROM players")
+	rows, err := s.db.Query("SELECT uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix FROM players")
 	if err != nil {
 		metricDBErrors.WithLabelValues("load").Inc()
 		slog.Error("db load", "err", err)
@@ -320,10 +326,10 @@ func (s *Server) load() {
 	}
 	missingUUID := []playerRow{}
 	for rows.Next() {
-		var uuid, username, version, pwHash, scoresJSON string
+		var uuid, username, version, pwHash, scoresJSON, bioJSON string
 		var elo, tsMu, tsSigma float64
 		var firstSeenUnix, lastSeenUnix int64
-		if err := rows.Scan(&uuid, &username, &version, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma, &firstSeenUnix, &lastSeenUnix); err != nil {
+		if err := rows.Scan(&uuid, &username, &version, &pwHash, &elo, &scoresJSON, &bioJSON, &tsMu, &tsSigma, &firstSeenUnix, &lastSeenUnix); err != nil {
 			metricDBErrors.WithLabelValues("load_row").Inc()
 			slog.Error("db load row", "err", err)
 			continue
@@ -337,6 +343,8 @@ func (s *Server) load() {
 		}
 		var scores []Score
 		_ = json.Unmarshal([]byte(scoresJSON), &scores)
+		var bio map[string]string
+		_ = json.Unmarshal([]byte(bioJSON), &bio)
 		legacyUUID := uuid == ""
 		if legacyUUID {
 			uuid = randUUID()
@@ -349,7 +357,7 @@ func (s *Server) load() {
 			// Defensive fallback for a read-only or partially migrated DB.
 			firstSeen = time.Unix(lastSeenUnix, 0)
 		}
-		p := &Player{UUID: uuid, Username: username, Version: version, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, FirstSeen: firstSeen, ScoreHistory: scores}
+		p := &Player{UUID: uuid, Username: username, Version: version, Bio: bio, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, FirstSeen: firstSeen, ScoreHistory: scores}
 		if lastSeenUnix > 0 {
 			p.LastSeen = time.Unix(lastSeenUnix, 0)
 		}
@@ -371,6 +379,7 @@ type playerRow struct {
 	uuid             string
 	username, pwHash string
 	version          string
+	bio              map[string]string
 	elo              float64
 	scores           []Score
 	tsMu, tsSigma    float64
@@ -455,6 +464,7 @@ func snapshotRow(p *Player) playerRow {
 		uuid:     ensureUUID(p),
 		username: p.Username,
 		version:  versionOf(p),
+		bio:      cloneBio(p.Bio),
 		pwHash:   p.PwHash,
 		elo:      p.Elo,
 		scores:   append([]Score(nil), p.ScoreHistory...),
@@ -503,7 +513,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 		return false
 	}
 	defer tx.Rollback()
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_prepare").Inc()
 		slog.Error("db store prepare", "err", err)
@@ -512,7 +522,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 	defer stmt.Close()
 	for _, r := range rows {
 		scores, _ := json.Marshal(r.scores)
-		if _, err := stmt.Exec(r.username, r.version, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, r.uuid); err != nil {
+		if _, err := stmt.Exec(r.username, r.version, r.pwHash, r.elo, string(scores), marshalBio(r.bio), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, r.uuid); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()
 			slog.Error("db store row", "user", r.username, "err", err)
 		}
@@ -523,6 +533,14 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 		return false
 	}
 	return true
+}
+
+func marshalBio(bio map[string]string) string {
+	if len(bio) == 0 {
+		return "{}"
+	}
+	b, _ := json.Marshal(bio)
+	return string(b)
 }
 
 func recordPlayerIP(db *sql.DB, secret []byte, geo *geoLookup, uuid, ip string, now time.Time) {

@@ -69,8 +69,19 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 | `join` | `username\|password[\|key value]...` | First packet. Optional attributes are order-independent; the canonical version field is `version v2`, and omitted version defaults to `v1`. Versions use `[a-zA-Z0-9._-]+` and are ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
 | `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. Dead players' `move` packets are accepted but ignored. |
 | `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
+| `bio` | `field\|value` | Optional post-join metadata. Current fields are `contact` and `src`; invalid values receive `ERROR_INVALID_BIO` and do not affect the connection. |
 
 The optional join fields use `keyword value` syntax and may appear in any order. The current implementation gives meaning to `version`; unknown optional attributes are ignored for forward compatibility. A single bare fourth field such as `join|name|password|v2` remains accepted for compatibility with clients using the earlier version extension, but new clients should use `join|name|password|version v2`. Attribute values cannot contain `|`, and version values cannot contain spaces.
+
+After joining, a bot may publish optional descriptive metadata without changing its game behavior:
+
+```
+bio|contact|mail@erik.gdn
+bio|contact|dect:8323
+bio|src|https://github.com/erikgoldenstein/tron-bot
+```
+
+`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 characters and must be an HTTPS GitHub repository URL. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are entirely additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
 
 ## Rate limits
 

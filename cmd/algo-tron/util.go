@@ -55,6 +55,39 @@ func validateVersion(version string) string {
 	return ""
 }
 
+func validateBio(field, value string) string {
+	switch field {
+	case "contact":
+		if len(value) > 32 || !printableASCII(value) {
+			return "ERROR_INVALID_BIO"
+		}
+	case "src":
+		if value == "" {
+			return ""
+		}
+		u, err := url.Parse(value)
+		if err != nil || u.Scheme != "https" || (u.Host != "github.com" && u.Host != "www.github.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(value) > 48 {
+			return "ERROR_INVALID_BIO"
+		}
+		path := strings.Trim(u.Path, "/")
+		if len(strings.Split(path, "/")) < 2 {
+			return "ERROR_INVALID_BIO"
+		}
+	default:
+		return "ERROR_INVALID_BIO"
+	}
+	return ""
+}
+
+func printableASCII(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r > 0x7e || r == '|' {
+			return false
+		}
+	}
+	return true
+}
+
 // parseJoinAttributes parses optional pipe-delimited keyword/value fields.
 // Attributes are deliberately order-independent; unknown attributes are
 // ignored so newer clients can add optional data without breaking this join.

@@ -48,7 +48,7 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 		m.Players = append(m.Players, playerMsg{
 			ID: st.id, Name: s.displayNameLocked(st.player), Version: versionOf(st.player), Pos: st.pos,
 			Moves: append([]Vec2(nil), st.trail...),
-			Alive: st.alive, Chat: st.player.Chat,
+			Alive: st.alive, Chat: st.player.Chat, Bio: cloneBio(st.player.Bio),
 		})
 	}
 	m.BoardScoreboard = buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)

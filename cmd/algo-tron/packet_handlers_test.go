@@ -166,3 +166,27 @@ func TestHandleChatPipeIsInvalidChar(t *testing.T) {
 		t.Errorf("expected ERROR_INVALID_CHAT_MESSAGE, got %q", buf.String())
 	}
 }
+
+func TestHandleBio(t *testing.T) {
+	s := testServer(t)
+	p, buf := testPlayer("alice")
+	s.players[playerKey("alice", "v1")] = p
+
+	s.handleBio(p, []string{"bio", "contact", "dect:8323"})
+	s.handleBio(p, []string{"bio", "src", "https://github.com/erikgoldenstein/tron-bot"})
+
+	if p.Bio["contact"] != "dect:8323" || p.Bio["src"] == "" {
+		t.Fatalf("Bio = %#v, want contact and src", p.Bio)
+	}
+	if _, ok := s.dirty[p]; !ok {
+		t.Fatal("bio update did not mark player dirty")
+	}
+	if got := buf.String(); got != "" {
+		t.Errorf("valid bio updates emitted an error: %q", got)
+	}
+
+	s.handleBio(p, []string{"bio", "contact", ""})
+	if _, ok := p.Bio["contact"]; ok {
+		t.Fatal("empty contact did not clear the field")
+	}
+}

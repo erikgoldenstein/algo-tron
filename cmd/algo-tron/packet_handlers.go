@@ -42,11 +42,42 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) (bool, 
 		s.handleChat(p, parts)
 		lim.allowed()
 		return true, ""
+	case "bio":
+		s.handleBio(p, parts)
+		lim.allowed()
+		return true, ""
 	default:
 		p.send("error", "ERROR_UNKNOWN_PACKET")
 		lim.allowed()
 		return true, ""
 	}
+}
+
+func (s *Server) handleBio(p *Player, parts []string) {
+	if len(parts) != 3 {
+		p.send("error", "ERROR_INVALID_BIO")
+		return
+	}
+	field, value := parts[1], parts[2]
+	if errCode := validateBio(field, value); errCode != "" {
+		p.send("error", errCode)
+		return
+	}
+
+	s.mu.Lock()
+	if p.Bio == nil {
+		p.Bio = map[string]string{}
+	}
+	if value == "" {
+		delete(p.Bio, field)
+	} else {
+		p.Bio[field] = value
+	}
+	s.markDirtyLocked(p)
+	s.queueStoreLocked()
+	s.updateScoreboardLocked()
+	s.broadcastScoreboardLocked()
+	s.mu.Unlock()
 }
 
 func (s *Server) handleMove(p *Player, st *Seat, parts []string) {
