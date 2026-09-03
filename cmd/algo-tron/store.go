@@ -26,10 +26,12 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players (
-		username      TEXT PRIMARY KEY,
+		username      TEXT NOT NULL,
+		version       TEXT NOT NULL DEFAULT 'v1',
 		pw_hash       TEXT NOT NULL,
 		elo           REAL NOT NULL DEFAULT 1000,
-		score_history TEXT NOT NULL DEFAULT '[]'
+		score_history TEXT NOT NULL DEFAULT '[]',
+		PRIMARY KEY (username, version)
 	)`)
 	if err != nil {
 		db.Close()
@@ -38,21 +40,29 @@ func openDB(path string) (*sql.DB, error) {
 	// TrueSkill columns added later; ignore "duplicate column" on re-open.
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_mu REAL NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN last_seen_unix INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
+	if err := migratePlayersTable(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	_, _ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> ''`)
 	_, _ = db.Exec(`UPDATE players SET last_seen_unix = ? WHERE last_seen_unix = 0`, time.Now().Unix())
+	_, _ = db.Exec(`UPDATE players SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE ? END WHERE first_seen_unix = 0`, time.Now().Unix())
 	// players_archive holds retired careers (idle takeover, idle pruning) —
 	// soft-deleted: kept on disk for history, never read by the server. The
 	// same username can appear multiple times, once per retirement.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players_archive (
 		uuid             TEXT NOT NULL DEFAULT '',
 		username         TEXT NOT NULL,
+		version          TEXT NOT NULL DEFAULT 'v1',
 		pw_hash          TEXT NOT NULL,
 		elo              REAL NOT NULL,
 		score_history    TEXT NOT NULL,
 		ts_mu            REAL NOT NULL,
 		ts_sigma         REAL NOT NULL,
+		first_seen_unix  INTEGER NOT NULL,
 		last_seen_unix   INTEGER NOT NULL,
 		archived_at_unix INTEGER NOT NULL
 	)`)
@@ -61,11 +71,15 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
+	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`UPDATE players_archive SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE archived_at_unix END WHERE first_seen_unix = 0`)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS game_participants (
 		game_id       TEXT NOT NULL,
 		board_index   INTEGER NOT NULL,
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
+		version       TEXT NOT NULL DEFAULT 'v1',
 		won           INTEGER NOT NULL,
 		death_reason  TEXT NOT NULL,
 		elo           REAL NOT NULL,
@@ -79,6 +93,7 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// tick_count (total ticks the game lasted) added later; ignore "duplicate column".
 	_, _ = db.Exec(`ALTER TABLE game_participants ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE game_participants ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
 	// Indexes for scoreboard_cache.go's period aggregate (latest-per-uuid +
 	// windowed sum). Without them the halfyear board scans the full table.
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms)`)
@@ -92,6 +107,7 @@ func openDB(path string) (*sql.DB, error) {
 		board_index   INTEGER NOT NULL,
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
+		version       TEXT NOT NULL DEFAULT 'v1',
 		won           INTEGER NOT NULL,
 		death_reason  TEXT NOT NULL,
 		elo           REAL NOT NULL,
@@ -104,6 +120,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
 	// game_winners was a duplicate of game_participants WHERE won=1; the
 	// participants table already answers "who won game X" via won=1. Drop
 	// if a previous build created it; new installs never see it.
@@ -129,14 +146,93 @@ func openDB(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// migratePlayersTable upgrades the pre-version schema, whose primary key was
+// username, to the composite (username, version) identity. Existing rows are
+// the legacy v1 career. SQLite cannot alter a primary key in place, so the
+// table is rebuilt inside one transaction; SQLite DDL is transactional here.
+func migratePlayersTable(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(players)`)
+	if err != nil {
+		return err
+	}
+	hasVersion := false
+	usernamePK, versionPK := 0, 0
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "version" {
+			hasVersion = true
+			versionPK = pk
+		}
+		if name == "username" {
+			usernamePK = pk
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if hasVersion && usernamePK > 0 && versionPK > 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if !hasVersion {
+		if _, err := tx.Exec(`ALTER TABLE players ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS players_versioned`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE TABLE players_versioned (
+		username      TEXT NOT NULL,
+		version       TEXT NOT NULL DEFAULT 'v1',
+		pw_hash       TEXT NOT NULL,
+		elo           REAL NOT NULL DEFAULT 1000,
+		score_history TEXT NOT NULL DEFAULT '[]',
+		ts_mu         REAL NOT NULL DEFAULT 0,
+		ts_sigma      REAL NOT NULL DEFAULT 0,
+		first_seen_unix INTEGER NOT NULL DEFAULT 0,
+		last_seen_unix INTEGER NOT NULL DEFAULT 0,
+		uuid          TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (username, version)
+	)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO players_versioned
+		(username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid)
+		SELECT username, COALESCE(NULLIF(version, ''), 'v1'), pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid
+		FROM players`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE players`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE players_versioned RENAME TO players`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // archiveRow copies one retired career into players_archive. Call with no
 // lock held — the live Player/row is reset or removed separately by the
 // caller. Failure is logged and counted; the takeover proceeds regardless.
 func archiveRow(db *sql.DB, r playerRow) {
 	scores, _ := json.Marshal(r.scores)
-	_, err := db.Exec(`INSERT INTO players_archive (uuid, username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, archived_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.uuid, r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.lastSeenUnix, time.Now().Unix())
+	_, err := db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.uuid, r.username, r.version, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, time.Now().Unix())
 	if err != nil {
 		metricDBErrors.WithLabelValues("archive").Inc()
 		slog.Error("db archive", "user", r.username, "err", err)
@@ -155,8 +251,8 @@ func pruneIdleAccounts(db *sql.DB, cutoffUnix int64) {
 		return
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO players_archive (uuid, username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, archived_at_unix)
-		SELECT uuid, username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
+	if _, err := tx.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
+		SELECT uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
 		time.Now().Unix(), cutoffUnix); err != nil {
 		metricDBErrors.WithLabelValues("prune").Inc()
 		slog.Error("db prune archive", "err", err)
@@ -192,8 +288,8 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO game_participants_archive
-		(game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
-		SELECT game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count
+		(game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		SELECT game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count
 		FROM game_participants WHERE ended_unix_ms < ?`, cutoffUnixMs); err != nil {
 		metricDBErrors.WithLabelValues("ledger_archive").Inc()
 		slog.Error("db ledger archive copy", "err", err)
@@ -216,7 +312,7 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 }
 
 func (s *Server) load() {
-	rows, err := s.db.Query("SELECT uuid, username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix FROM players")
+	rows, err := s.db.Query("SELECT uuid, username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix FROM players")
 	if err != nil {
 		metricDBErrors.WithLabelValues("load").Inc()
 		slog.Error("db load", "err", err)
@@ -224,10 +320,10 @@ func (s *Server) load() {
 	}
 	missingUUID := []playerRow{}
 	for rows.Next() {
-		var uuid, username, pwHash, scoresJSON string
+		var uuid, username, version, pwHash, scoresJSON string
 		var elo, tsMu, tsSigma float64
-		var lastSeenUnix int64
-		if err := rows.Scan(&uuid, &username, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma, &lastSeenUnix); err != nil {
+		var firstSeenUnix, lastSeenUnix int64
+		if err := rows.Scan(&uuid, &username, &version, &pwHash, &elo, &scoresJSON, &tsMu, &tsSigma, &firstSeenUnix, &lastSeenUnix); err != nil {
 			metricDBErrors.WithLabelValues("load_row").Inc()
 			slog.Error("db load row", "err", err)
 			continue
@@ -245,11 +341,19 @@ func (s *Server) load() {
 		if legacyUUID {
 			uuid = randUUID()
 		}
-		p := &Player{UUID: uuid, Username: username, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, ScoreHistory: scores}
+		version = normalizeVersion(version)
+		firstSeen := time.Now()
+		if firstSeenUnix > 0 {
+			firstSeen = time.Unix(firstSeenUnix, 0)
+		} else if lastSeenUnix > 0 {
+			// Defensive fallback for a read-only or partially migrated DB.
+			firstSeen = time.Unix(lastSeenUnix, 0)
+		}
+		p := &Player{UUID: uuid, Username: username, Version: version, PwHash: pwHash, Elo: elo, TsMu: tsMu, TsSigma: tsSigma, FirstSeen: firstSeen, ScoreHistory: scores}
 		if lastSeenUnix > 0 {
 			p.LastSeen = time.Unix(lastSeenUnix, 0)
 		}
-		s.players[username] = p
+		s.players[playerKey(username, version)] = p
 		if legacyUUID {
 			missingUUID = append(missingUUID, snapshotRow(p))
 		}
@@ -266,9 +370,11 @@ func (s *Server) load() {
 type playerRow struct {
 	uuid             string
 	username, pwHash string
+	version          string
 	elo              float64
 	scores           []Score
 	tsMu, tsSigma    float64
+	firstSeenUnix    int64
 	lastSeenUnix     int64
 }
 
@@ -348,12 +454,21 @@ func snapshotRow(p *Player) playerRow {
 	row := playerRow{
 		uuid:     ensureUUID(p),
 		username: p.Username,
+		version:  versionOf(p),
 		pwHash:   p.PwHash,
 		elo:      p.Elo,
 		scores:   append([]Score(nil), p.ScoreHistory...),
 		tsMu:     p.TsMu,
 		tsSigma:  p.TsSigma,
 	}
+	firstSeen := p.FirstSeen
+	if firstSeen.IsZero() {
+		firstSeen = p.LastSeen
+	}
+	if firstSeen.IsZero() {
+		firstSeen = time.Now()
+	}
+	row.firstSeenUnix = firstSeen.Unix()
 	if !p.LastSeen.IsZero() {
 		row.lastSeenUnix = p.LastSeen.Unix()
 	}
@@ -388,7 +503,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 		return false
 	}
 	defer tx.Rollback()
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, pw_hash, elo, score_history, ts_mu, ts_sigma, last_seen_unix, uuid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO players (username, version, pw_hash, elo, score_history, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("store_prepare").Inc()
 		slog.Error("db store prepare", "err", err)
@@ -397,7 +512,7 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 	defer stmt.Close()
 	for _, r := range rows {
 		scores, _ := json.Marshal(r.scores)
-		if _, err := stmt.Exec(r.username, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.lastSeenUnix, r.uuid); err != nil {
+		if _, err := stmt.Exec(r.username, r.version, r.pwHash, r.elo, string(scores), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, r.uuid); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()
 			slog.Error("db store row", "user", r.username, "err", err)
 		}
@@ -438,6 +553,7 @@ type gameParticipantRecord struct {
 	boardIndex  int
 	uuid        string
 	username    string
+	version     string
 	won         bool
 	deathReason string
 	elo         float64
@@ -458,8 +574,8 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 		return
 	}
 	defer tx.Rollback()
-	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("game_rows_prepare").Inc()
 		slog.Error("db game rows prepare", "err", err)
@@ -467,11 +583,12 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 	}
 	defer part.Close()
 	for _, r := range rows {
+		version := normalizeVersion(r.version)
 		won := 0
 		if r.won {
 			won = 1
 		}
-		if _, err := part.Exec(r.gameID, r.boardIndex, r.uuid, r.username, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs, r.tickCount); err != nil {
+		if _, err := part.Exec(r.gameID, r.boardIndex, r.uuid, r.username, version, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs, r.tickCount); err != nil {
 			metricDBErrors.WithLabelValues("game_participant").Inc()
 			slog.Error("db game participant", "uuid", r.uuid, "err", err)
 		}

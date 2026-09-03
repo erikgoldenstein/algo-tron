@@ -48,6 +48,7 @@ func (s *Server) updateScoreboardLocked() {
 		}
 	}
 	entries := buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
+	s.annotateVersionTagsLocked(entries)
 	s.viewState.Scoreboard = entries
 	s.viewState.ScoreboardHasMore = len(players) > len(entries)
 	s.updateChartDataLocked(entries)
@@ -64,7 +65,7 @@ func boardEntriesFromPlayers(players []*Player) []ScoreboardEntry {
 		if games > 0 {
 			wr = float64(w) / float64(games)
 		}
-		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
+		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, Version: versionOf(p), WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
 	}
 	return entries
 }
@@ -139,6 +140,7 @@ func (s *Server) scoreboardPageLocked(q scoreboardQuery) ([]ScoreboardEntry, boo
 		players = append(players, p)
 	}
 	entries := buildScoreboardEntriesLocked(players, q.Sort, q.Offset, q.Limit+1)
+	s.annotateVersionTagsLocked(entries)
 	hasMore := len(entries) > q.Limit
 	if hasMore {
 		entries = entries[:q.Limit]
@@ -164,7 +166,7 @@ func buildChartDataLocked(players map[string]*Player, entries []ScoreboardEntry)
 	for i := range data {
 		point := map[string]any{"name": i}
 		for _, entry := range entries {
-			p := players[entry.Username]
+			p := players[playerKey(entry.Username, entry.Version)]
 			if p == nil {
 				continue
 			}
@@ -174,7 +176,7 @@ func buildChartDataLocked(players map[string]*Player, entries []ScoreboardEntry)
 			}
 			for j := end - 1; j >= 0; j-- {
 				if p.ScoreHistory[j].TsMu != 0 {
-					point[entry.Username] = map[string]float64{"mu": p.ScoreHistory[j].TsMu, "sigma": p.ScoreHistory[j].TsSigma}
+					point[chartKey(entry)] = map[string]float64{"mu": p.ScoreHistory[j].TsMu, "sigma": p.ScoreHistory[j].TsSigma}
 					break
 				}
 			}
@@ -182,4 +184,41 @@ func buildChartDataLocked(players map[string]*Player, entries []ScoreboardEntry)
 		data[i] = point
 	}
 	return data
+}
+
+func chartKey(entry ScoreboardEntry) string {
+	if entry.Version == "" || entry.Version == defaultBotVersion {
+		return entry.Username
+	}
+	return entry.Username + "-" + entry.Version
+}
+
+// annotateVersionTagsLocked marks entries whose username has more than one
+// version online. The version remains a separate JSON field; this flag lets
+// the UI display a tag only when it is needed to distinguish live bots.
+func (s *Server) annotateVersionTagsLocked(entries []ScoreboardEntry) {
+	counts := s.onlineVersionCountsLocked()
+	for i := range entries {
+		entries[i].ShowVersion = counts[entries[i].Username] > 1
+	}
+}
+
+func (s *Server) onlineVersionCountsLocked() map[string]int {
+	counts := map[string]int{}
+	for _, p := range s.players {
+		if p.conn != nil && leaderboardEligible(p) {
+			counts[p.Username]++
+		}
+	}
+	return counts
+}
+
+func (s *Server) displayNameLocked(p *Player) string {
+	if p == nil {
+		return ""
+	}
+	if s.onlineVersionCountsLocked()[p.Username] <= 1 {
+		return p.Username
+	}
+	return p.Username + "-" + versionOf(p)
 }

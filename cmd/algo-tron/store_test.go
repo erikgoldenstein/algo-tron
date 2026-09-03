@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"io"
 	"path/filepath"
 	"strings"
@@ -29,12 +30,14 @@ func testDB(t *testing.T) *Server {
 func TestLoadStoreRoundTrip(t *testing.T) {
 	s := testDB(t)
 	now := time.Now().UnixMilli()
+	firstSeen := time.Now().Add(-24 * time.Hour).Truncate(time.Second)
 	lastSeen := time.Now().Add(-time.Hour).Truncate(time.Second)
 	s.players["alice"] = &Player{
-		Username: "alice",
-		PwHash:   hashPassword(s.secret, "pass"),
-		Elo:      1234.5,
-		LastSeen: lastSeen,
+		Username:  "alice",
+		PwHash:    hashPassword(s.secret, "pass"),
+		Elo:       1234.5,
+		FirstSeen: firstSeen,
+		LastSeen:  lastSeen,
 		ScoreHistory: []Score{
 			{Type: 1, Time: now},
 			{Type: 0, Time: now},
@@ -60,6 +63,9 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	}
 	if !p.LastSeen.Equal(lastSeen) {
 		t.Errorf("LastSeen = %v, want %v", p.LastSeen, lastSeen)
+	}
+	if !p.FirstSeen.Equal(firstSeen) {
+		t.Errorf("FirstSeen = %v, want %v", p.FirstSeen, firstSeen)
 	}
 }
 
@@ -109,6 +115,68 @@ func TestLoadStoreMultiplePlayers(t *testing.T) {
 		if s.players[name] == nil {
 			t.Errorf("player %q not found after load", name)
 		}
+	}
+}
+
+func TestLoadStoreMultipleVersions(t *testing.T) {
+	s := testDB(t)
+	s.players[playerKey("alice", "v1")] = &Player{Username: "alice", Version: "v1", PwHash: "h1", Elo: 1100}
+	s.players[playerKey("alice", "v2")] = &Player{Username: "alice", Version: "v2", PwHash: "h1", Elo: 1200}
+	s.store()
+
+	s.players = map[string]*Player{}
+	s.load()
+	if p := s.players[playerKey("alice", "v1")]; p == nil || p.Elo != 1100 {
+		t.Fatalf("v1 career after reload = %+v, want elo 1100", p)
+	}
+	if p := s.players[playerKey("alice", "v2")]; p == nil || p.Elo != 1200 {
+		t.Fatalf("v2 career after reload = %+v, want elo 1200", p)
+	}
+}
+
+func TestOpenDBMigratesLegacyUsernamePrimaryKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	_, err = legacy.Exec(`CREATE TABLE players (
+		username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL, elo REAL NOT NULL DEFAULT 1000,
+		score_history TEXT NOT NULL DEFAULT '[]', ts_mu REAL NOT NULL DEFAULT 0,
+		ts_sigma REAL NOT NULL DEFAULT 0, last_seen_unix INTEGER NOT NULL DEFAULT 0,
+		uuid TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		legacy.Close()
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO players (username, pw_hash, uuid) VALUES ('alice', 'h', 'u1')`); err != nil {
+		legacy.Close()
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	legacy.Close()
+
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatalf("migrate legacy db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO players (username, version, pw_hash, uuid) VALUES ('alice', 'v2', 'h', 'u2')`); err != nil {
+		t.Fatalf("insert second version after migration: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM players WHERE username = 'alice'`).Scan(&count); err != nil {
+		t.Fatalf("count migrated rows: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("migrated alice rows = %d, want 2", count)
+	}
+	var firstSeen int64
+	if err := db.QueryRow(`SELECT first_seen_unix FROM players WHERE username = 'alice' AND version = 'v1'`).Scan(&firstSeen); err != nil {
+		t.Fatalf("read migrated first-seen timestamp: %v", err)
+	}
+	if firstSeen == 0 {
+		t.Fatal("migrated legacy career has no first-seen timestamp")
 	}
 }
 

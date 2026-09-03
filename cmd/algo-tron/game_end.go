@@ -47,7 +47,7 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 			reason = deathReasonCollision
 		}
 		gameRows = append(gameRows, gameParticipantRecord{
-			gameID: g.id, boardIndex: boardIndex, uuid: ensureUUID(st.player), username: st.player.Username,
+			gameID: g.id, boardIndex: boardIndex, uuid: ensureUUID(st.player), username: st.player.Username, version: versionOf(st.player),
 			won: winners[st], deathReason: reason, elo: st.player.Elo, tsMu: st.player.TsMu, tsSigma: st.player.TsSigma, endedUnixMs: endedAt, tickCount: g.tick,
 		})
 	}

@@ -57,7 +57,7 @@ function updateDom() {
     if (cap !== scoreNameChars) {
       scoreNameChars = cap;
       scoreboardEl.querySelectorAll('.namestr').forEach((el) => {
-        el.textContent = displayName(el.dataset.name, scoreNameChars);
+        renderScoreName(el);
       });
     }
   }
@@ -83,6 +83,29 @@ function currentScoreboard() {
     return gameState.boardScoreboard;
   }
   return gameState.scoreboard;
+}
+
+function scoreNameLabel(p) {
+  return p.showVersion && p.version ? p.username + '-' + p.version : p.username;
+}
+
+function scoreNameMarkup(username, version, showVersion, maxChars) {
+  const label = showVersion && version ? username + '-' + version : username;
+  const shown = displayName(label, maxChars);
+  // If the name is being truncated/scrolled, keep the existing plain-text
+  // behavior. The suffix gets its lighter weight whenever the full label fits.
+  if (!showVersion || !version || shown !== label) return esc(shown);
+  return esc(username) + '<span class="version-tag">-' + esc(version) + '</span>';
+}
+
+function renderScoreName(el) {
+  const showVersion = el.dataset.showVersion === 'true';
+  el.innerHTML = scoreNameMarkup(
+    el.dataset.username || el.dataset.name || '',
+    el.dataset.version || '',
+    showVersion,
+    scoreNameChars,
+  );
 }
 
 function updateScoreboardTools() {
@@ -130,9 +153,10 @@ function scoreRow(p, i) {
   const old = p.oldOwner ? '<span class="old">(old owner' + p.oldOwner + ')</span>' : '';
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username);
+  const label = scoreNameLabel(p);
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(p.username) + '">' + esc(displayName(p.username, scoreNameChars)) + '</span>' + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

@@ -64,7 +64,7 @@ func (s *Server) storeBoard(period string) ([]ScoreboardEntry, time.Time) {
 
 // computeBoardEntries builds the full unsorted board for a period. Retired
 // careers are flagged with OldOwner = -1 here; scoreboardCachedPage turns those
-// into 1-based per-username indices after sorting.
+// into 1-based per-username/version indices after sorting.
 func (s *Server) computeBoardEntries(period string) []ScoreboardEntry {
 	if period == "all" {
 		s.mu.Lock()
@@ -92,16 +92,16 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 		cutoff = time.Now().AddDate(0, -6, 0).UnixMilli()
 	}
 	rows, err := s.db.Query(`WITH ranked AS (
-		SELECT uuid, username, won, elo, ts_mu, ts_sigma,
+		SELECT uuid, username, version, won, elo, ts_mu, ts_sigma,
 			ROW_NUMBER() OVER (PARTITION BY uuid ORDER BY ended_unix_ms DESC, rowid DESC) AS rn
 		FROM game_participants
 		WHERE ended_unix_ms >= ?
 	), latest AS (
-		SELECT uuid, username, elo, ts_mu, ts_sigma FROM ranked WHERE rn = 1
-	)
-	SELECT latest.uuid, latest.username, SUM(ranked.won), COUNT(*) - SUM(ranked.won), latest.elo, latest.ts_mu, latest.ts_sigma
-	FROM ranked JOIN latest ON ranked.uuid = latest.uuid
-	GROUP BY latest.uuid, latest.username, latest.elo, latest.ts_mu, latest.ts_sigma`, cutoff)
+		SELECT uuid, username, version, elo, ts_mu, ts_sigma FROM ranked WHERE rn = 1
+		)
+		SELECT latest.uuid, latest.username, latest.version, SUM(ranked.won), COUNT(*) - SUM(ranked.won), latest.elo, latest.ts_mu, latest.ts_sigma
+		FROM ranked JOIN latest ON ranked.uuid = latest.uuid
+		GROUP BY latest.uuid, latest.username, latest.version, latest.elo, latest.ts_mu, latest.ts_sigma`, cutoff)
 	if err != nil {
 		metricDBErrors.WithLabelValues("scoreboard_period").Inc()
 		return nil
@@ -109,10 +109,11 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 	entries := []ScoreboardEntry{}
 	for rows.Next() {
 		var e ScoreboardEntry
-		if err := rows.Scan(&e.UUID, &e.Username, &e.Wins, &e.Losses, &e.Elo, &e.TsMu, &e.TsSigma); err != nil {
+		if err := rows.Scan(&e.UUID, &e.Username, &e.Version, &e.Wins, &e.Losses, &e.Elo, &e.TsMu, &e.TsSigma); err != nil {
 			metricDBErrors.WithLabelValues("scoreboard_period_row").Inc()
 			continue
 		}
+		e.Version = normalizeVersion(e.Version)
 		if botName.MatchString(e.Username) {
 			continue
 		}
@@ -125,7 +126,7 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 	s.mu.Lock()
 	for i := range entries {
 		e := &entries[i]
-		if p := s.players[e.Username]; p != nil {
+		if p := s.players[playerKey(e.Username, e.Version)]; p != nil {
 			if p.UUID == e.UUID {
 				e.Online = p.conn != nil
 				e.Elo, e.TsMu, e.TsSigma = p.Elo, p.TsMu, p.TsSigma
@@ -154,12 +155,15 @@ func (s *Server) scoreboardCachedPage(q scoreboardQuery) ([]ScoreboardEntry, boo
 		}
 		entries = append(entries, e)
 	}
+	s.mu.Lock()
+	s.annotateVersionTagsLocked(entries)
+	s.mu.Unlock()
 	sortEntries(entries, q.Sort)
 	oldSeen := map[string]int{}
 	for i := range entries {
 		if entries[i].OldOwner != 0 {
-			oldSeen[entries[i].Username]++
-			entries[i].OldOwner = oldSeen[entries[i].Username]
+			oldSeen[entries[i].Username+"\x00"+entries[i].Version]++
+			entries[i].OldOwner = oldSeen[entries[i].Username+"\x00"+entries[i].Version]
 		}
 	}
 	if q.Offset < 0 {

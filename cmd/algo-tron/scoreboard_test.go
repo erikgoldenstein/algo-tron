@@ -445,6 +445,31 @@ func TestUpdateScoreboardSetsHasMore(t *testing.T) {
 	}
 }
 
+func TestScoreboardSeparatesVersionsAndOnlyTagsWhenMultipleAreOnline(t *testing.T) {
+	s := testServer(t)
+	now := time.Now().UnixMilli()
+	_, c1 := mustPipe(t)
+	_, c2 := mustPipe(t)
+	s.players[playerKey("mybot", "v1")] = &Player{Username: "mybot", Version: "v1", PwHash: "h", conn: c1, TsMu: 300, TsSigma: 20, ScoreHistory: []Score{{Type: 1, Time: now}}}
+	s.players[playerKey("mybot", "v2")] = &Player{Username: "mybot", Version: "v2", PwHash: "h", conn: c2, TsMu: 290, TsSigma: 20, ScoreHistory: []Score{{Type: 0, Time: now}}}
+
+	s.updateScoreboardLocked()
+	if len(s.viewState.Scoreboard) != 2 {
+		t.Fatalf("scoreboard entries = %d, want 2 independent versions", len(s.viewState.Scoreboard))
+	}
+	for _, entry := range s.viewState.Scoreboard {
+		if !entry.ShowVersion {
+			t.Errorf("%s/%s should show its version while both are online", entry.Username, entry.Version)
+		}
+	}
+
+	s.players[playerKey("mybot", "v2")].conn = nil
+	s.updateScoreboardLocked()
+	if len(s.viewState.Scoreboard) != 1 || s.viewState.Scoreboard[0].ShowVersion {
+		t.Fatalf("single online version scoreboard = %+v, want one untagged entry", s.viewState.Scoreboard)
+	}
+}
+
 // — computePeriodEntries —————————————————————————————————————————————
 
 func TestComputePeriodExcludesBots(t *testing.T) {

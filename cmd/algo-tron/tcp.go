@@ -91,12 +91,18 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	_ = conn.SetReadDeadline(time.Time{})
 
 	parts := strings.Split(scanner.Text(), "|")
-	if len(parts) != 3 || parts[0] != "join" {
+	if len(parts) < 3 || parts[0] != "join" {
 		metricTCPRejected.WithLabelValues("expected_join").Inc()
 		reject("error", "ERROR_EXPECTED_JOIN")
 		return
 	}
 	username, password := parts[1], parts[2]
+	version, errCode := parseJoinAttributes(parts[3:])
+	if errCode != "" {
+		metricTCPRejected.WithLabelValues("invalid_join").Inc()
+		reject("error", errCode)
+		return
+	}
 	if errCode := validateJoin(username, password, ip); errCode != "" {
 		metricTCPRejected.WithLabelValues("invalid_join").Inc()
 		reject("error", errCode)
@@ -106,19 +112,33 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	now := time.Now()
 	pwHash := hashPassword(s.secret, password)
 	s.mu.Lock()
-	p := s.players[username]
+	p := s.playerForVersionLocked(username, version)
+	var archived []playerRow
 	if p == nil {
-		// LastSeen and the dirty mark are set unconditionally below
-		// alongside the existing-player path; keeping them in the
-		// literal here too makes a freshly-created Player a complete
-		// account at a glance for readers of this branch.
-		p = &Player{UUID: randUUID(), Username: username, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, LastSeen: now}
-		s.players[username] = p
-	} else if p.PwHash != pwHash && !p.passwordResetAllowed(now) {
-		s.mu.Unlock()
-		metricTCPRejected.WithLabelValues("wrong_password").Inc()
-		reject("error", "ERROR_WRONG_PASSWORD")
-		return
+		account := s.accountPlayerLocked(username)
+		if account != nil && account.PwHash != pwHash {
+			if !s.accountPasswordResetAllowedLocked(username, now) {
+				s.mu.Unlock()
+				metricTCPRejected.WithLabelValues("wrong_password").Inc()
+				reject("error", "ERROR_WRONG_PASSWORD")
+				return
+			}
+			p, archived = s.resetAccountLocked(username, version, pwHash, now)
+		} else {
+			p = &Player{UUID: randUUID(), Username: username, Version: version, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, FirstSeen: now, LastSeen: now}
+			s.players[playerKey(username, version)] = p
+		}
+	} else if p.PwHash != pwHash {
+		if !s.accountPasswordResetAllowedLocked(username, now) {
+			s.mu.Unlock()
+			metricTCPRejected.WithLabelValues("wrong_password").Inc()
+			reject("error", "ERROR_WRONG_PASSWORD")
+			return
+		}
+		p, archived = s.resetAccountLocked(username, version, pwHash, now)
+	}
+	if p.Version == "" {
+		p.Version = defaultBotVersion
 	}
 	if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
 		s.mu.Unlock()
@@ -134,19 +154,6 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		old.shutdown("replaced_by_new_connection")
 	}
 	ensureUUID(p)
-	// Idle-account takeover (passwordResetAllowed verified above): the new
-	// owner starts with fresh stats. The old career isn't deleted — it is
-	// snapshotted here and written to players_archive off-lock below.
-	var archived *playerRow
-	if p.PwHash != pwHash {
-		row := snapshotRow(p)
-		archived = &row
-		p.UUID = randUUID()
-		p.PwHash = pwHash
-		p.Elo = 1000
-		p.TsMu, p.TsSigma = tsMu0, tsSigma0
-		p.ScoreHistory = nil
-	}
 	p.LastSeen = now
 	s.markDirtyLocked(p)
 	sink = newBotSink(conn)
@@ -170,8 +177,8 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.updateScoreboardLocked()
 	s.broadcastScoreboardLocked()
 	s.mu.Unlock()
-	if archived != nil {
-		archiveRow(s.db, *archived)
+	for _, row := range archived {
+		archiveRow(s.db, row)
 	}
 	recordPlayerIP(s.db, s.secret, s.geo, ensureUUID(p), ip, now)
 	go sink.run()

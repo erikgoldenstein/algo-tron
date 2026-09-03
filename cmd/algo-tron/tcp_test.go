@@ -10,15 +10,67 @@ import (
 // joinAs connects through a pipe, completes the join handshake, and returns
 // the client-side reader positioned after the motd line.
 func joinAs(t *testing.T, s *Server, username, password string) *bufio.Reader {
+	return joinAsVersion(t, s, username, password, "")
+}
+
+func joinAsVersion(t *testing.T, s *Server, username, password, version string) *bufio.Reader {
+	field := ""
+	if version != "" {
+		field = "version " + version
+	}
+	return joinAsVersionField(t, s, username, password, field)
+}
+
+func joinAsVersionField(t *testing.T, s *Server, username, password, versionField string) *bufio.Reader {
 	t.Helper()
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
-	if _, err := client.Write([]byte("join|" + username + "|" + password + "\n")); err != nil {
+	join := "join|" + username + "|" + password
+	if versionField != "" {
+		join += "|" + versionField
+	}
+	if _, err := client.Write([]byte(join + "\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
 	return br
+}
+
+func TestJoinSupportsIndependentVersionsAndLegacyDefaultsToV1(t *testing.T) {
+	s := testServer(t)
+	joinAs(t, s, "mybot", "pw")
+	joinAsVersion(t, s, "mybot", "pw", "v2")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		v1 := s.players[playerKey("mybot", "v1")]
+		v2 := s.players[playerKey("mybot", "v2")]
+		ready := v1 != nil && v2 != nil && v1.sink.Load() != nil && v2.sink.Load() != nil
+		v1FirstSeen, v2FirstSeen := time.Time{}, time.Time{}
+		if v1 != nil {
+			v1FirstSeen = v1.FirstSeen
+		}
+		if v2 != nil {
+			v2FirstSeen = v2.FirstSeen
+		}
+		s.mu.Unlock()
+		if ready {
+			if v1.Version != "" && v1.Version != "v1" {
+				t.Fatalf("legacy join version = %q, want v1/default", v1.Version)
+			}
+			if v2.Version != "v2" {
+				t.Fatalf("explicit join version = %q, want v2", v2.Version)
+			}
+			if v1FirstSeen.IsZero() || v2FirstSeen.IsZero() {
+				t.Fatalf("versioned careers must have first-seen timestamps: v1=%v v2=%v", v1FirstSeen, v2FirstSeen)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("versioned joins did not create two live careers")
 }
 
 func TestIPCountCleanedUpAfterDisconnect(t *testing.T) {
