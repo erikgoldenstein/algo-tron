@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,13 +92,30 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#help-btn`),
 		chromedp.Click(`#help-btn`),
-		chromedp.WaitVisible(`.modal-window`),
+		chromedp.WaitVisible(`#help-modal .modal-window`),
 		chromedp.Evaluate(`document.getElementById('help-modal').hidden`, &hidden),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if hidden {
 		t.Error("help modal still hidden after clicking settings")
+	}
+}
+
+func TestE2EAdminHotspotLogin(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.adminPassword = strings.Repeat("a", adminPasswordLength)
+	ctx := browser(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#help-btn`),
+		chromedp.Click(`#admin-hotspot`),
+		chromedp.WaitVisible(`#admin-login-modal`),
+		chromedp.SendKeys(`#admin-password`, strings.Repeat("a", adminPasswordLength)),
+		chromedp.WaitVisible(`#admin-section:not([hidden])`),
+	); err != nil {
+		t.Fatal(err)
 	}
 }
 

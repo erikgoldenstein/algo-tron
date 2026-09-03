@@ -55,6 +55,7 @@ type Server struct {
 	storeSignal chan struct{}
 
 	secret        []byte
+	adminPassword string
 	db            *sql.DB
 	geo           *geoLookup
 	scheduleURL   string

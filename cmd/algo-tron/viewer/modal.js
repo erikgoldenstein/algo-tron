@@ -57,7 +57,11 @@ function toggleHelp(force) {
   if (!m) return;
   const shouldShow = force === undefined ? m.hidden : force;
   m.hidden = !shouldShow;
-  if (shouldShow) { renderSchemes(); renderSwitches(); }
+  if (shouldShow) {
+    renderSchemes();
+    renderSwitches();
+    if (typeof refreshAdminStatus === 'function') refreshAdminStatus();
+  }
 }
 
 function cycleScheme() {
@@ -231,6 +235,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('admin-login-modal')?.hidden) {
+    e.preventDefault();
+    closeAdminLogin();
+    return;
+  }
   // Don't steal shortcuts while the user is typing in a field.
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;

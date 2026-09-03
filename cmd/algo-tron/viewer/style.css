@@ -573,6 +573,44 @@ canvas#game { display: block; }
 .modal-section:first-child { margin-top: 0; }
 .modal-section-title { color: var(--accent); margin-bottom: 8px; font-weight: 500; }
 
+.admin-hotspot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: default;
+}
+.admin-login-modal { z-index: 2010; }
+.admin-login-window { max-width: 360px; }
+.admin-login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+}
+.admin-login-field input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 4px 6px;
+}
+.admin-login-field input:focus { outline: none; border-color: var(--accent); }
+.admin-login-status {
+  min-height: 18px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.admin-login-status.error { color: var(--accent); }
+
 .scoreplot-chart-section { margin-top: 0; }
 #scoreplot-view { overflow-y: auto; }
 .scoreplot-chart-wrap {
