@@ -76,6 +76,40 @@ func TestHistoryAPI(t *testing.T) {
 	}
 }
 
+func TestHistoryAPIAggregatesBetterModel(t *testing.T) {
+	s := testServer(t)
+	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-v1", Username: "alice", Version: "v1", PwHash: "h"}
+	s.players[playerKey("alice", "v2")] = &Player{UUID: "alice-v2", Username: "alice", Version: "v2", PwHash: "h"}
+	now := time.Now().UnixMilli()
+	rows := []struct {
+		uuid, gameID string
+		elo         float64
+		ended       int64
+	}{
+		{"alice-v1", "g1", 1000, now - 2000},
+		{"alice-v2", "g1", 1100, now - 2000},
+		{"alice-v1", "g2", 1200, now - 1000},
+		{"alice-v2", "g2", 1050, now - 1000},
+	}
+	for _, row := range rows {
+		if _, err := s.db.Exec(`INSERT INTO game_participants
+			(game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
+			VALUES (?, 1, ?, 'alice', 'v1', 0, '', ?, 300, 20, ?)`,
+			row.gameID, row.uuid, row.elo, row.ended); err != nil {
+			t.Fatalf("insert %s/%s: %v", row.uuid, row.gameID, err)
+		}
+	}
+
+	response := performHistoryRequest(t, s, "elo", "alice/*", now-3000, now)
+	if len(response.Series) != 1 || response.Series[0].Version != "*" {
+		t.Fatalf("series = %+v, want one aggregated alice series", response.Series)
+	}
+	points := response.Series[0].Points
+	if len(points) != 2 || points[0].Value != 1100 || points[1].Value != 1200 {
+		t.Fatalf("aggregated points = %+v, want [1100, 1200]", points)
+	}
+}
+
 func TestHistoryAPIRoute(t *testing.T) {
 	s := testServer(t)
 	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}

@@ -14,7 +14,9 @@ The scoreboard history tab uses the separate read-only HTTP endpoint
 `GET /api/history`; it is intentionally not part of the WebSocket protocol.
 The request accepts repeated `user` parameters. A user is identified as
 `username` for the default `v1` career or `username/version` for another
-career. `from` and `to` are optional Unix timestamps in milliseconds or
+career. Append `/*` to a username to aggregate all of that username's current
+versions and select the better metric value at each point in time. `from` and
+`to` are optional Unix timestamps in milliseconds or
 Grafana-style relative values such as `now`, `now-2d`, `now-2M`, `now-1y`, and
 `now+30m`; when omitted, the endpoint defaults to the preceding two hours
 ending now. `m` means minutes, `y` or `Y` means calendar years, while
@@ -25,7 +27,7 @@ accepted as `wr`).
 Example:
 
 ```text
-/api/history?metric=trueskill&user=alice&user=alice%2Fv2&from=1710000000000&to=1715000000000
+/api/history?metric=trueskill&user=alice%2F*&user=bob&from=1710000000000&to=1715000000000
 ```
 
 The response contains one series per selected career:

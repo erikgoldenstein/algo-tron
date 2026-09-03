@@ -337,6 +337,7 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 #chat .chat-empty { color: var(--text-muted); font-style: italic; }
 
 .scoreboard-modal-window { width: min(720px, calc(100vw - 32px)); }
+.scoreboard-modal-window.scoreplot-open { border-radius: 0; }
 .scoreboard-modal-window .modal-body { overflow: visible; }
 /* Only the rows scroll; controls and column header stay pinned. */
 .scoreboard-modal-scroll {
@@ -543,6 +544,19 @@ canvas#game { display: block; }
 
 .modal-title { color: var(--text); font-size: 14px; }
 .modal-title b { color: var(--text); font-weight: 700; }
+.modal-tabs { display: inline-flex; align-items: center; gap: 5px; }
+.modal-tab {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.modal-tab.active { color: var(--text); }
+.modal-tab:hover { color: var(--text); }
+.modal-tab:not(.active) b { color: var(--text-muted); }
+.modal-tab-sep { color: var(--text-muted); }
 
 .modal-close {
   background: transparent;
@@ -558,6 +572,106 @@ canvas#game { display: block; }
 .modal-section { margin-top: 14px; }
 .modal-section:first-child { margin-top: 0; }
 .modal-section-title { color: var(--accent); margin-bottom: 8px; font-weight: 500; }
+
+.scoreplot-chart-section { margin-top: 0; }
+.scoreplot-chart-wrap {
+  height: min(38vh, 300px);
+  min-height: 180px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+#scoreplot-chart { display: block; }
+.scoreplot-status {
+  min-height: 16px;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.scoreplot-status.error, .scoreplot-time-error { color: var(--accent); }
+.scoreplot-controls-section { margin-top: 8px; }
+.scoreplot-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1.35fr;
+  gap: 8px;
+  align-items: end;
+}
+.scoreplot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.scoreplot-field input, .scoreplot-field select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 3px 5px;
+}
+.scoreplot-field input:focus, .scoreplot-field select:focus { outline: none; border-color: var(--accent); }
+.scoreplot-field input.invalid { border-color: var(--accent); color: var(--accent); }
+.scoreplot-user-picker { position: relative; display: block; }
+.scoreplot-user-options {
+  position: absolute;
+  z-index: 12;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 170px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.scoreplot-user-options[hidden] { display: none; }
+.scoreplot-user-options button {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 3px 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.scoreplot-user-options button:hover { background: var(--border); }
+.scoreplot-no-users { display: block; padding: 3px 5px; color: var(--text-muted); }
+.scoreplot-time-error { min-height: 16px; margin-top: 5px; font-size: 11px; }
+.scoreplot-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 22px;
+  margin-top: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.scoreplot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--scoreplot-user-color);
+  padding: 2px 3px 2px 5px;
+  color: var(--text);
+  font-size: 11px;
+}
+.scoreplot-chip button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.scoreplot-chip button:hover { color: var(--text); }
 
 .kv {
   display: grid;
@@ -685,6 +799,9 @@ canvas#game { display: block; }
   .kv-2col { grid-template-columns: 110px 1fr; }
   .kv-2col .kv-full { grid-column: 1; }
   .kv-2col .kv-full-val { grid-column: 2; }
+
+  .scoreplot-controls { grid-template-columns: 1fr 1fr; }
+  .scoreplot-user-field { grid-column: 1 / -1; }
 
   .switches { grid-template-columns: 1fr; }
 
