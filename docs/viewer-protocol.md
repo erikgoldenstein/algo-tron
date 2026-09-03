@@ -8,6 +8,53 @@ The viewer SPA is served from `/`, and live updates are pushed over a WebSocket 
 
 The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can also request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to the first running board.
 
+## History API
+
+The scoreboard history tab uses the separate read-only HTTP endpoint
+`GET /api/history`; it is intentionally not part of the WebSocket protocol.
+The request accepts repeated `user` parameters. A user is identified as
+`username` for the default `v1` career or `username/version` for another
+career. `from` and `to` are optional Unix timestamps in milliseconds or
+Grafana-style relative values such as `now`, `now-2d`, `now-2M`, `now-1y`, and
+`now+30m`; when omitted, the endpoint defaults to the preceding two hours
+ending now. `m` means minutes, `y` or `Y` means calendar years, while
+uppercase `M` means calendar months. The
+metric is `elo`, `trueskill` (also accepted as `ts`), or `winrate` (also
+accepted as `wr`).
+
+Example:
+
+```text
+/api/history?metric=trueskill&user=alice&user=alice%2Fv2&from=1710000000000&to=1715000000000
+```
+
+The response contains one series per selected career:
+
+```json
+{
+  "metric": "trueskill",
+  "from": 1710000000000,
+  "to": 1715000000000,
+  "series": [
+    {
+      "username": "alice",
+      "version": "v1",
+      "points": [{"time": 1710000000000, "value": 274, "sigma": 61}, {"time": 1710007200000, "value": 280, "sigma": 58, "gap": true}]
+    }
+  ]
+}
+```
+
+At most 16 careers may be selected, and each series contains at most 256
+points. TrueSkill uses `value` for `mu` and
+includes `sigma`; win rate is cumulative over the requested timeframe and is
+returned between 0 and 1. The endpoint resolves careers to their backend UUID
+before querying the hot and archived game ledgers, so reclaimed usernames do
+not merge separate careers. UUIDs are never returned. `gap: true` marks the
+segment leading into a point when more than two hours passed since the prior
+recorded game observation; clients can render that segment as dotted. This is
+a missing-observation marker, not an exact historical TCP online/offline log.
+
 Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-only data and the viewer is a sibling SPA.
 
 ## Message types

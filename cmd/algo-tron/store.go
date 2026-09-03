@@ -125,6 +125,7 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_archive_uuid_ended_idx ON game_participants_archive(uuid, ended_unix_ms)`)
 	// game_winners was a duplicate of game_participants WHERE won=1; the
 	// participants table already answers "who won game X" via won=1. Drop
 	// if a previous build created it; new installs never see it.
