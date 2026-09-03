@@ -135,6 +135,7 @@ function openScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (!m) return;
   m.hidden = false;
+  if (typeof setScoreboardModalView === 'function') setScoreboardModalView('scoreboard');
   requestScoreboard(scoreModalQuery(0));
   renderScoreboardModalRows();
 }
@@ -143,6 +144,7 @@ function closeScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (m) m.hidden = true;
   document.querySelectorAll('#scoreboard-modal .app-select.open').forEach(closeAppSelect);
+  document.getElementById('scoreplot-user-options')?.setAttribute('hidden', '');
 }
 
 function loadMoreSidebarScores() {

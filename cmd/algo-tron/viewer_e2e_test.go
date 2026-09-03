@@ -101,6 +101,27 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 	}
 }
 
+func TestE2EScoreboardScoreplotTabs(t *testing.T) {
+	url, _ := e2eViewer(t)
+	ctx := browser(t)
+
+	var scoreboardHidden, scoreplotHidden bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#scoreboard-title`),
+		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Click(`#scoreplot-tab`),
+		chromedp.WaitVisible(`#scoreplot-view:not([hidden])`),
+		chromedp.Evaluate(`document.getElementById('scoreboard-view').hidden`, &scoreboardHidden),
+		chromedp.Evaluate(`document.getElementById('scoreplot-view').hidden`, &scoreplotHidden),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !scoreboardHidden || scoreplotHidden {
+		t.Errorf("scoreplot tab visibility = scoreboard hidden %t, scoreplot hidden %t", scoreboardHidden, scoreplotHidden)
+	}
+}
+
 func TestE2ESchemePickerListsAllSchemes(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)

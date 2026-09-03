@@ -37,7 +37,10 @@ function updateDom({ scoreboard = true } = {}) {
   updateTabs();
   updateScoreboardTools();
 
-  if (scoreboard) renderScoreboardDom();
+  if (scoreboard) {
+    renderScoreboardDom();
+    if (typeof updateScorePlotUsers === 'function') updateScorePlotUsers();
+  }
 
   const chatPanel = visibleChats();
   const chat = document.getElementById('chat');

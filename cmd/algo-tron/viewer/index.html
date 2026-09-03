@@ -26,6 +26,7 @@
   <script defer src="/static/render_chart.js"></script>
   <script defer src="/static/render_loop.js"></script>
   <script defer src="/static/modal.js"></script>
+  <script defer src="/static/scoreplot.js"></script>
   <script defer src="/static/ws.js"></script>
   <script defer src="/static/schedule.js"></script>
 </head>
@@ -166,10 +167,15 @@
     <div class="modal-backdrop" data-scoreboard-close></div>
     <div class="scoreboard-window scoreboard-modal-window" role="dialog" aria-modal="true" aria-labelledby="scoreboard-modal-title">
       <div class="modal-header">
-        <span class="modal-title" id="scoreboard-modal-title"><b>scoreboard</b></span>
+        <span class="modal-title modal-tabs" id="scoreboard-modal-title">
+          <button type="button" class="modal-tab active" id="scoreboard-tab"><b>scoreboard</b></button>
+          <span class="modal-tab-sep">|</span>
+          <button type="button" class="modal-tab" id="scoreplot-tab">scoreplot</button>
+        </span>
         <button class="modal-close" data-scoreboard-close><span class="kbd">[q]</span> close</button>
       </div>
       <div class="modal-body">
+        <div id="scoreboard-view">
         <section class="modal-section">
           <div class="scoreboard-modal-controls">
             <span class="control-field">timespan:
@@ -220,6 +226,42 @@
           <div id="scoreboard-asof" class="scoreboard-asof"></div>
           <div class="scoreboard-fineprint">Only accounts with a password appear here. Unauthenticated joins are excluded.</div>
         </section>
+        </div>
+        <div id="scoreplot-view" hidden>
+          <section class="modal-section scoreplot-chart-section">
+            <div class="scoreplot-chart-wrap"><canvas id="scoreplot-chart"></canvas></div>
+            <div class="scoreplot-status" id="scoreplot-status">select users to plot</div>
+          </section>
+          <section class="modal-section scoreplot-controls-section">
+            <div class="scoreplot-controls">
+              <label class="scoreplot-field">
+                <span>time from</span>
+                <input id="scoreplot-from" value="now-2h" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="scoreplot-field">
+                <span>time to</span>
+                <input id="scoreplot-to" value="now" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="scoreplot-field">
+                <span>metric</span>
+                <select id="scoreplot-metric">
+                  <option value="trueskill">trueskill</option>
+                  <option value="elo">elo</option>
+                  <option value="winrate">winrate</option>
+                </select>
+              </label>
+              <label class="scoreplot-field scoreplot-user-field">
+                <span>user</span>
+                <span class="scoreplot-user-picker" id="scoreplot-user-picker">
+                  <input id="scoreplot-user-search" placeholder="search user" autocomplete="off" spellcheck="false">
+                  <span class="scoreplot-user-options" id="scoreplot-user-options" hidden></span>
+                </span>
+              </label>
+            </div>
+            <div class="scoreplot-time-error" id="scoreplot-time-error" role="status" aria-live="polite"></div>
+            <div class="scoreplot-selected" id="scoreplot-selected" aria-label="selected users"></div>
+          </section>
+        </div>
       </div>
     </div>
   </div>

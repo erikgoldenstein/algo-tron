@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,11 +48,18 @@ type historyResponse struct {
 
 type historyRow struct {
 	GameID string
+	UUID   string
 	Won    bool
 	Elo    float64
 	TsMu   float64
 	TsSig  float64
 	Ended  int64
+}
+
+type historyCareerState struct {
+	elo, tsMu, tsSig float64
+	wins, games      int
+	hasElo, hasTS    bool
 }
 
 // history handles the read-only history API used by the scoreboard history
@@ -104,8 +112,9 @@ func parseHistoryMetric(value string) (historyMetric, error) {
 }
 
 type historyUser struct {
-	Username string
-	Version  string
+	Username    string
+	Version     string
+	AllVersions bool
 }
 
 func parseHistoryUsers(values []string) ([]historyUser, error) {
@@ -127,7 +136,8 @@ func parseHistoryUsers(values []string) ([]historyUser, error) {
 		if i := strings.LastIndexByte(value, '/'); i >= 0 {
 			username, version = value[:i], value[i+1:]
 		}
-		if username == "" || version == "" || !validString.MatchString(username) || validateVersion(version) != "" {
+		allVersions := version == "*"
+		if username == "" || version == "" || !validString.MatchString(username) || (!allVersions && validateVersion(version) != "") {
 			return nil, errors.New("invalid user")
 		}
 		key := username + "\x00" + version
@@ -135,7 +145,7 @@ func parseHistoryUsers(values []string) ([]historyUser, error) {
 			continue
 		}
 		seen[key] = struct{}{}
-		users = append(users, historyUser{Username: username, Version: version})
+		users = append(users, historyUser{Username: username, Version: version, AllVersions: allVersions})
 	}
 	if len(users) == 0 {
 		return nil, errors.New("at least one user is required")
@@ -275,29 +285,47 @@ func (s *Server) historySeries(users []historyUser, metric historyMetric, from, 
 	for _, user := range users {
 		series = append(series, historySeries{
 			Username: user.Username,
-			Version:  user.Version,
+			Version:  historySeriesVersion(user),
 			Points:   s.historyPoints(user, metric, from, to),
 		})
 	}
 	return series
 }
 
+func historySeriesVersion(user historyUser) string {
+	if user.AllVersions {
+		return "*"
+	}
+	return user.Version
+}
+
 func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to int64) []historyPoint {
-	// Resolve the current career under the server lock. UUID is intentionally
-	// never accepted from or returned to the public API; it only prevents a
+	// Resolve current careers under the server lock. UUID is intentionally
+	// never accepted from or returned to the public API; it prevents a
 	// reclaimed username/version from merging two careers.
 	s.mu.Lock()
-	p := s.playerForVersionLocked(user.Username, user.Version)
-	var uuid string
-	if p != nil {
-		uuid = ensureUUID(p)
+	uuidSet := map[string]struct{}{}
+	if user.AllVersions {
+		for _, p := range s.playersForUsernameLocked(user.Username) {
+			uuidSet[ensureUUID(p)] = struct{}{}
+		}
+	} else if p := s.playerForVersionLocked(user.Username, user.Version); p != nil {
+		uuidSet[ensureUUID(p)] = struct{}{}
 	}
 	s.mu.Unlock()
-	if uuid == "" {
+	uuids := make([]string, 0, len(uuidSet))
+	for uuid := range uuidSet {
+		if uuid != "" {
+			uuids = append(uuids, uuid)
+		}
+	}
+	if len(uuids) == 0 {
 		return []historyPoint{}
 	}
 
-	rows, err := s.db.Query(`SELECT game_id, won, elo, ts_mu, ts_sigma, ended_unix_ms
+	records := make([]historyRow, 0)
+	for _, uuid := range uuids {
+		rows, err := s.db.Query(`SELECT game_id, won, elo, ts_mu, ts_sigma, ended_unix_ms
 		FROM game_participants
 		WHERE uuid = ? AND ended_unix_ms >= ? AND ended_unix_ms <= ?
 		UNION ALL
@@ -305,51 +333,101 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 		FROM game_participants_archive
 		WHERE uuid = ? AND ended_unix_ms >= ? AND ended_unix_ms <= ?
 		ORDER BY ended_unix_ms ASC, game_id ASC`, uuid, from, to, uuid, from, to)
-	if err != nil {
-		metricDBErrors.WithLabelValues("history").Inc()
-		return []historyPoint{}
-	}
-	defer rows.Close()
-
-	records := make([]historyRow, 0)
-	for rows.Next() {
-		var row historyRow
-		var won int
-		if err := rows.Scan(&row.GameID, &won, &row.Elo, &row.TsMu, &row.TsSig, &row.Ended); err != nil {
-			metricDBErrors.WithLabelValues("history_row").Inc()
-			continue
+		if err != nil {
+			metricDBErrors.WithLabelValues("history").Inc()
+			return []historyPoint{}
 		}
-		row.Won = won != 0
-		records = append(records, row)
-	}
-	if err := rows.Err(); err != nil {
-		metricDBErrors.WithLabelValues("history").Inc()
-		return []historyPoint{}
-	}
-
-	points := make([]historyPoint, 0, len(records))
-	wins, games := 0, 0
-	for i, row := range records {
-		var point historyPoint
-		gap := i > 0 && row.Ended-records[i-1].Ended > historyGapAfter.Milliseconds()
-		switch metric {
-		case historyMetricElo:
-			point = historyPoint{Time: row.Ended, Value: row.Elo, Gap: gap}
-		case historyMetricTrueSkill:
-			if row.TsMu == 0 {
+		for rows.Next() {
+			var row historyRow
+			var won int
+			if err := rows.Scan(&row.GameID, &won, &row.Elo, &row.TsMu, &row.TsSig, &row.Ended); err != nil {
+				metricDBErrors.WithLabelValues("history_row").Inc()
 				continue
 			}
-			point = historyPoint{Time: row.Ended, Value: row.TsMu, Sigma: row.TsSig, Gap: gap}
-		case historyMetricWinRate:
-			games++
-			if row.Won {
-				wins++
-			}
-			point = historyPoint{Time: row.Ended, Value: float64(wins) / float64(games), Gap: gap}
+			row.UUID = uuid
+			row.Won = won != 0
+			records = append(records, row)
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			metricDBErrors.WithLabelValues("history").Inc()
+			return []historyPoint{}
+		}
+		rows.Close()
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Ended != records[j].Ended {
+			return records[i].Ended < records[j].Ended
+		}
+		if records[i].GameID != records[j].GameID {
+			return records[i].GameID < records[j].GameID
+		}
+		return records[i].UUID < records[j].UUID
+	})
+
+	state := map[string]*historyCareerState{}
+	points := make([]historyPoint, 0, len(records))
+	var lastPointTime int64
+	for i := 0; i < len(records); {
+		ended := records[i].Ended
+		for i < len(records) && records[i].Ended == ended {
+			row := records[i]
+			current := state[row.UUID]
+			if current == nil {
+				current = &historyCareerState{}
+				state[row.UUID] = current
+			}
+			current.elo, current.hasElo = row.Elo, true
+			if row.TsMu != 0 {
+				current.tsMu, current.tsSig, current.hasTS = row.TsMu, row.TsSig, true
+			}
+			current.games++
+			if row.Won {
+				current.wins++
+			}
+			i++
+		}
+
+		point, ok := bestHistoryPoint(state, metric)
+		if !ok {
+			continue
+		}
+		point.Time = ended
+		point.Gap = lastPointTime != 0 && ended-lastPointTime > historyGapAfter.Milliseconds()
 		points = append(points, point)
+		lastPointTime = ended
 	}
 	return downsampleHistoryPoints(points)
+}
+
+func bestHistoryPoint(state map[string]*historyCareerState, metric historyMetric) (historyPoint, bool) {
+	var best historyPoint
+	found := false
+	for _, current := range state {
+		var point historyPoint
+		switch metric {
+		case historyMetricElo:
+			if !current.hasElo {
+				continue
+			}
+			point.Value = current.elo
+		case historyMetricTrueSkill:
+			if !current.hasTS {
+				continue
+			}
+			point.Value, point.Sigma = current.tsMu, current.tsSig
+		case historyMetricWinRate:
+			if current.games == 0 {
+				continue
+			}
+			point.Value = float64(current.wins) / float64(current.games)
+		}
+		if !found || point.Value > best.Value {
+			best, found = point, true
+		}
+	}
+	return best, found
 }
 
 func downsampleHistoryPoints(points []historyPoint) []historyPoint {
