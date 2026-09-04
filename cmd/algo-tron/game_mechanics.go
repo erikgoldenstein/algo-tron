@@ -6,10 +6,11 @@ import (
 )
 
 const (
-	deathReasonCollision  = "collision"
-	deathReasonHeadOn     = "head_on"
-	deathReasonDisconnect = "disconnect"
-	deathReasonBotRemoved = "bot_removed"
+	deathReasonCollision   = "collision"
+	deathReasonHeadOn      = "head_on"
+	deathReasonDisconnect  = "disconnect"
+	deathReasonBotRemoved  = "bot_removed"
+	deathReasonInvalidMove = "invalid_move"
 )
 
 func (g *Game) killDisconnectedLocked() {
@@ -56,7 +57,11 @@ func (g *Game) movePlayersLocked() {
 			continue
 		}
 		x, y := st.pos.X, st.pos.Y
-		switch st.readMoveLocked() {
+		move, ok := st.readMoveLocked(g)
+		if !ok {
+			continue
+		}
+		switch move {
 		case MoveUp:
 			y = (y + g.height - 1) % g.height
 		case MoveRight:
@@ -68,6 +73,52 @@ func (g *Game) movePlayersLocked() {
 		}
 		st.setPos(x, y)
 	}
+}
+
+// maxInvalidMovesAllowed is the cumulative assistance budget for one seat.
+// g.tick is the number of completed ticks before the current move resolution.
+func maxInvalidMovesAllowed(tick int) int {
+	byTicks := (tick + invalidMovePercentOfTicks - 1) / invalidMovePercentOfTicks // ceil(percent of tick count)
+	if byTicks < invalidMoveBaseLimit {
+		return invalidMoveBaseLimit
+	}
+	return byTicks
+}
+
+// kickInvalidMoveLocked closes the bot connection with a protocol-level
+// reason and marks the seat dead. The sink's final packet is used so the bot
+// receives the reason before the connection is closed.
+func (g *Game) kickInvalidMoveLocked(st *Seat) {
+	if sink := st.player.sink.Load(); sink != nil {
+		sink.shutdownWithPacket(formatPacket("error", "ERROR_INVALID_MOVE_LIMIT"), deathReasonInvalidMove)
+	} else {
+		st.player.send("error", "ERROR_INVALID_MOVE_LIMIT")
+	}
+	g.markDeadLocked(st, deathReasonInvalidMove)
+	g.removeFromFields(st)
+}
+
+// fallbackMoveLocked first repeats the last valid direction when that cell
+// is free. If it is blocked, it scans clockwise from that direction. This is
+// deterministic and directional rather than globally biased: for a player
+// with no previous valid direction, the documented order starts at Up.
+func (g *Game) fallbackMoveLocked(st *Seat) Move {
+	order := [...]Move{MoveUp, MoveRight, MoveDown, MoveLeft}
+	start := 0
+	for i, move := range order {
+		if move == st.lastMove {
+			start = i
+			break
+		}
+	}
+	for offset := 0; offset < len(order); offset++ {
+		move := order[(start+offset)%len(order)]
+		n := g.nextPos(st.pos, move)
+		if g.fields[n.X][n.Y] == -1 {
+			return move
+		}
+	}
+	return MoveUp
 }
 
 func (g *Game) shouldEndLocked() bool {

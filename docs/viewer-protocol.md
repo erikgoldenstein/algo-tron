@@ -123,7 +123,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 { "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}] }
 ```
 
-Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby` and `label` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `players`/`alive`/`names` are a snapshot from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
+Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby`, `label`, and `tick` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `tick`, `players`, `alive`, and `names` are snapshots from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
 
 ### `game` — board snapshot (on subscribe)
 

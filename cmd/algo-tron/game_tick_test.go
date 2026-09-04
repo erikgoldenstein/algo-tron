@@ -49,6 +49,28 @@ func TestReleaseDisconnectedPlayerNotQueued(t *testing.T) {
 	}
 }
 
+func TestReleaseInvalidMoveKickDoesNotQueuePlayer(t *testing.T) {
+	s := testServer(t)
+	a, _ := testPlayer("a")
+	g := makeGame(s, []*Player{a})
+	_, side := mustPipe(t)
+	a.conn = side
+
+	st := g.seats[0]
+	st.deathReason = deathReasonInvalidMove
+	s.releaseSeatLocked(st)
+
+	if a.seat.Load() != nil {
+		t.Error("kicked player should be detached from its seat")
+	}
+	if !a.queuedSince.IsZero() {
+		t.Error("invalid-move kicked player must not be queued")
+	}
+	if s.mmArrivals != 0 {
+		t.Error("invalid-move kick must not count as a queue arrival")
+	}
+}
+
 // — finishTickLocked ——————————————————————————————————————————————————
 
 func TestFinishTickSettlesDeaths(t *testing.T) {

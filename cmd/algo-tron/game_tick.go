@@ -24,8 +24,8 @@ func (g *Game) run() {
 	defer timer.Stop()
 	// Anchor one grace interval into the future: the first move deadline is
 	// then two intervals after the start frame, giving clients with a slow
-	// first move (model warm-up, cold caches) a chance — there is no
-	// lastMove to fall back on yet.
+	// first move (model warm-up, cold caches) a chance. A missing first move is
+	// resolved by the deterministic clockwise fallback during pre-movement.
 	next := time.Now().Add(firstTickGrace)
 	for {
 		rate := baseTickrate + int(time.Since(g.startTime).Seconds())/tickIncreaseSeconds
@@ -166,6 +166,12 @@ func (s *Server) finishTickLocked(g *Game, res tickResult) time.Duration {
 func (s *Server) releaseSeatLocked(st *Seat) {
 	if st.player.seat.Load() == st {
 		st.player.seat.Store(nil)
+		// An invalid-move kick is terminal for this connection. Do not put the
+		// player back into matchmaking while its sink is still closing; it may
+		// otherwise be seated again before TCP cleanup notices the kick.
+		if st.deathReason == deathReasonInvalidMove {
+			return
+		}
 		if st.player.conn != nil || (st.player.InternalBot && !st.removeRequested) {
 			s.enqueueLocked(st.player)
 		}

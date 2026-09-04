@@ -47,14 +47,16 @@ enabled** in production (`fillerBots: true` in `main.go`) and live in
 | `tickIncreaseSeconds` | 10    | Add +1 tick/sec for every 10s of game time.      |
 | `firstTickGrace`      | 1s    | Extra time before a game's first tick.           |
 
-So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in that game's `tickNs` atomic; the per-packet throttle uses the player's own board's interval. The first tick fires one interval *plus* `firstTickGrace` after the start frame, so a bot with a slow first move (model warm-up, cold caches) isn't forced into `ERROR_NO_MOVE` defaults right away.
+So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interval is recomputed at the top of every `Game.run` iteration and stored in that game's `tickNs` atomic; the per-packet throttle uses the player's own board's interval. The first tick fires one interval *plus* `firstTickGrace` after the start frame, so a bot with a slow first move (model warm-up, cold caches) isn't immediately processed as a missing move.
 
 ## Move resolution (one tick)
 
 Before the steps below, two filler-bot phases run first each tick (no-ops when no filler bot is seated — see [§ Filler bots](#filler-bots)): the seated filler bots pick their move (`applyBotMovesLocked`), then any filler bot the matchmaker no longer needs is killed (`killRequestedBotsLocked`, death reason `bot_removed`).
 
 1. **Kill disconnected.** Any player whose TCP connection dropped during the tick is marked dead.
-2. **Read moves.** Each alive player's queued direction is consumed (replaced with `MoveNone`). If none queued, `ERROR_NO_MOVE` is sent and the player's `lastMove` is reused (or `up` if there's no last move).
+2. **Read moves.** Each alive player's queued direction is consumed (replaced with `MoveNone`). A valid direction resets that seat's consecutive-invalid counter and becomes its remembered direction. If no valid direction is queued, the server counts one invalid operation and sends `ERROR_NO_MOVE` unless the player is being kicked. For the first two consecutive invalid operations, the server assists deterministically: it repeats the last valid direction when that adjacent cell is free; otherwise it scans clockwise from that direction for the first free cell. A seat with no previous valid direction starts at `up`, then scans `right`, `down`, `left`. This fallback is resolved from the pre-movement board before the new tick frame is broadcast. If every adjacent cell is blocked, `up` remains the collision fallback. The third consecutive invalid operation kicks the player with `ERROR_INVALID_MOVE_LIMIT` and does not move them.
+
+Each seat also has a cumulative invalid-operation budget of `max(invalidMoveBaseLimit, ceil(invalidMovePercentOfTicks% × current tick count))` — currently `max(5, ceil(10% × current tick count))` — evaluated before the current tick. Exceeding that budget kicks the player with `ERROR_INVALID_MOVE_LIMIT`; valid moves reset only the consecutive counter, not the cumulative total. The budget applies to ticks resolved without a valid queued direction, which covers missing and malformed input under the current line protocol.
 3. **Step.** Each alive player moves one cell in the queued direction, with modular wrap.
 4. **Collisions.**
    - If the destination cell is empty, the player claims it.
