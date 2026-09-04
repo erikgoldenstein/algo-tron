@@ -9,7 +9,7 @@
 //
 // Wire protocol — see view.go for the canonical definition.
 //   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
-//   {type:"boards", boards:[{id,players,alive,names}...]} — a board started or ended
+//   {type:"boards", boards:[{id,tick,players,alive,names}...]} — a board started or ended
 //   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
@@ -32,7 +32,7 @@ const gameState = {
   lastWinners: [],
   chatLog: [],
   scorePages: {},
-  boards: [], // [{ id, players, alive }] — all running boards, tab bar order
+  boards: [], // [{ id, tick, players, alive }] — all running boards, tab bar order
   game: null, // subscribed board: { id, width, height, players: { [id]: { id, name, pos, moves, alive, chat } } }
 };
 

@@ -260,6 +260,42 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	}
 }
 
+func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for i, tick := range []int{10, 2, 5} {
+		a, _ := testPlayer(fmt.Sprintf("a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("b%d", i))
+		g := newGame(s, []*Player{a, b})
+		g.tick = tick
+		s.games = append(s.games, g)
+	}
+	lowestID := s.games[1].id
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(1)`),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	s.mu.Lock()
+	s.endGameLocked(s.games[0], nil)
+	s.mu.Unlock()
+
+	var switched bool
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q`, lowestID), &switched),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !switched {
+		t.Error("viewer did not switch to the live board with the lowest tick count")
+	}
+}
+
 func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
