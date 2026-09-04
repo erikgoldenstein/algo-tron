@@ -119,6 +119,32 @@ function renderScoreName(el) {
 let scoreHoverCard = null;
 let scoreHoverTarget = null;
 let scoreHoverHideTimer = 0;
+let forwardConfirmUrl = '';
+
+function hideForwardConfirm() {
+  const modal = document.getElementById('forward-confirm-modal');
+  if (modal) modal.hidden = true;
+  forwardConfirmUrl = '';
+}
+
+function openForwardConfirmUrl() {
+  const url = forwardConfirmUrl;
+  hideForwardConfirm();
+  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function showForwardConfirm(url) {
+  const modal = document.getElementById('forward-confirm-modal');
+  const urlEl = document.getElementById('forward-confirm-url');
+  if (!modal || !urlEl) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  forwardConfirmUrl = url;
+  urlEl.textContent = url;
+  modal.hidden = false;
+  document.getElementById('forward-confirm-open')?.focus();
+}
 
 function formatFirstSeen(value) {
   const millis = Number(value);
@@ -133,7 +159,7 @@ function scoreHoverMarkup(target) {
   const src = target.dataset.src || '';
   const versionTag = version ? '<span class="score-hover-version">-' + esc(version) + '</span>' : '';
   const srcRow = src
-    ? '<div class="score-hover-row"><span class="score-hover-label">src</span><a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">repository ↗</a></div>'
+    ? '<div class="score-hover-row"><span class="score-hover-label">src</span><a class="score-hover-src" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">repository ↗</a></div>'
     : '';
   const contactRow = contact
     ? '<div class="score-hover-row"><span class="score-hover-label">contact</span><span>' + esc(contact) + '</span></div>'
@@ -178,6 +204,14 @@ function showScoreHover(target) {
     event.stopPropagation();
     if (typeof resetAdminUserPassword === 'function') resetAdminUserPassword(target.dataset.username || '', card);
   });
+  card.querySelector('.score-hover-src')?.addEventListener('click', (event) => {
+    if (!getSwitch('confirmForwarding')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const url = event.currentTarget.getAttribute('href') || '';
+    hideScoreHover();
+    showForwardConfirm(url);
+  });
   card.hidden = false;
   // The hover target is the rendered name span, so the card follows the
   // visible username rather than the wider table cell around it.
@@ -220,7 +254,18 @@ function initScoreHover() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', initScoreHover);
+function initForwardConfirm() {
+  document.querySelectorAll('[data-forward-close]').forEach((el) => {
+    el.addEventListener('click', hideForwardConfirm);
+  });
+  document.getElementById('forward-confirm-cancel')?.addEventListener('click', hideForwardConfirm);
+  document.getElementById('forward-confirm-open')?.addEventListener('click', openForwardConfirmUrl);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initScoreHover();
+  initForwardConfirm();
+});
 
 function updateScoreboardTools() {
   const tools = document.getElementById('scoreboard-tools');

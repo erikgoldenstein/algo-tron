@@ -582,6 +582,28 @@ canvas#game { display: block; }
 .modal-close:hover { color: var(--text); }
 .modal-close .kbd { color: var(--text-muted); margin-right: 4px; }
 
+.forward-confirm-modal { z-index: 2020; }
+.forward-confirm-window { max-width: 520px; }
+.forward-confirm-url {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.forward-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.forward-confirm-actions button {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.forward-confirm-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.forward-confirm-actions button:last-child { color: var(--accent); }
+
 .modal-section { margin-top: 14px; }
 .modal-section:first-child { margin-top: 0; }
 .modal-section-title { color: var(--accent); margin-bottom: 8px; font-weight: 500; }

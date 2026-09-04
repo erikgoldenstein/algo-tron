@@ -180,6 +180,24 @@
     </div>
   </div>
 
+  <div id="forward-confirm-modal" class="modal forward-confirm-modal" hidden>
+    <div class="modal-backdrop" data-forward-close></div>
+    <div class="modal-window forward-confirm-window" role="dialog" aria-modal="true" aria-labelledby="forward-confirm-title">
+      <div class="modal-header">
+        <span class="modal-title" id="forward-confirm-title"><b>external link</b> · confirm</span>
+        <button type="button" class="modal-close" data-forward-close><span class="kbd">[q]</span> close</button>
+      </div>
+      <div class="modal-body">
+        <div>are you sure you want to open this external URL?</div>
+        <div class="forward-confirm-url" id="forward-confirm-url"></div>
+        <div class="forward-confirm-actions">
+          <button type="button" id="forward-confirm-cancel">cancel</button>
+          <button type="button" id="forward-confirm-open">open link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="admin-login-modal" class="modal admin-login-modal" hidden>
     <div class="modal-backdrop" data-admin-close></div>
     <div class="modal-window admin-login-window" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
