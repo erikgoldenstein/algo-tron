@@ -24,6 +24,7 @@ func (s *Server) broadcastBoardsLocked() {
 	data, _ := json.Marshal(boardsMsg{
 		Type:          "boards",
 		Boards:        s.boardListLocked(),
+		Lobbies:       s.viewerLobbyNamesLocked(),
 		GlobalPlayers: globalPlayers,
 		GlobalAlive:   globalAlive,
 	})

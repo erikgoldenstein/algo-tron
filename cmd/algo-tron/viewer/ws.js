@@ -33,11 +33,15 @@ let ws = null;
 // update can't bounce us back to the first board.
 let pendingWatchID = '';
 
-function watchBoard(id, { preserveFollow = false } = {}) {
+function watchBoard(id, { preserveFollow = false, automatic = false } = {}) {
   if (id && ws && ws.readyState === WebSocket.OPEN) {
-    if (!preserveFollow && id !== gameState.game?.id && gameState.followName) {
-      clearFollow();
-      updateDom({ scoreboard: false });
+    if (!automatic && id !== gameState.game?.id) {
+      gameState.lobbyPreference = '';
+      gameState.autoLobby = '';
+      if (gameState.followName) {
+        clearFollow();
+        updateDom({ scoreboard: false });
+      }
     }
     pendingWatchID = id;
     ws.send(JSON.stringify({ watch: id }));
@@ -58,10 +62,17 @@ function stepBoard(delta) {
   watchBoard(i < 0 ? ids[0] : ids[(i + delta + ids.length) % ids.length]);
 }
 
-function lowestTickBoard() {
+function lowestTickBoard(preferredLobby = '', excludedLobby = '') {
+  let candidates = gameState.boards;
+  if (preferredLobby) {
+    const sameLobby = gameState.boards.filter((board) => board.lobby === preferredLobby);
+    if (!sameLobby.length) return null;
+    candidates = sameLobby;
+  }
+  if (excludedLobby) candidates = candidates.filter((board) => board.lobby !== excludedLobby);
   let best = null;
   let bestTick = Number.MAX_SAFE_INTEGER;
-  for (const board of gameState.boards) {
+  for (const board of candidates) {
     const tick = Number(board.tick);
     const comparableTick = Number.isFinite(tick) ? tick : Number.MAX_SAFE_INTEGER;
     if (!best || comparableTick < bestTick) {
@@ -73,21 +84,48 @@ function lowestTickBoard() {
 }
 
 // If the board we're watching is gone (or we never had one), subscribe to
-// the followed player's board, otherwise the live board with the lowest
-// progress. Called after board-list changes.
-function ensureWatched({ preserveFollow = false } = {}) {
+// the followed player's board, otherwise the preferred/sticky lobby's board,
+// otherwise the live board with the lowest progress. Called after board-list
+// changes.
+function lobbyKnown(name) {
+  return !name || !gameState.lobbies || gameState.lobbies.includes(name);
+}
+
+function ensureWatched({ preserveFollow = false, preferredLobby = '', force = false, excludeLobby = '' } = {}) {
   const ids = gameState.boards.map((b) => b.id);
   const followed = followedBoardID();
   const keepFollow = preserveFollow || !!gameState.followName;
+  const requestedLobby = preferredLobby || gameState.autoLobby || gameState.lobbyPreference;
+
+  if (force) {
+    const next = lowestTickBoard('', excludeLobby);
+    if (next) {
+      gameState.autoLobby = '';
+      watchBoard(next.id, { preserveFollow: keepFollow, automatic: true });
+      return;
+    }
+  }
+
   if (followed && pendingWatchID === followed) return;
   if (followed && gameState.game?.id !== followed) {
-    watchBoard(followed, { preserveFollow: keepFollow });
+    watchBoard(followed, { preserveFollow: keepFollow, automatic: true });
     return;
+  }
+  if (requestedLobby && lobbyKnown(requestedLobby)) {
+    const next = lowestTickBoard(requestedLobby);
+    if (next && next.id !== gameState.game?.id) {
+      watchBoard(next.id, { preserveFollow: keepFollow, automatic: true });
+    }
+    return;
+  }
+  if (requestedLobby && !lobbyKnown(requestedLobby)) {
+    if (gameState.autoLobby === requestedLobby) gameState.autoLobby = '';
+    if (gameState.lobbyPreference === requestedLobby) gameState.lobbyPreference = '';
   }
   if (pendingWatchID && ids.includes(pendingWatchID)) return;
   if (gameState.game && ids.includes(gameState.game.id)) return;
   const next = lowestTickBoard();
-  if (next) watchBoard(next.id, { preserveFollow: keepFollow });
+  if (next) watchBoard(next.id, { preserveFollow: keepFollow, automatic: true });
 }
 
 function followedBoardID() {
@@ -108,11 +146,20 @@ function connect() {
     if (msg.type === 'init') { showShutdownBanner(false); hadActiveSession = true; }
     if (msg.type === 'game' && msg.id === pendingWatchID) pendingWatchID = '';
     const watchedID = gameState.game?.id || '';
+    const watchedLobby = msg.type === 'boards'
+      ? gameState.boards.find((board) => board.id === watchedID)?.lobby || ''
+      : '';
     applyMessage(msg);
     const followedID = followedBoardID();
     const watchedBoardEnded = msg.type === 'boards'
       && watchedID
       && !gameState.boards.some((board) => board.id === watchedID);
+    const currentLobbyClosed = msg.type === 'boards'
+      && watchedLobby
+      && gameState.lobbies
+      && !gameState.lobbies.includes(watchedLobby);
+    if (watchedBoardEnded) gameState.autoLobby = watchedLobby;
+    if (currentLobbyClosed) gameState.lobbyPreference = '';
     // A followed player can appear or move to another board in a later board
     // snapshot. Track that case without making unrelated board updates move
     // the viewer away from its current board.
@@ -123,8 +170,14 @@ function connect() {
     // still pending. Keep retrying selection until either a game snapshot or
     // a watch request exists; the viewer should never sit on an empty board.
     const noBoardSelected = !gameState.game?.id && !pendingWatchID;
-    if (msg.type === 'init' || watchedBoardEnded || followedBoardChanged || noBoardSelected) {
-      ensureWatched({ preserveFollow: followedBoardChanged });
+    const preferredLobbyUpdate = msg.type === 'boards' && !!gameState.lobbyPreference;
+    if (msg.type === 'init' || watchedBoardEnded || followedBoardChanged || noBoardSelected || currentLobbyClosed || preferredLobbyUpdate) {
+      ensureWatched({
+        preserveFollow: followedBoardChanged,
+        force: currentLobbyClosed,
+        excludeLobby: currentLobbyClosed ? watchedLobby : '',
+        preferredLobby: watchedBoardEnded ? watchedLobby : '',
+      });
     }
     const scoreboardResponse = msg.type === 'scoreboard';
     updateDom({

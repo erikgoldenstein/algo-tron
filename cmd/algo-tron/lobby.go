@@ -267,6 +267,7 @@ func (s *Server) adminCreateLobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lobbies[l.Name] = l
+	s.broadcastBoardsLocked()
 	s.mu.Unlock()
 	writeAdminJSON(w, http.StatusCreated, lobbyResponse{Name: l.Name, PasswordRequired: l.PasswordHash != "", MaxPlayersPerBoard: l.MaxPlayersPerBoard})
 }
@@ -336,6 +337,7 @@ func (s *Server) adminDeleteLobby(w http.ResponseWriter, r *http.Request, name s
 			p.send("error", lobbyNotFoundError)
 		}
 	}
+	s.broadcastBoardsLocked()
 	s.mu.Unlock()
 	writeAdminJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
