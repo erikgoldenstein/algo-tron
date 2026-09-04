@@ -43,6 +43,7 @@ type Player struct {
 	UUID         string
 	Username     string
 	Version      string
+	Lobby        string
 	Bio          map[string]string
 	PwHash       string
 	Chat         string
@@ -143,11 +144,10 @@ func (s *Server) accountPasswordResetAllowedLocked(username string, now time.Tim
 	return true
 }
 
-// resetAccountLocked retires every version of an idle username and reuses one
-// Player object for the requested version. Reusing the object preserves the
-// existing v1 behavior for callers that retain its pointer; all other version
-// careers are removed from the live map after being snapshotted.
-func (s *Server) resetAccountLocked(username, version, pwHash string, now time.Time) (*Player, []playerRow) {
+// resetAccountLocked starts a fresh career after the account inactivity
+// window. All old versions are removed from the live map; their persistent
+// rows are purged by resetAccountRows rather than archived.
+func (s *Server) resetAccountLocked(username, version, pwHash string, now time.Time) (*Player, bool) {
 	players := s.playersForUsernameLocked(username)
 	var target *Player
 	for _, p := range players {
@@ -160,9 +160,8 @@ func (s *Server) resetAccountLocked(username, version, pwHash string, now time.T
 		target = players[0]
 	}
 
-	archived := make([]playerRow, 0, len(players))
 	for _, p := range players {
-		archived = append(archived, snapshotRow(p))
+		delete(s.dirty, p)
 		delete(s.players, playerKey(p.Username, versionOf(p)))
 	}
 
@@ -176,7 +175,7 @@ func (s *Server) resetAccountLocked(username, version, pwHash string, now time.T
 	target.FirstSeen = now
 	target.LastSeen = now
 	s.players[playerKey(username, version)] = target
-	return target, archived
+	return target, true
 }
 
 func normalizeVersion(version string) string {
@@ -252,7 +251,7 @@ type ScoreboardEntry struct {
 	TsSigma     float64           `json:"tsSigma"`
 	Online      bool              `json:"online"`
 	// OldOwner > 0 marks a retired career whose username has since been
-	// reclaimed by a different account (idle takeover). The viewer renders it
+	// reclaimed by a different account after the inactivity window. The viewer renders it
 	// as "(old owner{OldOwner})", numbering duplicates of the same name. Set
 	// only in the period scoreboards, which read game_participants by uuid;
 	// the live boards build from s.players (one row per online career).

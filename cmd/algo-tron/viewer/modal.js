@@ -57,7 +57,11 @@ function toggleHelp(force) {
   if (!m) return;
   const shouldShow = force === undefined ? m.hidden : force;
   m.hidden = !shouldShow;
-  if (shouldShow) { renderSchemes(); renderSwitches(); }
+  if (shouldShow) {
+    renderSchemes();
+    renderSwitches();
+    if (typeof refreshAdminStatus === 'function') refreshAdminStatus();
+  }
 }
 
 function cycleScheme() {
@@ -75,6 +79,49 @@ function scoreModalQuery(offset) {
     offset: offset || 0,
     limit: 25,
   };
+}
+
+let scoreboardFetchController = null;
+let scoreboardFetchID = 0;
+let scoreboardFetchKey = '';
+let scoreboardFetchError = '';
+
+function fetchScoreboardPage(q) {
+  const key = scorePageKey(q.period, q.sort, q.search);
+  if (scoreboardFetchController) scoreboardFetchController.abort();
+  const controller = new AbortController();
+  scoreboardFetchController = controller;
+  const fetchID = ++scoreboardFetchID;
+  scoreboardFetchKey = key;
+  scoreboardFetchError = '';
+  renderScoreboardModalRows();
+
+  const params = new URLSearchParams({
+    period: q.period,
+    sort: q.sort,
+    search: q.search,
+    offset: String(q.offset || 0),
+    limit: String(q.limit || 25),
+  });
+  return fetch('/api/scoreboard?' + params.toString(), { signal: controller.signal })
+    .then((response) => {
+      if (!response.ok) throw new Error('scoreboard request failed');
+      return response.json();
+    })
+    .then((data) => {
+      if (fetchID !== scoreboardFetchID) return null;
+      storeScoreboardPage(data, false);
+      scoreboardFetchKey = '';
+      renderScoreboardModalRows();
+      return data;
+    })
+    .catch((error) => {
+      if (error.name === 'AbortError' || fetchID !== scoreboardFetchID) return null;
+      scoreboardFetchKey = '';
+      scoreboardFetchError = 'could not load scoreboard';
+      renderScoreboardModalRows();
+      return null;
+    });
 }
 
 function closeAppSelect(root) {
@@ -126,7 +173,7 @@ function renderScoreboardModalRows() {
   const rows = page?.entries || [];
   root.innerHTML = rows.length
     ? rows.map(scoreRow).join('')
-    : '<tr><td colspan="12" class="empty">nobody found</td></tr>';
+    : '<tr><td colspan="12" class="empty">' + (scoreboardFetchKey === key ? 'loading...' : (scoreboardFetchError || 'nobody found')) + '</td></tr>';
   const asof = document.getElementById('scoreboard-asof');
   if (asof) asof.textContent = page?.computedAt ? 'as of ' + new Date(page.computedAt).toLocaleString() : '';
 }
@@ -136,13 +183,14 @@ function openScoreboardModal() {
   if (!m) return;
   m.hidden = false;
   if (typeof setScoreboardModalView === 'function') setScoreboardModalView('scoreboard');
-  requestScoreboard(scoreModalQuery(0));
+  fetchScoreboardPage(scoreModalQuery(0));
   renderScoreboardModalRows();
 }
 
 function closeScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (m) m.hidden = true;
+  if (scoreboardFetchController) scoreboardFetchController.abort();
   document.querySelectorAll('#scoreboard-modal .app-select.open').forEach(closeAppSelect);
   document.getElementById('scoreplot-user-options')?.setAttribute('hidden', '');
 }
@@ -160,18 +208,18 @@ function loadMoreModalScores() {
   const key = scorePageKey(q.period, q.sort, q.search);
   const page = gameState.scorePages[key];
   if (!page?.hasMore) return;
-  requestScoreboard({ period: q.period, sort: q.sort, search: q.search, offset: page.entries.length, limit: 25 });
+  fetchScoreboardPage({ period: q.period, sort: q.sort, search: q.search, offset: page.entries.length, limit: 25 });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('help-btn')?.addEventListener('click', () => toggleHelp(true));
   document.getElementById('scoreboard-title')?.addEventListener('click', openScoreboardModal);
   document.querySelectorAll('[data-scoreboard-close]').forEach((el) => el.addEventListener('click', closeScoreboardModal));
-  const refreshScoreboard = () => requestScoreboard(scoreModalQuery(0));
+  const refreshScoreboard = () => fetchScoreboardPage(scoreModalQuery(0));
   initAppSelect('scoreboard-period', refreshScoreboard);
   initAppSelect('scoreboard-sort', refreshScoreboard);
   document.addEventListener('click', () => document.querySelectorAll('.app-select.open').forEach(closeAppSelect));
-  document.getElementById('scoreboard-search')?.addEventListener('input', () => requestScoreboard(scoreModalQuery(0)));
+  document.getElementById('scoreboard-search')?.addEventListener('input', () => fetchScoreboardPage(scoreModalQuery(0)));
   document.getElementById('scoreboard-modal-scroll')?.addEventListener('scroll', (e) => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreModalScores();
@@ -187,6 +235,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('admin-login-modal')?.hidden) {
+    e.preventDefault();
+    closeAdminLogin();
+    return;
+  }
   // Don't steal shortcuts while the user is typing in a field.
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;

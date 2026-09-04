@@ -34,7 +34,7 @@ func run() error {
 	publicView := flag.String("public-view", "tron.erik.gdn", "HTTP viewer connection string shown in viewer")
 	publicViewScheme := flag.String("public-view-scheme", "https", "Viewer scheme shown in UI: http or https")
 	defaultDataDir := filepath.Join(os.TempDir(), "algo-tron")
-	dataDir := flag.String("data-dir", defaultDataDir, "directory for secret and SQLite DB")
+	dataDir := flag.String("data-dir", defaultDataDir, "directory for secret, admin password, and SQLite DB")
 	geoDir := flag.String("geo-dir", "geo", "directory for GeoLite2 .mmdb files; env GEO_DATABASE_URL/GEO_ASN_DATABASE_URL/MAXMIND_LICENSE_KEY can populate it")
 	setupGeoOnly := flag.Bool("setup-geo", false, "download GeoLite2 databases into -geo-dir and exit")
 	scheduleURL := flag.String("schedule-url", "", "optional URL for talk schedule JSON (omit to hide schedule panel)")
@@ -58,22 +58,37 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("secret: %w", err)
 	}
+	adminPassword, err := loadOrCreateAdminPassword(*dataDir)
+	if err != nil {
+		return fmt.Errorf("admin password: %w", err)
+	}
 
 	db, err := openDB(filepath.Join(*dataDir, "players.db"))
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
+	}
+	lobbies, err := loadLobbies(db)
+	if err != nil {
+		db.Close()
+		return fmt.Errorf("lobbies: %w", err)
 	}
 	defer db.Close()
 	geo := setupGeo(*geoDir)
 	defer geo.close()
 	pruneIdleAccounts(db, time.Now().Add(-accountPruneAfter).Unix())
 	archiveOldGameParticipants(db, time.Now().Add(-gameLedgerRetention).UnixMilli())
+	pruneOldGameParticipantArchive(db, time.Now().Add(-accountPruneAfter).UnixMilli())
+	purgeOldGameParticipants(db, time.Now().Add(-accountPruneAfter).UnixMilli())
+	purgeOldScoreHistory(db, time.Now().Add(-accountPruneAfter).UnixMilli())
 
 	s := &Server{
 		players:       map[string]*Player{},
 		ipCount:       map[string]int{},
 		viewClients:   map[*websocket.Conn]*viewerSink{},
 		secret:        secret,
+		adminPassword: adminPassword,
+		lobbies:       lobbies,
+		lobbyBoardSeq: map[string]int{},
 		db:            db,
 		geo:           geo,
 		scheduleURL:   *scheduleURL,
@@ -97,9 +112,10 @@ func run() error {
 	defer cancelDrain()
 	go func() {
 		<-sigCtx.Done()
-		slog.Info("shutdown signal received; draining viewers", "drain", shutdownDrain)
+		slog.Info("shutdown signal received; draining viewers and bots", "drain", shutdownDrain)
 		s.mu.Lock()
 		s.broadcastShutdownLocked()
+		s.broadcastTCPShutdownLocked()
 		s.mu.Unlock()
 		time.Sleep(shutdownDrain)
 		cancelDrain()
@@ -108,6 +124,7 @@ func run() error {
 	go s.matchmakerLoop()
 	go s.statsLoop()
 	go s.storeLoop()
+	go s.retentionLoop()
 
 	g, gctx := errgroup.WithContext(drainCtx)
 	g.Go(func() error { return s.listenTCP(gctx, *tcpAddr, *proxyProtocol) })

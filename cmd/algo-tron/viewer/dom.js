@@ -15,7 +15,7 @@ let scoreNameChars = 0;
 // updateDom before the rows render.
 let tsSigmaChars = 0;
 
-function updateDom({ scoreboard = true } = {}) {
+function updateDom({ scoreboard = true, renderModal = true } = {}) {
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
 
@@ -38,7 +38,7 @@ function updateDom({ scoreboard = true } = {}) {
   updateScoreboardTools();
 
   if (scoreboard) {
-    renderScoreboardDom();
+    renderScoreboardDom({ renderModal });
     if (typeof updateScorePlotUsers === 'function') updateScorePlotUsers();
   }
 
@@ -49,7 +49,7 @@ function updateDom({ scoreboard = true } = {}) {
     : '<div class="chat-empty">no messages yet</div>';
 }
 
-function renderScoreboardDom() {
+function renderScoreboardDom({ renderModal = true } = {}) {
   hideScoreHover();
   const scoreboardEl = document.getElementById('scoreboard');
   const scores = currentScoreboard();
@@ -75,7 +75,7 @@ function renderScoreboardDom() {
       });
     }
   }
-  if (!document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
+  if (renderModal && !document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
     renderScoreboardModalRows();
   }
 }
@@ -138,10 +138,13 @@ function scoreHoverMarkup(target) {
   const contactRow = contact
     ? '<div class="score-hover-row"><span class="score-hover-label">contact</span><span>' + esc(contact) + '</span></div>'
     : '';
+  const resetRow = typeof adminSessionActive !== 'undefined' && adminSessionActive && target.dataset.oldOwner !== 'true'
+    ? '<div class="score-hover-reset-row"><button type="button" class="score-hover-reset">reset password</button><div class="score-hover-reset-result" hidden></div></div>'
+    : '';
   return '<div class="score-hover-title">' + esc(username) + versionTag + '</div>'
     + '<div class="score-hover-row"><span class="score-hover-label">version</span><span>' + esc(version || '—') + '</span></div>'
     + '<div class="score-hover-row"><span class="score-hover-label">first seen</span><span>' + formatFirstSeen(target.dataset.firstSeen) + '</span></div>'
-    + contactRow + srcRow;
+    + contactRow + srcRow + resetRow;
 }
 
 function ensureScoreHoverCard() {
@@ -171,6 +174,10 @@ function showScoreHover(target) {
   const card = ensureScoreHoverCard();
   scoreHoverTarget = target;
   card.innerHTML = scoreHoverMarkup(target);
+  card.querySelector('.score-hover-reset')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (typeof resetAdminUserPassword === 'function') resetAdminUserPassword(target.dataset.username || '', card);
+  });
   card.hidden = false;
   const rect = target.getBoundingClientRect();
   const gap = 6;
@@ -182,6 +189,10 @@ function showScoreHover(target) {
   if (top < 8) top = 8;
   card.style.left = Math.round(left) + 'px';
   card.style.top = Math.round(top) + 'px';
+}
+
+function refreshScoreHoverCard() {
+  if (scoreHoverTarget && scoreHoverCard && !scoreHoverCard.hidden) showScoreHover(scoreHoverTarget);
 }
 
 function initScoreHover() {
@@ -233,7 +244,8 @@ function updateTabs() {
   tabsEl.innerHTML = gameState.boards.length
     ? gameState.boards.map((b, i) => {
         const active = b.id === current;
-        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:board-${i + 1}${active ? '*' : ''}</span>`;
+        const label = b.label || ('board-' + (i + 1));
+        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:${esc(label)}${active ? '*' : ''}</span>`;
       }).join('')
     : '<span class="tab">no games</span>';
   tabsEl.querySelectorAll('.tab[data-id]').forEach((el) => {
@@ -251,7 +263,7 @@ function scoreRow(p, i) {
   const src = p.bio?.src || '';
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name score-hover-target" style="color:' + c + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
+    + '<td class="name score-hover-target" style="color:' + c + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'
