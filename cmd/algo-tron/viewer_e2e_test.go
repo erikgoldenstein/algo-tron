@@ -370,6 +370,43 @@ func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
 	}
 }
 
+func TestE2EUnrelatedBoardEndKeepsCurrentBoard(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for i, tick := range []int{10, 2, 5} {
+		a, _ := testPlayer(fmt.Sprintf("unrelated-a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("unrelated-b%d", i))
+		g := newGame(s, []*Player{a, b})
+		g.tick = tick
+		s.games = append(s.games, g)
+	}
+	currentID := s.games[0].id
+	unrelated := s.games[1]
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(1)`),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	s.mu.Lock()
+	s.endGameLocked(unrelated, nil)
+	s.mu.Unlock()
+
+	var stillWatching bool
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q`, currentID), &stillWatching),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !stillWatching {
+		t.Error("viewer switched away when an unrelated board ended")
+	}
+}
+
 func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
