@@ -31,6 +31,9 @@ func validateJoin(username, password, ip string) string {
 	if len(username) > 32 {
 		return "ERROR_USERNAME_TOO_LONG"
 	}
+	// Usernames are shown in HTML, attributes, canvas labels, and chat. The
+	// allowlist deliberately excludes all HTML markup characters and control
+	// bytes, so invalid names never enter player state.
 	if !validString.MatchString(username) {
 		return "ERROR_USERNAME_INVALID_SYMBOLS"
 	}
@@ -59,7 +62,7 @@ func validateVersion(version string) string {
 func validateBio(field, value string) string {
 	switch field {
 	case "contact":
-		if len(value) > 32 || !printableASCII(value) {
+		if len(value) > 32 || !safeBioText(value) {
 			return "ERROR_INVALID_BIO"
 		}
 	case "src":
@@ -67,7 +70,7 @@ func validateBio(field, value string) string {
 			return ""
 		}
 		u, err := url.Parse(value)
-		if err != nil || u.Scheme != "https" || (u.Host != "github.com" && u.Host != "www.github.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(value) > 48 {
+		if err != nil || u.Scheme != "https" || (u.Host != "github.com" && u.Host != "www.github.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(value) > 48 || !safeBioText(value) {
 			return "ERROR_INVALID_BIO"
 		}
 		path := strings.Trim(u.Path, "/")
@@ -87,6 +90,17 @@ func printableASCII(value string) bool {
 		}
 	}
 	return true
+}
+
+// safeBioText is the server-side display-value guard for user-controlled bio
+// fields. Values are still HTML-escaped at every browser render site; this
+// second layer keeps markup delimiters and other HTML-context characters out
+// of stored/displayed bio text even if a future render path is missed.
+func safeBioText(value string) bool {
+	if !printableASCII(value) {
+		return false
+	}
+	return !strings.ContainsAny(value, `<>"'&`)
 }
 
 // parseJoinAttributes parses optional pipe-delimited keyword/value fields.

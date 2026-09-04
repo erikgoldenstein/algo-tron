@@ -191,7 +191,16 @@ func cloneBio(bio map[string]string) map[string]string {
 	}
 	copy := make(map[string]string, len(bio))
 	for key, value := range bio {
+		// Filter legacy or externally modified rows before they reach the
+		// viewer or get written back to persistent storage. New values are
+		// rejected by handleBio/validateBio; this protects older data too.
+		if value == "" || validateBio(key, value) != "" {
+			continue
+		}
 		copy[key] = value
+	}
+	if len(copy) == 0 {
+		return nil
 	}
 	return copy
 }
