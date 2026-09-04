@@ -110,7 +110,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "scoreboardHasMore": false,
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
-  "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}],
+  "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ], "boardScoreboard": [ … ], "boardChartData": [ … ] }
 }
 ```
@@ -120,7 +120,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 ### `boards` — board list changed
 
 ```json
-{ "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}] }
+{ "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}] }
 ```
 
 Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby` and `label` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `players`/`alive`/`names` are a snapshot from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.

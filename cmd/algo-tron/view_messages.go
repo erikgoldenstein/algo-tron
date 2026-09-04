@@ -35,6 +35,7 @@ type boardMsg struct {
 	ID      string   `json:"id"`
 	Lobby   string   `json:"lobby,omitempty"`
 	Label   string   `json:"label,omitempty"`
+	Tick    int      `json:"tick"`
 	Players int      `json:"players"`
 	Alive   int      `json:"alive"`
 	Names   []string `json:"names"`

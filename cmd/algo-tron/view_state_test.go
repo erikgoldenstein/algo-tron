@@ -33,7 +33,9 @@ func TestBoardListIncludesPlayerNames(t *testing.T) {
 	s := testServer(t)
 	alice, _ := testPlayer("alice")
 	bob, _ := testPlayer("bob")
-	s.games = []*Game{makeGame(s, []*Player{alice, bob})}
+	g := makeGame(s, []*Player{alice, bob})
+	g.tick = 17
+	s.games = []*Game{g}
 
 	boards := s.boardListLocked()
 
@@ -42,5 +44,8 @@ func TestBoardListIncludesPlayerNames(t *testing.T) {
 	}
 	if got := boards[0].Names; len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
 		t.Fatalf("board names = %+v, want [alice bob]", got)
+	}
+	if boards[0].Tick != 17 {
+		t.Errorf("board tick = %d, want 17", boards[0].Tick)
 	}
 }

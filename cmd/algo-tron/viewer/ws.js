@@ -10,7 +10,9 @@
 //
 // The server streams only the board we subscribe to. watchBoard(id) asks for
 // another one (the server answers with a fresh "game" snapshot); whenever
-// the board list changes we make sure we're still watching a live board.
+// the board list changes we make sure we're still watching a live board. If
+// the watched board ended, the list's tick snapshot lets us pick the live
+// board with the least progress, avoiding unnecessary board changes.
 //
 // On disconnect we reconnect with a 1s backoff. If a session was previously
 // established (we saw at least one init frame) and the socket later opens
@@ -50,9 +52,23 @@ function stepBoard(delta) {
   watchBoard(i < 0 ? ids[0] : ids[(i + delta + ids.length) % ids.length]);
 }
 
+function lowestTickBoard() {
+  let best = null;
+  let bestTick = Number.MAX_SAFE_INTEGER;
+  for (const board of gameState.boards) {
+    const tick = Number(board.tick);
+    const comparableTick = Number.isFinite(tick) ? tick : Number.MAX_SAFE_INTEGER;
+    if (!best || comparableTick < bestTick) {
+      best = board;
+      bestTick = comparableTick;
+    }
+  }
+  return best;
+}
+
 // If the board we're watching is gone (or we never had one), subscribe to
-// the followed player's board, otherwise the first live board. Called after
-// board-list changes.
+// the followed player's board, otherwise the live board with the lowest
+// progress. Called after board-list changes.
 function ensureWatched() {
   const ids = gameState.boards.map((b) => b.id);
   const followed = followedBoardID();
@@ -62,7 +78,8 @@ function ensureWatched() {
   }
   if (pendingWatchID && ids.includes(pendingWatchID)) return;
   if (gameState.game && ids.includes(gameState.game.id)) return;
-  if (ids.length) watchBoard(ids[0]);
+  const next = lowestTickBoard();
+  if (next) watchBoard(next.id);
 }
 
 function followedBoardID() {
@@ -82,12 +99,6 @@ function connect() {
     if (msg.type === 'misc' && msg.content === 'shutdown') { showShutdownBanner(true); return; }
     if (msg.type === 'init') { showShutdownBanner(false); hadActiveSession = true; }
     if (msg.type === 'game' && msg.id === pendingWatchID) pendingWatchID = '';
-    // Spectator mode: when the board we're watching finishes, hop to the
-    // next one (the "end" arrives before the boards update, so the ended
-    // board is still in the list and stepBoard wraps past the last one).
-    if (msg.type === 'end' && gameState.scoreboardScope === 'spectator' && msg.gameId === gameState.game?.id) {
-      stepBoard(1);
-    }
     applyMessage(msg);
     if (msg.type === 'init' || msg.type === 'boards') ensureWatched();
     const scoreboardResponse = msg.type === 'scoreboard';
