@@ -96,7 +96,7 @@ func (p *Player) winsLosses() (int, int) {
 }
 
 func (p *Player) passwordResetAllowed(now time.Time) bool {
-	return p.conn == nil && p.sink.Load() == nil && !p.LastSeen.IsZero() && now.Sub(p.LastSeen) >= accountPasswordResetAfter
+	return p.conn == nil && p.sink.Load() == nil && p.seat.Load() == nil && !p.LastSeen.IsZero() && now.Sub(p.LastSeen) >= accountPasswordResetAfter
 }
 
 func (p *Player) trimScores() {
@@ -108,6 +108,18 @@ func (p *Player) trimScores() {
 		}
 	}
 	p.ScoreHistory = kept
+}
+
+func trimScoreHistoryBefore(p *Player, cutoff int64) bool {
+	kept := p.ScoreHistory[:0]
+	for _, score := range p.ScoreHistory {
+		if score.Time >= cutoff {
+			kept = append(kept, score)
+		}
+	}
+	changed := len(kept) != len(p.ScoreHistory)
+	p.ScoreHistory = kept
+	return changed
 }
 
 // send enqueues one packet on the player's sink. Safe to call from any

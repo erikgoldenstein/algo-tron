@@ -77,6 +77,9 @@ func run() error {
 	defer geo.close()
 	pruneIdleAccounts(db, time.Now().Add(-accountPruneAfter).Unix())
 	archiveOldGameParticipants(db, time.Now().Add(-gameLedgerRetention).UnixMilli())
+	pruneOldGameParticipantArchive(db, time.Now().Add(-accountPruneAfter).UnixMilli())
+	purgeOldGameParticipants(db, time.Now().Add(-accountPruneAfter).UnixMilli())
+	purgeOldScoreHistory(db, time.Now().Add(-accountPruneAfter).UnixMilli())
 
 	s := &Server{
 		players:       map[string]*Player{},
@@ -120,6 +123,7 @@ func run() error {
 	go s.matchmakerLoop()
 	go s.statsLoop()
 	go s.storeLoop()
+	go s.retentionLoop()
 
 	g, gctx := errgroup.WithContext(drainCtx)
 	g.Go(func() error { return s.listenTCP(gctx, *tcpAddr, *proxyProtocol) })

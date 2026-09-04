@@ -37,6 +37,9 @@ affordance and is not an authorization boundary.
 
 The scoreboard history tab uses the separate read-only HTTP endpoint
 `GET /api/history`; it is intentionally not part of the WebSocket protocol.
+This modal statistics scoreboard is separate from the live game-loop
+scoreboard: the live scoreboard remains in the viewer WebSocket stream, while
+this endpoint is queried on demand.
 The request accepts repeated `user` parameters. A user is identified as
 `username` for the default `v1` career or `username/version` for another
 career. Append `/*` to a username to aggregate all of that username's current
@@ -48,6 +51,11 @@ ending now. `m` means minutes, `y` or `Y` means calendar years, while
 uppercase `M` means calendar months. The
 metric is `elo`, `trueskill` (also accepted as `ts`), or `winrate` (also
 accepted as `wr`).
+
+The requested range may not exceed seven days. At most 16 careers may be
+selected, each response series contains at most 256 points, and requests that
+would require more than 4096 ledger rows for one selected user are rejected to
+bound database and CPU work.
 
 Example:
 
@@ -81,6 +89,9 @@ not merge separate careers. UUIDs are never returned. `gap: true` marks the
 segment leading into a point when more than two hours passed since the prior
 recorded game observation; clients can render that segment as dotted. This is
 a missing-observation marker, not an exact historical TCP online/offline log.
+History requests are rate-limited per client address with a small interactive
+burst and a sustained limit of one request every 10 seconds; excess
+requests receive HTTP `429` and a `Retry-After` header.
 
 Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-only data and the viewer is a sibling SPA.
 
@@ -185,7 +196,7 @@ Leaderboards only contain accounts with a password (`pw_hash != ''`). Internal f
 
 `chat` messages are viewer-only chat/system events: `{type:"chat", gameId, boardIndex, username, message, time, system}`. The old per-tick `chats` map still drives board chat bubbles.
 
-Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is a validated GitHub repository link. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. In the daily/monthly pages a username/version career that has been reclaimed since (idle takeover) can appear more than once — retired careers carry `oldOwner` ≥ 1 and the viewer labels them `(old owner1)`, `(old owner2)`, …
+Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is a validated GitHub repository link. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. Legacy database rows may still produce `oldOwner` entries until the 14-month retention cleanup removes them.
 
 `chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 

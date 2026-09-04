@@ -83,8 +83,8 @@ func TestHistoryAPIAggregatesBetterModel(t *testing.T) {
 	now := time.Now().UnixMilli()
 	rows := []struct {
 		uuid, gameID string
-		elo         float64
-		ended       int64
+		elo          float64
+		ended        int64
 	}{
 		{"alice-v1", "g1", 1000, now - 2000},
 		{"alice-v2", "g1", 1100, now - 2000},
@@ -148,6 +148,83 @@ func TestHistoryAPIMaxPointsPerUser(t *testing.T) {
 	}
 }
 
+func TestHistoryAPIRejectsTooManyRows(t *testing.T) {
+	s := testServer(t)
+	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}
+	now := time.Now().UnixMilli()
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO game_participants
+		(game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
+		VALUES (?, 1, 'alice-uuid', 'alice', 'v1', 0, '', 1000, 300, 20, ?)`)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	for i := 0; i <= maxHistoryRowsPerUser; i++ {
+		if _, err := stmt.Exec(fmt.Sprintf("large-%d", i), now-int64(maxHistoryRowsPerUser-i)*1000); err != nil {
+			stmt.Close()
+			tx.Rollback()
+			t.Fatalf("insert row %d: %v", i, err)
+		}
+	}
+	stmt.Close()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	values := url.Values{}
+	values.Set("metric", "elo")
+	values.Set("user", "alice")
+	values.Set("from", fmt.Sprint(now-historyMaxRange.Milliseconds()))
+	values.Set("to", fmt.Sprint(now))
+	rr := httptest.NewRecorder()
+	s.history(rr, httptest.NewRequest(http.MethodGet, "/api/history?"+values.Encode(), nil))
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestHistoryAPIRateLimit(t *testing.T) {
+	s := testServer(t)
+	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}
+	target := "/api/history?metric=elo&user=alice&from=now-1h&to=now"
+	for i := 0; i < historyRateBurst; i++ {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "192.0.2.88:1234"
+		rr := httptest.NewRecorder()
+		s.history(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("request %d status = %d, body = %s", i+1, rr.Code, rr.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.RemoteAddr = "192.0.2.88:5678"
+	rr := httptest.NewRecorder()
+	s.history(rr, req)
+	if rr.Code != http.StatusTooManyRequests || rr.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limited status = %d, retry-after = %q", rr.Code, rr.Header().Get("Retry-After"))
+	}
+}
+
+func TestHistoryRateLimitRefillsEveryTenSeconds(t *testing.T) {
+	s := testServer(t)
+	now := time.Unix(1_700_000_000, 0)
+	key := "192.0.2.89"
+	for i := 0; i < historyRateBurst; i++ {
+		if allowed, _ := s.allowHistoryRequest(key, now); !allowed {
+			t.Fatalf("burst request %d was denied", i+1)
+		}
+	}
+	if allowed, retry := s.allowHistoryRequest(key, now.Add(9*time.Second)); allowed || retry <= 0 {
+		t.Fatalf("request after 9s allowed=%v retry=%s, want denial", allowed, retry)
+	}
+	if allowed, _ := s.allowHistoryRequest(key, now.Add(10*time.Second)); !allowed {
+		t.Fatal("request after 10s was denied")
+	}
+}
+
 func TestHistoryAPIGapMarker(t *testing.T) {
 	s := testServer(t)
 	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}
@@ -181,6 +258,7 @@ func TestHistoryAPIBadRequests(t *testing.T) {
 		"/api/history?metric=unknown&user=alice",
 		"/api/history?user=alice&from=2&to=1",
 		"/api/history?user=alice&from=not-a-time",
+		"/api/history?user=alice&from=now-8d&to=now",
 	}
 	for _, target := range cases {
 		t.Run(target, func(t *testing.T) {

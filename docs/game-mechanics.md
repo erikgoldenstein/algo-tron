@@ -86,7 +86,7 @@ A player who outlived another loser claims a partial win against them even thoug
 
 New accounts start at 1000. The post-game ELO is patched onto the `Score` entry each seat recorded at death/win inside `endGameLocked` — matched by timestamp, because a player who died here may already carry newer entries from another board by the time this game ends (the same entry also carries the post-game TrueSkill; persistence in [persistence.md](persistence.md)). ELO is still tracked per game and selectable as the `elo` scoreboard sort, but the default sidebar sort and the viewer chart are TrueSkill — see § Scoreboard below.
 
-`wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). The full history is retained on disk for the chart.
+`wins` / `losses` reported in `win` / `lose` packets count *only* games inside the last `scoreWindow` (so the scoreboard responds to recent form). Game history is retained subject to the 14-month data-retention boundary; the on-demand scoreplot API limits a query to seven days.
 
 ## TrueSkill
 

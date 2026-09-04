@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS players (
   ts_mu          REAL NOT NULL DEFAULT 0,    -- TrueSkill mean; 0 = uninitialized
   ts_sigma       REAL NOT NULL DEFAULT 0,    -- TrueSkill uncertainty; 0 = uninitialized
   first_seen_unix INTEGER NOT NULL DEFAULT 0, -- first join for this career/UUID
-  last_seen_unix INTEGER NOT NULL DEFAULT 0, -- last join/disconnect; drives idle takeover + pruning
+  last_seen_unix INTEGER NOT NULL DEFAULT 0, -- last join/disconnect; drives account recovery/re-registration + pruning
   uuid           TEXT NOT NULL DEFAULT '',   -- stable per-career identity
   PRIMARY KEY (username, version)
 );
@@ -81,8 +81,8 @@ CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ende
 
 -- game_participants_archive: identical columns to game_participants. Aged-out
 -- ledger rows (older than gameLedgerRetention, ~7 months) are moved here by
--- archiveOldGameParticipants so the hot table stays bounded; kept for history,
--- never queried by the server.
+-- archiveOldGameParticipants so the hot table stays bounded; the history API
+-- may read it for seven-day windows, and rows older than 14 months are pruned.
 
 CREATE TABLE IF NOT EXISTS player_ips (
   uuid            TEXT NOT NULL,
@@ -104,14 +104,14 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 
 - `pw_hash` is hex-encoded HMAC-SHA256 of the password with `secret` as key.
 - `elo` defaults to 1000 for new players; rows with `elo == 0` from legacy data are upgraded to 1000 on load.
-- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo`, `tsMu`, and `tsSigma` are the player's ratings after that game; all three are `omitempty` for backward compatibility, so records written before a given metric existed lack the field and parse as `0`. The viewer's TrueSkill chart skips slots with `TsMu == 0` (see [game-mechanics.md § Scoreboard](game-mechanics.md#scoreboard)). Never pruned on disk — the in-memory copy is the one that's trimmed to `scoreWindow` (see [game-mechanics.md](game-mechanics.md)).
+- `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo`, `tsMu`, and `tsSigma` are the player's ratings after that game; all three are `omitempty` for backward compatibility, so records written before a given metric existed lack the field and parse as `0`. The viewer's TrueSkill chart skips slots with `TsMu == 0` (see [game-mechanics.md § Scoreboard](game-mechanics.md#scoreboard)). Normal score-window trimming happens in memory; a separate retention sweep permanently removes records older than 14 months from disk.
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
-- `uuid` is the stable identity for persistence/audit rows. `first_seen_unix` records when that career/UUID was first created; `last_seen_unix` records the most recent join or disconnect. Usernames remain the login/display lookup; idle takeover after 30 days archives the old career and gives the username/version a new UUID and first-seen timestamp. Existing databases without first-seen data are backfilled from their last-seen timestamp, the earliest timestamp available.
+- `uuid` is the stable identity for persistence rows. `first_seen_unix` records when that career/UUID was first created; `last_seen_unix` records the most recent join or disconnect. Usernames remain the login/display lookup; account recovery/re-registration after 14 months of inactivity purges the old career and gives the username/version a new UUID and first-seen timestamp. Existing databases without first-seen data are backfilled from their last-seen timestamp, the earliest timestamp available.
 - `version` distinguishes independent careers under one username; omitted/legacy values are `v1`. The composite `(username, version)` key allows multiple versions to be online concurrently.
 - `lobbies` stores administrator-created lobby names, a keyed password hash, the per-board player limit (`-1` means unlimited for that named lobby), and creation time. The default lobby is implicit and is not stored or removable.
 - `bio` stores the optional post-join `contact` and GitHub `src` metadata for that career. It is JSON so absent fields remain absent; validation limits contact to 32 printable ASCII characters and source URLs to 48 characters.
 - `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `lobby`, `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and other non-leaderboard accounts are excluded at write time so the period boards and the audit log agree.
-- `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; kept for history, never read by the server.
+- `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; the history API reads both tables. Rows older than 14 months are pruned during retention maintenance. The API's seven-day limit is only a per-request workload bound.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
 
 ### GeoLite setup
@@ -127,13 +127,13 @@ Run `algo-tron -setup-geo -geo-dir geo` to ensure `GeoLite2-City.mmdb` and `GeoL
 
 ### Read/write cadence
 
-- At boot, `pruneIdleAccounts` first moves accounts idle for more than `accountPruneAfter` (180 days) into `players_archive` and deletes them from `players` — one transaction, so a career is never lost mid-move. Then `s.load()` reads the remaining live rows.
-- `players_archive` is the soft-delete side of account recycling: an **idle takeover** (a join with a new password after `accountPasswordResetAfter`, 30 days) snapshots the old career, including UUID and first-seen timestamp, into the archive and resets the live row's stats for the new owner. The server never reads the archive; it exists so history survives on disk (`sqlite3 players.db "SELECT * FROM players_archive"`).
+- At boot, `pruneIdleAccounts` permanently removes accounts idle for more than `accountPruneAfter` (14 months), including their IP records and legacy archived career rows. The operation is transactional and runs before `s.load()`, so expired accounts do not enter memory.
+- A join with a new password is accepted only after `accountPasswordResetAfter` (14 months) of inactivity. Account recovery/re-registration purges the old username's live, archived, IP, and game-ledger rows, then starts a fresh career with a new UUID and first-seen timestamp. This is deliberate: no user account or history data is retained past the 14-month boundary.
 - Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the **dirty players** (those whose ratings/history/account changed since the last store — see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows with **no lock held** — disk latency never delays a game tick. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
-- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** players, not just dirty ones, so a missed dirty mark costs freshness, never data.
-- One accepted staleness: `trimScores` rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty, so an inactive player's DB row keeps expired score entries until their next game (or shutdown). Harmless — the trim re-applies in memory after every load. Don't "fix" it by marking everyone dirty per rebuild; that reintroduces the full-table write this design removes.
+- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** current players, not just dirty ones, so a missed dirty mark costs freshness, never data.
+- The regular `trimScores` operation rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty; the hourly retention sweep handles the separate 14-month disk-retention boundary and marks changed players dirty.
 
-DB errors are logged and counted as `tron_db_errors_total{op="…"}`; the server keeps running. Schema additions use idempotent `ALTER TABLE` statements on open; the pre-version `players` table is rebuilt once to change its primary key to `(username, version)`. Existing first-seen values are preserved, while legacy rows without them use their last-seen timestamp as a fallback.
+DB errors are logged and counted as `tron_db_errors_total{op="…"}`; startup now fails when a schema upgrade or required index cannot be applied. Schema additions are idempotent; the pre-version `players` table is rebuilt once to change its primary key to `(username, version)`. Existing first-seen values are preserved, while legacy rows without them use their last-seen timestamp as a fallback. Retention cleanup runs at startup and hourly while the server is running, permanently purging account and game-history data older than 14 months.
 
 ## Logs
 
