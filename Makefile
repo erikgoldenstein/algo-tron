@@ -33,19 +33,19 @@ dev:
 	$(PYTHON) scripts/dev.py -- $(SERVER_ARGS)
 
 run-bot:
-	$(PYTHON) scripts/tron_swarm.py $(BOT_ARGS)
+	$(PYTHON) scripts/bot_swarm.py $(BOT_ARGS)
 
 stop-bots:
-	$(PYTHON) scripts/tron_swarm.py --stop
+	$(PYTHON) scripts/bot_swarm.py --stop
 
 dry-run:
-	$(PYTHON) scripts/tron_swarm.py --dry-run $(BOT_ARGS)
+	$(PYTHON) scripts/bot_swarm.py --dry-run $(BOT_ARGS)
 
 test:
 	go test ./...
 
 check: test
-	$(PYTHON) -m py_compile scripts/tron_swarm.py
+	$(PYTHON) -m py_compile scripts/bot_swarm.py scripts/bot_swarm/*.py
 
 clean:
 	$(RM) $(BINARY)
