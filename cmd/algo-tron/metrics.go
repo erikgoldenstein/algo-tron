@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"database/sql"
 	"errors"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,6 +25,11 @@ import (
 // only do work when Prometheus actually scrapes; they take s.mu briefly to
 // read the current count.
 //
+// promhttp.Handler uses Prometheus' default gatherer, which also includes the
+// standard Go process and runtime collectors. That means /metrics exposes
+// go_gc_*, go_memstats_*, go_goroutines, and related runtime metrics without
+// duplicating them here.
+//
 // Tick and fanout durations are reported as a *ratio* of the current tick
 // interval (duration / tickInterval). The interval changes over time (rate
 // ramps with elapsed game time), so absolute durations would mix samples
@@ -35,17 +45,28 @@ var budgetBuckets = []float64{0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 1.5, 2.0}
 var tickOffsetBuckets = []float64{-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0}
 
 var (
-	metricGames              = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_games_total", Help: "Total number of games played."})
-	metricTicks              = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_ticks_total", Help: "Total ticks processed across all games."})
-	metricViewersKicked      = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewers_kicked_total", Help: "Viewer connections dropped because their send buffer was full — overload signal."})
-	metricTCPAcceptErrors    = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tcp_accept_errors_total", Help: "Errors from the TCP Accept loop (we retry with backoff)."})
-	metricTCPPanics          = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tcp_panics_total", Help: "Panics recovered in per-connection TCP handlers."})
-	metricTCPRejected        = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_tcp_rejected_total", Help: "Bot connections rejected before reaching the game, by reason."}, []string{"reason"})
-	metricDBErrors           = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_db_errors_total", Help: "SQLite errors, by operation."}, []string{"op"})
-	metricChatRateLimited    = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_chat_rate_limited_total", Help: "Chat packets refused because the player exceeded the per-tick rate."})
-	metricHistoryRateLimited = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_history_rate_limited_total", Help: "History API requests refused because the client exceeded its request rate."})
-	metricDisconnectKilled   = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_player_disconnect_mid_game_total", Help: "Players that were killed mid-game because their TCP connection went away."})
-	metricPlayerDeaths       = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_player_deaths_total", Help: "Player deaths by reason and the board's ticks-per-second bucket at death. Disconnect ratio per bucket = rate(deaths{reason=\"disconnect\",tps_bucket=b}[w]) / rate(deaths{tps_bucket=b}[w])."}, []string{"reason", "tps_bucket"})
+	metricGames                  = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_games_total", Help: "Total number of games played."})
+	metricTicks                  = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_ticks_total", Help: "Total ticks processed across all games."})
+	metricTickDeadlineMisses     = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tick_deadline_misses_total", Help: "Ticks whose scheduler wake-up happened after the planned deadline."})
+	metricTickOverruns           = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tick_processing_overruns_total", Help: "Ticks whose processing and fanout took at least one full tick interval."})
+	metricViewersKicked          = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewers_kicked_total", Help: "Viewer connections dropped because their send buffer was full — overload signal."})
+	metricViewerMessagesReceived = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewer_messages_received_total", Help: "Messages received from viewer websocket clients."})
+	metricViewerMessagesQueued   = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewer_messages_queued_total", Help: "Viewer messages successfully queued for websocket delivery."})
+	metricHTTPRequests           = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_http_requests_total", Help: "HTTP requests handled by the viewer, by method, route, and status."}, []string{"method", "route", "status"})
+	metricHTTPDuration           = promauto.NewHistogramVec(prometheus.HistogramOpts{Name: "tron_http_request_seconds", Help: "Viewer HTTP request duration, by method and route."}, []string{"method", "route"})
+	metricHTTPResponseBytes      = promauto.NewHistogramVec(prometheus.HistogramOpts{Name: "tron_http_response_bytes", Help: "Viewer HTTP response size, by route."}, []string{"route"})
+	metricTCPAcceptErrors        = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tcp_accept_errors_total", Help: "Errors from the TCP Accept loop (we retry with backoff)."})
+	metricTCPConnections         = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tcp_connections_total", Help: "TCP connection handlers started, including connections rejected during the handshake."})
+	metricTCPDisconnects         = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_tcp_disconnects_total", Help: "TCP connections closed, by stable close reason."}, []string{"reason"})
+	metricTCPPanics              = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tcp_panics_total", Help: "Panics recovered in per-connection TCP handlers."})
+	metricTCPRejected            = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_tcp_rejected_total", Help: "Bot connections rejected before reaching the game, by reason."}, []string{"reason"})
+	metricDBErrors               = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_db_errors_total", Help: "SQLite errors, by operation."}, []string{"op"})
+	metricChatRateLimited        = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_chat_rate_limited_total", Help: "Chat packets refused because the player exceeded the per-tick rate."})
+	metricInvalidMoves           = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_invalid_moves_total", Help: "Invalid move inputs, by stable reason."}, []string{"reason"})
+	metricAssistedMoves          = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_assisted_moves_total", Help: "Moves supplied by the server fallback after an invalid or missing move."})
+	metricHistoryRateLimited     = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_history_rate_limited_total", Help: "History API requests refused because the client exceeded its request rate."})
+	metricDisconnectKilled       = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_player_disconnect_mid_game_total", Help: "Players that were killed mid-game because their TCP connection went away."})
+	metricPlayerDeaths           = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_player_deaths_total", Help: "Player deaths by reason and the board's ticks-per-second bucket at death. Disconnect ratio per bucket = rate(deaths{reason=\"disconnect\",tps_bucket=b}[w]) / rate(deaths{tps_bucket=b}[w])."}, []string{"reason", "tps_bucket"})
 
 	// Disconnect-death distribution gauges, recomputed each minute from the
 	// game-ledger (updateDisconnectStats) over trailing windows. They answer
@@ -70,6 +91,11 @@ var (
 		Name:    "tron_tick_interval_offset_ratio",
 		Help:    "Offset of actual inter-tick gap from the expected interval, as a fraction ((actual-expected)/expected). 0 = on time, +0.05 = 5% late, -0.05 = 5% early. Normalized so samples are comparable across the tick-rate ramp.",
 		Buckets: tickOffsetBuckets,
+	})
+	metricTickSchedulerLag = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "tron_tick_scheduler_lag_seconds",
+		Help:    "How late the tick scheduler woke after a planned tick deadline.",
+		Buckets: prometheus.ExponentialBuckets(0.0001, 4, 10),
 	})
 	metricGameDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "tron_game_duration_seconds",
@@ -160,6 +186,194 @@ func (s *Server) registerGauges() {
 			return float64(time.Second) / float64(ns)
 		}
 		return 0
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_tcp_connections_active", Help: "TCP connection handlers currently alive, including pre-join connections."}, func() float64 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		n := 0
+		for _, count := range s.ipCount {
+			n += count
+		}
+		return float64(n)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_bot_send_buffered_packets", Help: "Packets currently queued across all connected bot send buffers."}, func() float64 {
+		buffered, _, _ := s.botBufferStats()
+		return buffered
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_bot_send_buffer_capacity_packets", Help: "Total capacity across all connected bot send buffers."}, func() float64 {
+		_, capacity, _ := s.botBufferStats()
+		return capacity
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_bot_send_buffer_max_utilization_ratio", Help: "Highest current bot send-buffer utilization ratio, from 0 to 1."}, func() float64 {
+		_, _, maxUtilization := s.botBufferStats()
+		return maxUtilization
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_viewer_send_buffered_messages", Help: "Messages currently queued across all connected viewer send buffers."}, func() float64 {
+		buffered, _, _ := s.viewerBufferStats()
+		return buffered
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_viewer_send_buffer_capacity_messages", Help: "Total capacity across all connected viewer send buffers."}, func() float64 {
+		_, capacity, _ := s.viewerBufferStats()
+		return capacity
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_viewer_send_buffer_max_utilization_ratio", Help: "Highest current viewer send-buffer utilization ratio, from 0 to 1."}, func() float64 {
+		_, _, maxUtilization := s.viewerBufferStats()
+		return maxUtilization
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_open_connections", Help: "SQLite connections currently open in the database pool."}, func() float64 {
+		if s.db == nil {
+			return 0
+		}
+		return float64(s.db.Stats().OpenConnections)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_in_use_connections", Help: "SQLite connections currently in use."}, func() float64 {
+		if s.db == nil {
+			return 0
+		}
+		return float64(s.db.Stats().InUse)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_idle_connections", Help: "SQLite idle connections in the database pool."}, func() float64 {
+		if s.db == nil {
+			return 0
+		}
+		return float64(s.db.Stats().Idle)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_wait_count", Help: "Cumulative waits for an available SQLite connection."}, func() float64 {
+		if s.db == nil {
+			return 0
+		}
+		return float64(s.db.Stats().WaitCount)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_wait_duration_seconds", Help: "Cumulative time waiting for an available SQLite connection."}, func() float64 {
+		if s.db == nil {
+			return 0
+		}
+		return s.db.Stats().WaitDuration.Seconds()
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_page_count", Help: "SQLite database page count."}, func() float64 {
+		return dbPragma(s.db, "page_count")
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_freelist_pages", Help: "SQLite pages currently on the freelist."}, func() float64 {
+		return dbPragma(s.db, "freelist_count")
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_page_size_bytes", Help: "SQLite database page size."}, func() float64 {
+		return dbPragma(s.db, "page_size")
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_size_bytes", Help: "SQLite main database file size on disk."}, func() float64 {
+		if s.dbPath == "" {
+			return 0
+		}
+		info, err := os.Stat(s.dbPath)
+		if err != nil {
+			return 0
+		}
+		return float64(info.Size())
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{Name: "tron_db_wal_size_bytes", Help: "SQLite write-ahead log file size on disk."}, func() float64 {
+		if s.dbPath == "" {
+			return 0
+		}
+		info, err := os.Stat(s.dbPath + "-wal")
+		if err != nil {
+			return 0
+		}
+		return float64(info.Size())
+	})
+}
+
+func (s *Server) botBufferStats() (buffered, capacity, maxUtilization float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.players {
+		sink := p.sink.Load()
+		if sink == nil {
+			continue
+		}
+		buffered += float64(len(sink.ch))
+		capacity += float64(cap(sink.ch))
+		if sinkCapacity := cap(sink.ch); sinkCapacity > 0 {
+			if utilization := float64(len(sink.ch)) / float64(sinkCapacity); utilization > maxUtilization {
+				maxUtilization = utilization
+			}
+		}
+	}
+	return buffered, capacity, maxUtilization
+}
+
+func (s *Server) viewerBufferStats() (buffered, capacity, maxUtilization float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sink := range s.viewClients {
+		buffered += float64(len(sink.ch))
+		capacity += float64(cap(sink.ch))
+		if sinkCapacity := cap(sink.ch); sinkCapacity > 0 {
+			if utilization := float64(len(sink.ch)) / float64(sinkCapacity); utilization > maxUtilization {
+				maxUtilization = utilization
+			}
+		}
+	}
+	return buffered, capacity, maxUtilization
+}
+
+func dbPragma(db *sql.DB, pragma string) float64 {
+	if db == nil {
+		return 0
+	}
+	var value int64
+	if err := db.QueryRow("PRAGMA " + pragma).Scan(&value); err != nil {
+		return 0
+	}
+	return float64(value)
+}
+
+type metricResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (w *metricResponseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *metricResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.ResponseWriter.Write(data)
+	w.bytes += n
+	return n, err
+}
+
+// Hijack preserves websocket upgrades when the viewer handler is wrapped.
+func (w *metricResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("response writer does not support hijacking")
+	}
+	return hijacker.Hijack()
+}
+
+func instrumentHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		mw := &metricResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(mw, r)
+		status := mw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
+		metricHTTPRequests.WithLabelValues(r.Method, route, strconv.Itoa(status)).Inc()
+		metricHTTPDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		metricHTTPResponseBytes.WithLabelValues(route).Observe(float64(mw.bytes))
 	})
 }
 

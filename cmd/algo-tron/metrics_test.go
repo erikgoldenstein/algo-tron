@@ -4,8 +4,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
+func TestGoRuntimeMetricsRegistered(t *testing.T) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+
+	want := map[string]bool{
+		"go_gc_duration_seconds":       false,
+		"go_memstats_heap_alloc_bytes": false,
+		"go_memstats_heap_objects":     false,
+	}
+	for _, family := range families {
+		if _, ok := want[family.GetName()]; ok {
+			want[family.GetName()] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("default Prometheus gatherer is missing %s", name)
+		}
+	}
+}
 
 func TestTPSBucket(t *testing.T) {
 	bucketFor := func(tps int) string {

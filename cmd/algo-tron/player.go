@@ -26,6 +26,7 @@ func (st *Seat) setPos(x, y int) {
 
 func (st *Seat) readMoveLocked(g *Game) (Move, bool) {
 	if st.move == MoveNone {
+		metricInvalidMoves.WithLabelValues("missing").Inc()
 		st.invalidMoveStreak++
 		st.invalidMoveTotal++
 		if st.invalidMoveStreak >= invalidMoveConsecutiveLimit || st.invalidMoveTotal > maxInvalidMovesAllowed(g.tick) {
@@ -36,6 +37,7 @@ func (st *Seat) readMoveLocked(g *Game) (Move, bool) {
 		// Resolve the fallback against the board as it exists before this
 		// tick's movement/collision phase. The resulting position is then
 		// included in the same tick frame as every other move.
+		metricAssistedMoves.Inc()
 		return g.fallbackMoveLocked(st), true
 	}
 	move := st.move

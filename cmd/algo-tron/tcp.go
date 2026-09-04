@@ -17,6 +17,8 @@ func isLocalhost(ip string) bool {
 }
 
 func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
+	metricTCPConnections.Inc()
+	closeMetricReason := "handshake_failed"
 	// Until the join succeeds, this goroutine writes directly (motd,
 	// rejection errors) under a write deadline. After the join, a botSink
 	// writer goroutine owns all writes; the cleanup below hands the
@@ -24,6 +26,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	var sink *botSink
 	connectedAt := time.Now()
 	defer func() {
+		metricTCPDisconnects.WithLabelValues(closeMetricReason).Inc()
 		if r := recover(); r != nil {
 			metricTCPPanics.Inc()
 			slog.Error("tcp handler panic", "err", r, "stack", string(debug.Stack()))
@@ -236,4 +239,5 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()
+	closeMetricReason = disconnectReason
 }

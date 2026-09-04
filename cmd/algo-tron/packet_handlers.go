@@ -93,6 +93,7 @@ func (s *Server) handleMove(p *Player, st *Seat, parts []string) {
 		return
 	}
 	if len(parts) < 2 {
+		metricInvalidMoves.WithLabelValues("malformed").Inc()
 		p.send("error", "WARNING_UNKNOWN_MOVE")
 		return
 	}
@@ -106,6 +107,7 @@ func (s *Server) handleMove(p *Player, st *Seat, parts []string) {
 	case "left":
 		st.move = MoveLeft
 	default:
+		metricInvalidMoves.WithLabelValues("unknown_direction").Inc()
 		p.send("error", "WARNING_UNKNOWN_MOVE")
 	}
 }

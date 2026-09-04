@@ -51,6 +51,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			c.Close()
 			return
 		}
+		metricViewerMessagesReceived.Inc()
 		var req struct {
 			Watch      string           `json:"watch"`
 			Scoreboard *scoreboardQuery `json:"scoreboard"`
@@ -137,6 +138,7 @@ func (s *Server) viewWriter(c *websocket.Conn, sink *viewerSink) {
 func (s *Server) sendToSinkLocked(c *websocket.Conn, sink *viewerSink, data []byte) {
 	select {
 	case sink.ch <- data:
+		metricViewerMessagesQueued.Inc()
 	default:
 		delete(s.viewClients, c)
 		if sink.game != nil {
