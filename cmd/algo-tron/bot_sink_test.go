@@ -30,6 +30,27 @@ func TestBotSinkDrainsOnShutdown(t *testing.T) {
 	}
 }
 
+func TestBotSinkPrioritizesShutdownPacket(t *testing.T) {
+	clientConn, serverConn := mustPipe(t)
+	sink := newBotSink(serverConn)
+	sink.enqueue([]byte("pos|0|0|0\n"))
+	sink.shutdownWithPacket([]byte("error|ERROR_SERVER_RESTARTING\n"), "server_restarting")
+	go sink.run()
+
+	buf := make([]byte, 64)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got := string(buf[:n]); got != "error|ERROR_SERVER_RESTARTING\n" {
+		t.Errorf("client received %q, want restart error", got)
+	}
+	clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := clientConn.Read(buf); err == nil {
+		t.Error("connection should be closed after restart packet")
+	}
+}
+
 // A full sink must kick (shutdown) instead of blocking the sender.
 func TestBotSinkKicksWhenFull(t *testing.T) {
 	_, serverConn := mustPipe(t)
