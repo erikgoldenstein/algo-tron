@@ -3,4 +3,6 @@
 vendor/
 /result
 /geo/
+/bin/
+.tron-swarm.pid
 .DS_Store
