@@ -30,6 +30,7 @@ function renderSchemes() {
 // section. Read by other modules via getSwitch(key) in helpers.js.
 const SWITCHES = [
   { key: 'scrollNames', label: 'scroll long names' },
+  { key: 'confirmForwarding', label: 'confirm forwarding' },
 ];
 
 function renderSwitches() {
@@ -235,6 +236,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('forward-confirm-modal')?.hidden) {
+    if (e.key === 'q' || e.key === 'Escape') {
+      e.preventDefault();
+      hideForwardConfirm();
+      return;
+    }
+  }
   if (e.key === 'Escape' && !document.getElementById('admin-login-modal')?.hidden) {
     e.preventDefault();
     closeAdminLogin();

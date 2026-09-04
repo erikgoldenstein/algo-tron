@@ -93,9 +93,18 @@ function esc(s) {
 }
 
 // Settings toggles persisted in localStorage. The modal renders/owns these;
-// other code just reads via getSwitch(key).
+// other code just reads via getSwitch(key). Defaults live here so a new
+// setting can be enabled without requiring a localStorage entry.
+const SWITCH_DEFAULTS = {
+  confirmForwarding: true,
+};
+
 function getSwitch(key) {
-  try { return localStorage.getItem('algotron.switch.' + key) === '1'; } catch (e) { return false; }
+  try {
+    const stored = localStorage.getItem('algotron.switch.' + key);
+    if (stored !== null) return stored === '1';
+  } catch (e) {}
+  return !!SWITCH_DEFAULTS[key];
 }
 
 // Names get truncated to fit their container — the scoreboard cell or the
