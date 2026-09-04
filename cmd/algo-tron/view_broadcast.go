@@ -62,6 +62,18 @@ func (s *Server) broadcastShutdownLocked() {
 	s.broadcastViewLocked(data)
 }
 
+// broadcastTCPShutdownLocked tells connected bots why their process-owned
+// connection is about to close. The bot sink prioritizes this packet over
+// stale queued tick frames and then closes the connection.
+func (s *Server) broadcastTCPShutdownLocked() {
+	packet := formatPacket("error", "ERROR_SERVER_RESTARTING")
+	for _, p := range s.players {
+		if sink := p.sink.Load(); sink != nil {
+			sink.shutdownWithPacket(packet, "server_restarting")
+		}
+	}
+}
+
 func (s *Server) broadcastEndLocked(gameID string) {
 	if len(s.viewClients) == 0 {
 		return

@@ -9,6 +9,36 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// ensureColumn makes schema upgrades explicit and only treats an already
+// present column as success. Silent migration failures leave a database that
+// boots successfully but fails later on the first affected request.
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typ string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			rows.Close()
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	_, err = db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
+	return err
+}
+
 func openDB(path string) (*sql.DB, error) {
 	// modernc.org/sqlite applies _pragma= query params on every pooled
 	// connection — important for busy_timeout, which is per-connection
@@ -38,23 +68,59 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	// TrueSkill columns added later; ignore "duplicate column" on re-open.
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_mu REAL NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN ts_sigma REAL NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN bio TEXT NOT NULL DEFAULT '{}'`)
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN last_seen_unix INTEGER NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE players ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS lobbies (
+		name                   TEXT NOT NULL PRIMARY KEY,
+		password_hash          TEXT NOT NULL DEFAULT '',
+		max_players_per_board INTEGER NOT NULL DEFAULT 24,
+		created_unix           INTEGER NOT NULL
+	)`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "ts_mu", "REAL NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "ts_sigma", "REAL NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "first_seen_unix", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "bio", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "last_seen_unix", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players", "uuid", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := migratePlayersTable(db); err != nil {
 		db.Close()
 		return nil, err
 	}
-	_, _ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> ''`)
-	_, _ = db.Exec(`UPDATE players SET last_seen_unix = ? WHERE last_seen_unix = 0`, time.Now().Unix())
-	_, _ = db.Exec(`UPDATE players SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE ? END WHERE first_seen_unix = 0`, time.Now().Unix())
-	// players_archive holds retired careers (idle takeover, idle pruning) —
-	// soft-deleted: kept on disk for history, never read by the server. The
-	// same username can appear multiple times, once per retirement.
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> ''`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE players SET last_seen_unix = ? WHERE last_seen_unix = 0`, time.Now().Unix()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE players SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE ? END WHERE first_seen_unix = 0`, time.Now().Unix()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	// players_archive is retained only as a compatibility table for older
+	// installations. New account recovery and pruning paths purge data instead
+	// of writing retired careers there.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players_archive (
 		uuid             TEXT NOT NULL DEFAULT '',
 		username         TEXT NOT NULL,
@@ -73,14 +139,30 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN uuid TEXT NOT NULL DEFAULT ''`)
-	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
-	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN first_seen_unix INTEGER NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE players_archive ADD COLUMN bio TEXT NOT NULL DEFAULT '{}'`)
-	_, _ = db.Exec(`UPDATE players_archive SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE archived_at_unix END WHERE first_seen_unix = 0`)
+	if err := ensureColumn(db, "players_archive", "uuid", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players_archive", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players_archive", "first_seen_unix", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "players_archive", "bio", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE players_archive SET first_seen_unix = CASE WHEN last_seen_unix > 0 THEN last_seen_unix ELSE archived_at_unix END WHERE first_seen_unix = 0`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS game_participants (
 		game_id       TEXT NOT NULL,
 		board_index   INTEGER NOT NULL,
+		lobby         TEXT NOT NULL DEFAULT 'default',
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
 		version       TEXT NOT NULL DEFAULT 'v1',
@@ -95,20 +177,35 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	// tick_count (total ticks the game lasted) added later; ignore "duplicate column".
-	_, _ = db.Exec(`ALTER TABLE game_participants ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE game_participants ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
+	if err := ensureColumn(db, "game_participants", "tick_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "game_participants", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "game_participants", "lobby", "TEXT NOT NULL DEFAULT 'default'"); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// Indexes for scoreboard_cache.go's period aggregate (latest-per-uuid +
 	// windowed sum). Without them the halfyear board scans the full table.
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms)`)
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ended_unix_ms)`)
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_uuid_ended_idx ON game_participants(uuid, ended_unix_ms)`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ended_unix_ms)`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// game_participants_archive holds ledger rows aged out past the longest
-	// live board window (archiveOldGameParticipants). Kept for history but
-	// never queried by the server, so the hot table and its indexes stay
-	// bounded by the retention window instead of growing forever.
+	// live board window (archiveOldGameParticipants). The history API reads it;
+	// only the hot table is bounded by the retention window.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS game_participants_archive (
 		game_id       TEXT NOT NULL,
 		board_index   INTEGER NOT NULL,
+		lobby         TEXT NOT NULL DEFAULT 'default',
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
 		version       TEXT NOT NULL DEFAULT 'v1',
@@ -123,13 +220,29 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN tick_count INTEGER NOT NULL DEFAULT 0`)
-	_, _ = db.Exec(`ALTER TABLE game_participants_archive ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`)
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_archive_uuid_ended_idx ON game_participants_archive(uuid, ended_unix_ms)`)
+	if err := ensureColumn(db, "game_participants_archive", "tick_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "game_participants_archive", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := ensureColumn(db, "game_participants_archive", "lobby", "TEXT NOT NULL DEFAULT 'default'"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS game_participants_archive_uuid_ended_idx ON game_participants_archive(uuid, ended_unix_ms)`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// game_winners was a duplicate of game_participants WHERE won=1; the
 	// participants table already answers "who won game X" via won=1. Drop
 	// if a previous build created it; new installs never see it.
-	_, _ = db.Exec(`DROP TABLE IF EXISTS game_winners`)
+	if _, err := db.Exec(`DROP TABLE IF EXISTS game_winners`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS player_ips (
 		uuid            TEXT NOT NULL,
 		ip_hash         TEXT NOT NULL,
@@ -231,53 +344,211 @@ func migratePlayersTable(db *sql.DB) error {
 	return tx.Commit()
 }
 
-// archiveRow copies one retired career into players_archive. Call with no
-// lock held — the live Player/row is reset or removed separately by the
-// caller. Failure is logged and counted; the takeover proceeds regardless.
-func archiveRow(db *sql.DB, r playerRow) {
-	scores, _ := json.Marshal(r.scores)
-	bio := marshalBio(r.bio)
-	_, err := db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.uuid, r.username, r.version, r.pwHash, r.elo, string(scores), bio, r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, time.Now().Unix())
-	if err != nil {
-		metricDBErrors.WithLabelValues("archive").Inc()
-		slog.Error("db archive", "user", r.username, "err", err)
+// resetAccountRows purges all persistent data for an expired username and
+// atomically writes its fresh career. The delete is required because storeRows
+// only upserts rows and cannot remove versions that disappeared from memory.
+func resetAccountRows(db *sql.DB, username string, current playerRow) bool {
+	if db == nil {
+		return false
 	}
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	defer tx.Rollback()
+	// The subqueries run before the live rows are deleted and remove IP and
+	// ledger records belonging to every previous version of this username.
+	queries := []struct {
+		query string
+		args  []any
+	}{
+		{`DELETE FROM player_ips WHERE uuid IN (SELECT uuid FROM players WHERE username = ? UNION SELECT uuid FROM players_archive WHERE username = ?)`, []any{username, username}},
+		{`DELETE FROM game_participants WHERE uuid IN (SELECT uuid FROM players WHERE username = ? UNION SELECT uuid FROM players_archive WHERE username = ?)`, []any{username, username}},
+		{`DELETE FROM game_participants_archive WHERE uuid IN (SELECT uuid FROM players WHERE username = ? UNION SELECT uuid FROM players_archive WHERE username = ?)`, []any{username, username}},
+		{`DELETE FROM players_archive WHERE username = ?`, []any{username}},
+	}
+	for _, item := range queries {
+		if _, err := tx.Exec(item.query, item.args...); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM players WHERE username = ?`, username); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	scores, _ := json.Marshal(current.scores)
+	if _, err := tx.Exec(`INSERT INTO players (username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, current.username, current.version, current.pwHash, current.elo, string(scores), marshalBio(current.bio), current.tsMu, current.tsSigma, current.firstSeenUnix, current.lastSeenUnix, current.uuid); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	return true
 }
 
-// pruneIdleAccounts archives and removes accounts whose last_seen_unix is
-// older than cutoffUnix. Runs once at startup, before load, so s.players
-// and the live table stay bounded; careers move to players_archive in the
-// same transaction rather than being deleted.
+// pruneIdleAccounts is the startup-compatible wrapper for purgeIdleAccounts.
 func pruneIdleAccounts(db *sql.DB, cutoffUnix int64) {
+	purgeIdleAccounts(db, cutoffUnix)
+}
+
+// purgeIdleAccounts permanently removes accounts whose last_seen_unix is older
+// than cutoffUnix. It also removes their IP records and any legacy archived
+// career rows. The boolean reports whether the transaction committed.
+func purgeIdleAccounts(db *sql.DB, cutoffUnix int64) bool {
 	tx, err := db.Begin()
 	if err != nil {
 		metricDBErrors.WithLabelValues("prune").Inc()
 		slog.Error("db prune begin", "err", err)
-		return
+		return false
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix)
-		SELECT uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, ? FROM players WHERE last_seen_unix < ?`,
-		time.Now().Unix(), cutoffUnix); err != nil {
-		metricDBErrors.WithLabelValues("prune").Inc()
-		slog.Error("db prune archive", "err", err)
-		return
+	queries := []struct {
+		query string
+		args  []any
+	}{
+		{`DELETE FROM player_ips WHERE last_seen_unix < ? OR uuid IN (SELECT uuid FROM players WHERE last_seen_unix < ? UNION SELECT uuid FROM players_archive WHERE (last_seen_unix > 0 AND last_seen_unix < ?) OR archived_at_unix < ?)`, []any{cutoffUnix, cutoffUnix, cutoffUnix, cutoffUnix}},
+		{`DELETE FROM game_participants WHERE uuid IN (SELECT uuid FROM players WHERE last_seen_unix < ? UNION SELECT uuid FROM players_archive WHERE (last_seen_unix > 0 AND last_seen_unix < ?) OR archived_at_unix < ?)`, []any{cutoffUnix, cutoffUnix, cutoffUnix}},
+		{`DELETE FROM game_participants_archive WHERE uuid IN (SELECT uuid FROM players WHERE last_seen_unix < ? UNION SELECT uuid FROM players_archive WHERE (last_seen_unix > 0 AND last_seen_unix < ?) OR archived_at_unix < ?)`, []any{cutoffUnix, cutoffUnix, cutoffUnix}},
+		{`DELETE FROM players WHERE last_seen_unix < ?`, []any{cutoffUnix}},
+		{`DELETE FROM players_archive WHERE (last_seen_unix > 0 AND last_seen_unix < ?) OR archived_at_unix < ?`, []any{cutoffUnix, cutoffUnix}},
 	}
-	res, err := tx.Exec(`DELETE FROM players WHERE last_seen_unix < ?`, cutoffUnix)
-	if err != nil {
-		metricDBErrors.WithLabelValues("prune").Inc()
-		slog.Error("db prune delete", "err", err)
-		return
+	var removed int64
+	for _, item := range queries {
+		res, err := tx.Exec(item.query, item.args...)
+		if err != nil {
+			metricDBErrors.WithLabelValues("prune").Inc()
+			slog.Error("db prune delete", "err", err)
+			return false
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			removed += n
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		metricDBErrors.WithLabelValues("prune").Inc()
 		slog.Error("db prune commit", "err", err)
-		return
+		return false
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		slog.Info("pruned idle accounts to archive", "count", n)
+	if removed > 0 {
+		slog.Info("purged expired account data", "rows", removed)
+	}
+	return true
+}
+
+// purgeOldScoreHistory removes expired JSON score records from both current
+// and legacy archived career rows. Score history is a rolling metric cache,
+// but it is still user data and must obey the same retention boundary.
+func purgeOldScoreHistory(db *sql.DB, cutoffUnixMs int64) bool {
+	type update struct {
+		username, version, history string
+	}
+	rows, err := db.Query(`SELECT username, version, score_history FROM players
+		UNION ALL SELECT username, version, score_history FROM players_archive`)
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	updates := []update{}
+	for rows.Next() {
+		var username, version, encoded string
+		if err := rows.Scan(&username, &version, &encoded); err != nil {
+			rows.Close()
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+		var scores []Score
+		if json.Unmarshal([]byte(encoded), &scores) != nil {
+			continue
+		}
+		kept := scores[:0]
+		for _, score := range scores {
+			if score.Time >= cutoffUnixMs {
+				kept = append(kept, score)
+			}
+		}
+		if len(kept) != len(scores) {
+			data, _ := json.Marshal(kept)
+			updates = append(updates, update{username: username, version: version, history: string(data)})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	rows.Close()
+	if len(updates) == 0 {
+		return true
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	defer tx.Rollback()
+	for _, item := range updates {
+		if _, err := tx.Exec(`UPDATE players SET score_history = ? WHERE username = ? AND version = ?`, item.history, item.username, item.version); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+		if _, err := tx.Exec(`UPDATE players_archive SET score_history = ? WHERE username = ? AND version = ?`, item.history, item.username, item.version); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	return true
+}
+
+// retentionLoop keeps the 14-month boundary true while the server remains up,
+// not only after a restart.
+func (s *Server) retentionLoop() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-accountPruneAfter)
+		// Serialize maintenance with normal persistence, but do not hold
+		// Server.mu during SQLite work. Game ticks can continue while the
+		// retention transaction runs.
+		s.persistMu.Lock()
+		archiveOldGameParticipants(s.db, time.Now().Add(-gameLedgerRetention).UnixMilli())
+		accountsPurged := purgeIdleAccounts(s.db, cutoff.Unix())
+		purgeOldScoreHistory(s.db, cutoff.UnixMilli())
+		pruneOldGameParticipantArchive(s.db, cutoff.UnixMilli())
+		purgeOldGameParticipants(s.db, cutoff.UnixMilli())
+		s.persistMu.Unlock()
+
+		changed := false
+		s.mu.Lock()
+		if accountsPurged {
+			for key, p := range s.players {
+				if trimScoreHistoryBefore(p, cutoff.UnixMilli()) {
+					s.markDirtyLocked(p)
+					changed = true
+				}
+				if p.conn == nil && p.sink.Load() == nil && !p.LastSeen.IsZero() && p.LastSeen.Before(cutoff) {
+					delete(s.dirty, p)
+					delete(s.players, key)
+					changed = true
+				}
+			}
+		}
+		if changed {
+			s.updateScoreboardLocked()
+			s.broadcastScoreboardLocked()
+		}
+		// Purges can invalidate both the modal history cache and period
+		// scoreboard caches even when no expired player was in memory.
+		s.invalidateScoreCachesLocked()
+		s.mu.Unlock()
 	}
 }
 
@@ -295,8 +566,8 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO game_participants_archive
-		(game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
-		SELECT game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count
+		(game_id, board_index, lobby, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		SELECT game_id, board_index, lobby, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count
 		FROM game_participants WHERE ended_unix_ms < ?`, cutoffUnixMs); err != nil {
 		metricDBErrors.WithLabelValues("ledger_archive").Inc()
 		slog.Error("db ledger archive copy", "err", err)
@@ -315,6 +586,37 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
 		slog.Info("archived old game-participant rows", "count", n)
+	}
+}
+
+// pruneOldGameParticipantArchive removes ledger rows past the data-retention
+// boundary. The history API's seven-day limit is a per-request cost guard; it
+// does not shorten how long historical observations remain available.
+func pruneOldGameParticipantArchive(db *sql.DB, cutoffUnixMs int64) {
+	if _, err := db.Exec(`DELETE FROM game_participants_archive WHERE ended_unix_ms < ?`, cutoffUnixMs); err != nil {
+		metricDBErrors.WithLabelValues("prune").Inc()
+		slog.Error("db ledger archive prune", "err", err)
+	}
+}
+
+// purgeOldGameParticipants is the final retention boundary for game history.
+// It covers both tables so an old or manually restored database cannot retain
+// ledger data beyond the account/data retention policy.
+func purgeOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"game_participants", "game_participants_archive"} {
+		if _, err := tx.Exec("DELETE FROM "+table+" WHERE ended_unix_ms < ?", cutoffUnixMs); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
 	}
 }
 
@@ -420,6 +722,8 @@ func (s *Server) storeLoop() {
 // lock, and persists them off-lock. If the write fails the players are
 // re-marked so the next store retries them.
 func (s *Server) storeDirtyOnce() {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	players := make([]*Player, 0, len(s.dirty))
 	rows := make([]playerRow, 0, len(s.dirty))
@@ -492,6 +796,8 @@ func snapshotRow(p *Player) playerRow {
 // so rows from games that ended since the persister's last run aren't lost when
 // the process exits before storeLoop drains them.
 func (s *Server) store() {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	rows := s.snapshotPlayersLocked()
 	gameRows := s.pendingGameRows
@@ -573,6 +879,7 @@ type gameParticipantRecord struct {
 	uuid        string
 	username    string
 	version     string
+	lobby       string
 	won         bool
 	deathReason string
 	elo         float64
@@ -593,8 +900,8 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 		return
 	}
 	defer tx.Rollback()
-	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	part, err := tx.Prepare(`INSERT INTO game_participants (game_id, board_index, lobby, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms, tick_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		metricDBErrors.WithLabelValues("game_rows_prepare").Inc()
 		slog.Error("db game rows prepare", "err", err)
@@ -607,7 +914,11 @@ func recordGameRows(db *sql.DB, rows []gameParticipantRecord) {
 		if r.won {
 			won = 1
 		}
-		if _, err := part.Exec(r.gameID, r.boardIndex, r.uuid, r.username, version, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs, r.tickCount); err != nil {
+		lobby := r.lobby
+		if lobby == "" {
+			lobby = defaultLobbyName
+		}
+		if _, err := part.Exec(r.gameID, r.boardIndex, lobby, r.uuid, r.username, version, won, r.deathReason, r.elo, r.tsMu, r.tsSigma, r.endedUnixMs, r.tickCount); err != nil {
 			metricDBErrors.WithLabelValues("game_participant").Inc()
 			slog.Error("db game participant", "uuid", r.uuid, "err", err)
 		}

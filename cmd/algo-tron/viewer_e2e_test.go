@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#help-btn`),
 		chromedp.Click(`#help-btn`),
-		chromedp.WaitVisible(`.modal-window`),
+		chromedp.WaitVisible(`#help-modal .modal-window`),
 		chromedp.Evaluate(`document.getElementById('help-modal').hidden`, &hidden),
 	); err != nil {
 		t.Fatal(err)
@@ -101,24 +102,100 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 	}
 }
 
+func TestE2EAdminHotspotLogin(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.adminPassword = strings.Repeat("a", adminPasswordLength)
+	ctx := browser(t)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#help-btn`),
+		chromedp.Click(`#admin-hotspot`),
+		chromedp.WaitVisible(`#admin-login-modal`),
+		chromedp.SendKeys(`#admin-password`, strings.Repeat("a", adminPasswordLength)),
+		chromedp.WaitVisible(`#admin-section:not([hidden])`),
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestE2EAdminCanCreateAndRemoveLobby(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.adminPassword = strings.Repeat("a", adminPasswordLength)
+	ctx := browser(t)
+	var noLobby bool
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#help-btn`),
+		chromedp.Click(`#admin-hotspot`),
+		chromedp.SendKeys(`#admin-password`, strings.Repeat("a", adminPasswordLength)),
+		chromedp.WaitVisible(`#admin-section:not([hidden])`),
+		chromedp.Click(`#admin-lobbies-toggle`),
+		chromedp.WaitVisible(`#admin-lobbies:not([hidden])`),
+		chromedp.SendKeys(`#admin-lobby-name`, "workshop"),
+		chromedp.SendKeys(`#admin-lobby-password`, "begin"),
+		chromedp.Click(`#admin-lobby-create button[type="submit"]`),
+		chromedp.WaitVisible(`#admin-lobby-list .admin-lobby-name`),
+		chromedp.Click(`#admin-lobby-list .admin-lobby-remove`),
+		chromedp.Poll(`document.querySelector('#admin-lobby-list .admin-lobby-name') === null`, &noLobby),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !noLobby {
+		t.Fatal("lobby remained after removal")
+	}
+}
+
 func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)
 
 	var scoreboardHidden, scoreplotHidden bool
+	var scoreboardHeight, scoreplotHeight int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.Click(`#scoreboard-title`),
 		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Evaluate(`document.getElementById('scoreboard-view').offsetHeight`, &scoreboardHeight),
 		chromedp.Click(`#scoreplot-tab`),
 		chromedp.WaitVisible(`#scoreplot-view:not([hidden])`),
 		chromedp.Evaluate(`document.getElementById('scoreboard-view').hidden`, &scoreboardHidden),
 		chromedp.Evaluate(`document.getElementById('scoreplot-view').hidden`, &scoreplotHidden),
+		chromedp.Evaluate(`document.getElementById('scoreplot-view').offsetHeight`, &scoreplotHeight),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if !scoreboardHidden || scoreplotHidden {
 		t.Errorf("scoreplot tab visibility = scoreboard hidden %t, scoreplot hidden %t", scoreboardHidden, scoreplotHidden)
+	}
+	if scoreplotHeight != scoreboardHeight {
+		t.Errorf("scoreplot height = %d, scoreboard height = %d", scoreplotHeight, scoreboardHeight)
+	}
+}
+
+func TestE2EColdScoreboardRequestRendersFirstResponse(t *testing.T) {
+	url, s := e2eViewer(t)
+	now := time.Now().UnixMilli()
+	if _, err := s.db.Exec(`INSERT INTO game_participants (game_id, board_index, uuid, username, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
+		VALUES ('cold-scoreboard', 1, 'u-alice', 'alice', 1, '', 1000, 300, 20, ?)`, now); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	ctx := browser(t)
+
+	var found bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#scoreboard-title`),
+		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Click(`#scoreboard-period .app-select-btn`),
+		chromedp.Click(`#scoreboard-period .app-select-list button[data-value="daily"]`),
+		chromedp.Poll(`document.querySelector('#scoreboard-modal-rows td.name')?.textContent.includes('alice')`, &found),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Error("cold-cache scoreboard response was not rendered on the first request")
 	}
 }
 

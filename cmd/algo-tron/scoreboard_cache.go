@@ -24,6 +24,15 @@ type boardCache struct {
 	m  map[string]*cachedBoard
 }
 
+func (s *Server) invalidateScoreCachesLocked() {
+	s.boards.mu.Lock()
+	clear(s.boards.m)
+	s.boards.mu.Unlock()
+	s.historyMu.Lock()
+	clear(s.historyCache)
+	s.historyMu.Unlock()
+}
+
 // boardSnapshot returns a period's full cached entries and the time they were
 // computed. Below the soft TTL it serves the cache untouched; between soft and
 // hard it serves the (slightly stale) cache and kicks off one background

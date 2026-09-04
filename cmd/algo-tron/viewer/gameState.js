@@ -104,6 +104,10 @@ function applyEnd(msg) {
 }
 
 function applyScoreboard(msg) {
+  storeScoreboardPage(msg, true);
+}
+
+function storeScoreboardPage(msg, updateLive) {
   const key = scorePageKey(msg.period, msg.sort, msg.search);
   const prev = msg.offset ? (gameState.scorePages[key]?.entries || []) : [];
   gameState.scorePages[key] = {
@@ -114,7 +118,7 @@ function applyScoreboard(msg) {
     search: msg.search || '',
     computedAt: msg.computedAt || Date.now(),
   };
-  if ((msg.period || 'online') === 'online' && (msg.sort || 'ts') === 'ts' && !(msg.search || '')) {
+  if (updateLive && (msg.period || 'online') === 'online' && (msg.sort || 'ts') === 'ts' && !(msg.search || '')) {
     gameState.scoreboard = gameState.scorePages[key].entries;
   }
 }

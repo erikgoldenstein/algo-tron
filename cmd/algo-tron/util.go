@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	validString  = regexp.MustCompile(`^[a-zA-Z0-9 _\-\.!?,:#]+$`)
-	validVersion = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
-	botName      = regexp.MustCompile(`^bot\d*$`)
+	validString    = regexp.MustCompile(`^[a-zA-Z0-9 _\-\.!?,:#]+$`)
+	validVersion   = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	validLobbyName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	botName        = regexp.MustCompile(`^bot\d*$`)
 	// reservedName matches usernames owned by the built-in filler bots
 	// (alice/bob); real, remote users may not claim them. Case-insensitive so
 	// "Alice" can't impersonate the filler bot either.
@@ -92,37 +93,74 @@ func printableASCII(value string) bool {
 // Attributes are deliberately order-independent; unknown attributes are
 // ignored so newer clients can add optional data without breaking this join.
 // The pipe remains the field delimiter, so values themselves cannot contain a
-// pipe. Currently only `version <value>` has server-side meaning. A single
-// bare value is retained as a compatibility path for clients using the
-// previously released `|v2` form; new clients should use the keyword form.
+// pipe. The currently recognized fields are `version <value>`, `lobby <value>`,
+// and `lobby-pw <value>`. A single bare value is retained as a compatibility
+// path for clients using the previously released `|v2` form; new clients
+// should use the keyword form.
+type joinAttributes struct {
+	version       string
+	lobby         string
+	lobbyPW       string
+	lobbyProvided bool
+}
+
 func parseJoinAttributes(fields []string) (string, string) {
+	attrs, errCode := parseJoinOptions(fields)
+	if errCode != "" {
+		return "", errCode
+	}
+	return attrs.version, errCode
+}
+
+func parseJoinOptions(fields []string) (joinAttributes, string) {
+	attrs := joinAttributes{version: defaultBotVersion}
 	version := defaultBotVersion
 	if len(fields) == 1 && !strings.Contains(fields[0], " ") {
 		version = normalizeVersion(fields[0])
 		if errCode := validateVersion(version); errCode != "" {
-			return "", errCode
+			return attrs, errCode
 		}
-		return version, ""
+		attrs.version = version
+		return attrs, ""
 	}
 	seenVersion := false
+	seenLobby := false
+	seenLobbyPW := false
 	for _, field := range fields {
 		key, value, ok := strings.Cut(field, " ")
 		if !ok || key == "" || value == "" {
-			return "", "ERROR_EXPECTED_JOIN"
+			return attrs, "ERROR_EXPECTED_JOIN"
 		}
 		switch key {
 		case "version":
 			if seenVersion {
-				return "", "ERROR_VERSION_INVALID"
+				return attrs, "ERROR_VERSION_INVALID"
 			}
 			if errCode := validateVersion(value); errCode != "" {
-				return "", errCode
+				return attrs, errCode
 			}
 			version = value
 			seenVersion = true
+		case "lobby":
+			if seenLobby || validateLobbyName(value) != "" {
+				return attrs, "ERROR_LOBBY_INVALID"
+			}
+			attrs.lobby = value
+			attrs.lobbyProvided = true
+			seenLobby = true
+		case "lobby-pw":
+			if seenLobbyPW || validateLobbyPassword(value) != "" {
+				return attrs, "ERROR_LOBBY_INVALID"
+			}
+			attrs.lobbyPW = value
+			seenLobbyPW = true
 		}
 	}
-	return version, ""
+	attrs.version = version
+	if !attrs.lobbyProvided && seenLobbyPW {
+		return attrs, "ERROR_LOBBY_INVALID"
+	}
+	return attrs, ""
 }
 
 func randID() string {

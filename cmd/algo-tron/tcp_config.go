@@ -37,12 +37,16 @@ const (
 	reconnectPenaltyRedemption = 5
 	disconnectRepeatWindow     = 5 * time.Minute
 	disconnectRepeatWarn       = 3
-	accountPasswordResetAfter  = 30 * 24 * time.Hour
+	accountRetention           = 14 * 30 * 24 * time.Hour
+	// Accounts are kept long enough to survive one annual chaos event. A
+	// different password can only recover/re-register an account after this
+	// inactivity window.
+	accountPasswordResetAfter = accountRetention
 
-	// Accounts idle longer than this are archived to players_archive and
-	// dropped from the live table at startup (pruneIdleAccounts) so memory
-	// and the live DB stay bounded.
-	accountPruneAfter = 180 * 24 * time.Hour
+	// Accounts idle longer than this are permanently purged from the live
+	// database at startup (pruneIdleAccounts) so abandoned account data does
+	// not remain indefinitely.
+	accountPruneAfter = accountRetention
 
 	// Max chat message length in characters; longer messages are rejected
 	// with ERROR_INVALID_CHAT_MESSAGE (the viewer renders chats into a

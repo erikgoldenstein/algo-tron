@@ -26,6 +26,7 @@
   <script defer src="/static/render_chart.js"></script>
   <script defer src="/static/render_loop.js"></script>
   <script defer src="/static/modal.js"></script>
+  <script defer src="/static/admin.js"></script>
   <script defer src="/static/scoreplot.js"></script>
   <script defer src="/static/ws.js"></script>
   <script defer src="/static/schedule.js"></script>
@@ -146,6 +147,21 @@
           <div class="switches" id="switches"></div>
         </section>
 
+        <section class="modal-section admin-section" id="admin-section" hidden>
+          <div class="modal-section-title">admin</div>
+          <button type="button" class="admin-submenu-button" id="admin-lobbies-toggle">lobbies</button>
+          <div class="admin-lobbies" id="admin-lobbies" hidden>
+            <form class="admin-lobby-create" id="admin-lobby-create">
+              <input id="admin-lobby-name" maxlength="16" placeholder="name" autocomplete="off" spellcheck="false" required>
+              <input id="admin-lobby-password" maxlength="32" placeholder="password (optional)" autocomplete="off" spellcheck="false">
+              <input id="admin-lobby-max" type="number" value="24" min="4" placeholder="max players (-1 unlimited)">
+              <button type="submit">create</button>
+            </form>
+            <div class="admin-lobby-status" id="admin-lobby-status" role="status" aria-live="polite"></div>
+            <div class="admin-lobby-list" id="admin-lobby-list"></div>
+          </div>
+        </section>
+
         <section class="modal-section keys-section">
           <div class="modal-section-title">keys</div>
           <div class="keys-grid">
@@ -159,6 +175,24 @@
             <span class="kbd">q esc</span><span class="kd">close</span>
           </div>
         </section>
+      </div>
+      <button type="button" id="admin-hotspot" class="admin-hotspot" aria-label="admin login"></button>
+    </div>
+  </div>
+
+  <div id="admin-login-modal" class="modal admin-login-modal" hidden>
+    <div class="modal-backdrop" data-admin-close></div>
+    <div class="modal-window admin-login-window" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
+      <div class="modal-header">
+        <span class="modal-title" id="admin-login-title"><b>algo-tron</b> · admin</span>
+        <button class="modal-close" data-admin-close><span class="kbd">[q]</span> close</button>
+      </div>
+      <div class="modal-body">
+        <label class="admin-login-field">
+          <span>password</span>
+          <input id="admin-password" type="password" maxlength="64" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="admin-login-status" id="admin-login-status" role="status" aria-live="polite">enter 64 characters</div>
       </div>
     </div>
   </div>
