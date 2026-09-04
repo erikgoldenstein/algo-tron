@@ -148,6 +148,7 @@ h2 {
 #follow-player-start[hidden] { display: none; }
 
 .scoreboard-scope .scope-option,
+.chat-scope .scope-option,
 .follow-player button {
   border: 0;
   padding: 0;
@@ -157,18 +158,21 @@ h2 {
   cursor: pointer;
 }
 
-.scoreboard-scope .scope-option.active {
+.scoreboard-scope .scope-option.active,
+.chat-scope .scope-option.active {
   color: var(--text);
   font-weight: 400;
   cursor: default;
 }
 
-.scoreboard-scope .scope-option:not(.active) {
+.scoreboard-scope .scope-option:not(.active),
+.chat-scope .scope-option:not(.active) {
   color: var(--text-dim);
   font-weight: 300;
 }
 
-.scoreboard-scope .scope-option:not(.active):hover { color: var(--text-muted); }
+.scoreboard-scope .scope-option:not(.active):hover,
+.chat-scope .scope-option:not(.active):hover { color: var(--text-muted); }
 
 .follow-player {
   position: relative;
@@ -332,6 +336,10 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 /* — Chat ——————————————————————————————————————————————————————————— */
 
 .chat-section { padding-bottom: 8px; }
+.chat-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.chat-header h2 { margin-bottom: 0; }
+.chat-scope { font-size: 12px; line-height: 1.2; }
+.chat-scope[hidden] { display: none; }
 
 #chat {
   font-size: 12.5px;

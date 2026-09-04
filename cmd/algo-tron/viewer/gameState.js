@@ -29,6 +29,7 @@ const gameState = {
   boardScoreboard: [],
   boardChartData: [],
   scoreboardScope: screenMode ? 'global' : 'board', // 'board' | 'global'
+  chatScope: 'board', // 'board' | 'global'; screen mode keeps chat local
   followName: '',
   followEditing: false,
   chartData: [],
