@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,7 @@ const (
 	adminPasswordLength = 64
 	adminCookieName     = "algo_tron_admin"
 	adminCookieLifetime = 5 * time.Minute
+	userPasswordLength  = 8
 )
 
 // loadOrCreateAdminPassword keeps the operator password stable across
@@ -138,7 +140,96 @@ func (s *Server) adminStatusHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeAdminJSON(w, http.StatusOK, map[string]bool{"admin": s.isAdminRequest(r)})
+	if !s.isAdminRequest(r) {
+		writeAdminJSON(w, http.StatusOK, map[string]bool{"admin": false})
+		return
+	}
+	writeAdminJSON(w, http.StatusOK, map[string]bool{"admin": true})
+}
+
+// randomUserPassword creates a short recovery password. Six random bytes
+// encode to exactly eight unpadded base64url characters, avoiding modulo bias
+// while keeping the value easy to copy.
+func randomUserPassword() (string, error) {
+	raw := make([]byte, userPasswordLength*3/4)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// adminResetUserPasswordHTTP resets the shared password for every career
+// version belonging to one username. The account rows are persisted before
+// the in-memory hashes are changed, and persistMu prevents an older pending
+// snapshot from overwriting the reset.
+func (s *Server) adminResetUserPasswordHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	const prefix = "/api/admin/users/"
+	const suffix = "/reset-password"
+	if !strings.HasPrefix(r.URL.Path, prefix) || !strings.HasSuffix(r.URL.Path, suffix) {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	encodedUsername := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), suffix)
+	if encodedUsername == "" || strings.HasSuffix(encodedUsername, "/") {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	username, err := url.PathUnescape(encodedUsername)
+	if err != nil || username == "" || strings.Contains(username, "/") {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	password, err := randomUserPassword()
+	if err != nil {
+		http.Error(w, "Could not create password", http.StatusInternalServerError)
+		return
+	}
+	passwordHash := hashPassword(s.secret, password)
+
+	s.persistMu.Lock()
+	s.mu.Lock()
+	players := s.playersForUsernameLocked(username)
+	if len(players) == 0 || !leaderboardEligible(players[0]) {
+		s.mu.Unlock()
+		s.persistMu.Unlock()
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	if s.db == nil {
+		s.mu.Unlock()
+		s.persistMu.Unlock()
+		http.Error(w, "Could not reset password", http.StatusInternalServerError)
+		return
+	}
+	rows := make([]playerRow, 0, len(players))
+	for _, p := range players {
+		row := snapshotRow(p)
+		row.pwHash = passwordHash
+		rows = append(rows, row)
+	}
+	if !storeRows(s.db, rows) {
+		s.mu.Unlock()
+		s.persistMu.Unlock()
+		http.Error(w, "Could not reset password", http.StatusInternalServerError)
+		return
+	}
+	for _, p := range players {
+		p.PwHash = passwordHash
+		s.markDirtyLocked(p)
+	}
+	s.queueStoreLocked()
+	s.mu.Unlock()
+	s.persistMu.Unlock()
+
+	writeAdminJSON(w, http.StatusOK, map[string]string{"username": username, "password": password})
 }
 
 func writeAdminJSON(w http.ResponseWriter, status int, value any) {

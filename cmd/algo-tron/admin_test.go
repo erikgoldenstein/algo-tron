@@ -67,11 +67,13 @@ func TestAdminLoginRotatesCookie(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status request = %d, want 200", rr.Code)
 	}
-	var response map[string]bool
+	var response struct {
+		Admin bool `json:"admin"`
+	}
 	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if !response["admin"] {
+	if !response.Admin {
 		t.Fatal("valid admin cookie was not accepted")
 	}
 

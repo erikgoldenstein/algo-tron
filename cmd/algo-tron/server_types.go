@@ -11,11 +11,12 @@ import (
 
 // Server holds global state. Server.mu guards everything reachable from it
 // except per-board game state, which lives behind each Game's own mutex.
-// Lock order: Server.mu may be held while acquiring a Game.mu, never the
-// reverse — a goroutine holding a Game.mu must release it before touching
-// server state.
+// Lock order: persistence operations acquire persistMu before Server.mu;
+// Server.mu may then be held while acquiring a Game.mu, never the reverse — a
+// goroutine holding a Game.mu must release it before touching server state.
 type Server struct {
 	mu          sync.Mutex
+	persistMu   sync.Mutex // serializes persistence snapshots and writes
 	players     map[string]*Player
 	ipCount     map[string]int
 	games       []*Game

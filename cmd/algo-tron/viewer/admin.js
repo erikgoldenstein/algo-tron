@@ -6,14 +6,17 @@
 let adminLoginAttempt = '';
 let adminLoginBusy = false;
 let adminStatusRequestID = 0;
+let adminSessionActive = false;
 
 function renderAdminStatus(isAdmin) {
+  adminSessionActive = isAdmin;
   const section = document.getElementById('admin-section');
   if (section) section.hidden = !isAdmin;
   if (!isAdmin) {
     const panel = document.getElementById('admin-lobbies');
     if (panel) panel.hidden = true;
   }
+  if (typeof refreshScoreHoverCard === 'function') refreshScoreHoverCard();
 }
 
 function setAdminLobbyStatus(message, error) {
@@ -120,6 +123,60 @@ function createAdminLobby(event) {
     .catch((error) => setAdminLobbyStatus(error.message || 'could not create lobby', true));
 }
 
+function resetAdminUserPassword(username, card, confirmed = false) {
+  if (!adminSessionActive || !username) return;
+  if (!confirmed && !window.confirm('Reset the password for ' + username + '? The account stats will stay unchanged.')) return;
+  const button = card?.querySelector('.score-hover-reset');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'resetting...';
+  }
+  return fetch('/api/admin/users/' + encodeURIComponent(username) + '/reset-password', {
+    method: 'GET',
+    credentials: 'same-origin',
+  })
+    .then((response) => {
+      if (response.status === 401) {
+        renderAdminStatus(false);
+        throw new Error('admin session expired');
+      }
+      if (!response.ok) throw new Error('could not reset password');
+      return response.json();
+    })
+    .then((data) => {
+      const result = card?.querySelector('.score-hover-reset-result');
+      if (result) {
+        result.textContent = 'new password: ' + data.password;
+        result.hidden = false;
+        result.classList.remove('error');
+        window.setTimeout(() => {
+          if (result.isConnected) {
+            result.textContent = '';
+            result.hidden = true;
+          }
+        }, 12000);
+      }
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'reset again';
+      }
+      return data;
+    })
+    .catch((error) => {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'reset password';
+      }
+      const result = card?.querySelector('.score-hover-reset-result');
+      if (result) {
+        result.textContent = error.message || 'could not reset password';
+        result.hidden = false;
+        result.classList.add('error');
+      }
+      return null;
+    });
+}
+
 function refreshAdminStatus() {
   const requestID = ++adminStatusRequestID;
   return fetch('/api/admin/status', { cache: 'no-store' })
@@ -177,6 +234,7 @@ function submitAdminLogin(password) {
       adminStatusRequestID++;
       renderAdminStatus(true);
       closeAdminLogin();
+      return refreshAdminStatus();
     })
     .catch((error) => {
       adminLoginBusy = false;
@@ -214,4 +272,5 @@ document.addEventListener('DOMContentLoaded', () => {
     adminLoginAttempt = password;
     submitAdminLogin(password);
   });
+  refreshAdminStatus();
 });
