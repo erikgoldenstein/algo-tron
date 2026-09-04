@@ -69,6 +69,7 @@ func (s *Server) viewerHandler(metricsAuth string) http.Handler {
 	sub, _ := fs.Sub(viewerFS, "viewer")
 	staticFS := minifyStatic(sub)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/screen", s.viewPage)
 	mux.HandleFunc("/", s.viewPage)
 	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, staticFS, "robots.txt")
