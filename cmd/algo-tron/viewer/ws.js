@@ -12,7 +12,9 @@
 // another one (the server answers with a fresh "game" snapshot); whenever
 // the board list changes we make sure we're still watching a live board. If
 // the watched board ended, the list's tick snapshot lets us pick the live
-// board with the least progress, avoiding unnecessary board changes.
+// board with the least progress, avoiding unnecessary board changes. A board
+// ending elsewhere only updates the tabs and leaves the current subscription
+// alone.
 //
 // On disconnect we reconnect with a 1s backoff. If a session was previously
 // established (we saw at least one init frame) and the socket later opens
@@ -99,8 +101,12 @@ function connect() {
     if (msg.type === 'misc' && msg.content === 'shutdown') { showShutdownBanner(true); return; }
     if (msg.type === 'init') { showShutdownBanner(false); hadActiveSession = true; }
     if (msg.type === 'game' && msg.id === pendingWatchID) pendingWatchID = '';
+    const watchedID = gameState.game?.id || '';
     applyMessage(msg);
-    if (msg.type === 'init' || msg.type === 'boards') ensureWatched();
+    const watchedBoardEnded = msg.type === 'boards'
+      && watchedID
+      && !gameState.boards.some((board) => board.id === watchedID);
+    if (msg.type === 'init' || watchedBoardEnded) ensureWatched();
     const scoreboardResponse = msg.type === 'scoreboard';
     updateDom({
       scoreboard: !['tick', 'chat', 'misc'].includes(msg.type),
