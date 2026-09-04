@@ -348,7 +348,7 @@ function chatRow(m) {
   return '<div class="msg">'
     + '<span class="from" style="color:' + c + '">' + esc(from) + '</span>'
     + ' <span class="time">(' + time + ')</span>'
-    + '<span class="body">' + esc(m.message || '') + '</span>'
+    + '<span class="body">: ' + esc(m.message || '') + '</span>'
     + '</div>';
 }
 
