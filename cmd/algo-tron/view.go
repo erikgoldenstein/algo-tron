@@ -125,6 +125,10 @@ func basicAuth(realm, credentials string, next http.Handler) http.Handler {
 
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The viewer has no inline scripts. Keep inline styles for the existing
+	// palette/color attributes, while preventing injected script, object, or
+	// framing content from turning a missed escaping path into XSS.
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:")
 	if err := viewTemplate.Execute(w, struct{ ScheduleURL, PublicViewURL string }{s.scheduleURL, s.publicViewURL}); err != nil {
 		slog.Error("viewer template", "err", err)
 	}
