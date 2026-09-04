@@ -179,14 +179,24 @@ function showScoreHover(target) {
     if (typeof resetAdminUserPassword === 'function') resetAdminUserPassword(target.dataset.username || '', card);
   });
   card.hidden = false;
-  const rect = target.getBoundingClientRect();
+  // The hover target is the rendered name span, so the card follows the
+  // visible username rather than the wider table cell around it.
+  const anchor = target.querySelector('.namestr') || target;
+  const rect = anchor.getBoundingClientRect();
   const gap = 6;
-  let left = rect.left;
-  let top = rect.bottom + gap;
-  if (left + card.offsetWidth > window.innerWidth - 8) left = window.innerWidth - card.offsetWidth - 8;
-  if (left < 8) left = 8;
-  if (top + card.offsetHeight > window.innerHeight - 8) top = rect.top - card.offsetHeight - gap;
-  if (top < 8) top = 8;
+  const margin = 8;
+  const cardWidth = card.offsetWidth;
+  const cardHeight = card.offsetHeight;
+  // Keep the bio card beside the username. If the target is near the right
+  // edge, use the space on its left rather than dropping the card below it.
+  let left = rect.right + gap;
+  if (left + cardWidth > window.innerWidth - margin) {
+    left = rect.left - cardWidth - gap;
+  }
+  if (left < margin) left = margin;
+  let top = rect.top;
+  if (top + cardHeight > window.innerHeight - margin) top = window.innerHeight - cardHeight - margin;
+  if (top < margin) top = margin;
   card.style.left = Math.round(left) + 'px';
   card.style.top = Math.round(top) + 'px';
 }
@@ -263,7 +273,7 @@ function scoreRow(p, i) {
   const src = p.bio?.src || '';
   return '<tr>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name score-hover-target" style="color:' + c + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '"><span class="namestr" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'
