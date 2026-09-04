@@ -14,6 +14,25 @@ It returns the same scoreboard page fields as the WebSocket response. The
 WebSocket scoreboard request remains supported for existing viewers and for
 the live/main-page scoreboard.
 
+## Admin account recovery
+
+With a valid short-lived admin cookie, the viewer can reset an account's
+password from its scoreboard hover card:
+`GET /api/admin/users/<username>/reset-password`. The browser sends the
+existing HttpOnly admin cookie automatically, and the backend validates that
+cookie before allowing the reset.
+The response is not cacheable and contains the generated eight-character
+password once:
+
+```json
+{"username":"alice","password":"R4nd0m_x"}
+```
+
+The reset changes the shared password for all current versions of that
+username. Career UUIDs, ratings, score history, bio, and first-seen timestamps
+are preserved. The endpoint is admin-only; the hover-card button is only a UI
+affordance and is not an authorization boundary.
+
 ## History API
 
 The scoreboard history tab uses the separate read-only HTTP endpoint

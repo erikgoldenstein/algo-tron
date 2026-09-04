@@ -434,6 +434,8 @@ func (s *Server) storeLoop() {
 // lock, and persists them off-lock. If the write fails the players are
 // re-marked so the next store retries them.
 func (s *Server) storeDirtyOnce() {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	players := make([]*Player, 0, len(s.dirty))
 	rows := make([]playerRow, 0, len(s.dirty))
@@ -506,6 +508,8 @@ func snapshotRow(p *Player) playerRow {
 // so rows from games that ended since the persister's last run aren't lost when
 // the process exits before storeLoop drains them.
 func (s *Server) store() {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	rows := s.snapshotPlayersLocked()
 	gameRows := s.pendingGameRows
