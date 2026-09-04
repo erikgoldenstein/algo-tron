@@ -84,13 +84,11 @@ function renderPlayers(ctx, game, room, radius) {
     const c = playerColor(player.name);
     const x = player.pos.x * room + room / 2;
     const y = player.pos.y * room + room / 2;
-    // The followed player gets a subtle low-opacity outline under their
-    // tron-line so they're easy to spot without dominating the board.
-    if (gameState.followName && player.name === gameState.followName) {
-      renderFollowOutline(ctx, game, player, room, radius, c);
-    }
     renderTrail(ctx, game, player, room, radius, c);
     renderHead(ctx, x, y, radius, c);
+    if (gameState.followName && sameName(player.name, gameState.followName)) {
+      renderFollowMarker(ctx, x, y, radius, c);
+    }
   }
   for (const player of Object.values(game.players)) {
     if (!player.alive) continue;
@@ -102,30 +100,20 @@ function renderPlayers(ctx, game, room, radius) {
   }
 }
 
-// Outline for the followed player. Drawn at full alpha onto an offscreen
-// canvas, then composited once at low alpha — stroking directly with
-// globalAlpha would stack opacity where the round line caps overlap and
-// create blotches at the corners.
-const _outlineCanvas = document.createElement('canvas');
-function renderFollowOutline(ctx, game, player, room, radius, playerColor) {
-  const main = ctx.canvas;
-  if (_outlineCanvas.width !== main.width || _outlineCanvas.height !== main.height) {
-    _outlineCanvas.width = main.width;
-    _outlineCanvas.height = main.height;
-  }
-  const octx = _outlineCanvas.getContext('2d');
-  octx.setTransform(1, 0, 0, 1, 0, 0);
-  octx.clearRect(0, 0, _outlineCanvas.width, _outlineCanvas.height);
-  octx.setTransform(ctx.getTransform());
-  // Proportional plus a constant: on dense boards the lines render thin and
-  // a purely proportional outline becomes too subtle to spot.
-  const r = radius * 1.4 + 1.5;
-  renderTrail(octx, game, player, room, r, playerColor);
-  renderHead(octx, player.pos.x * room + room / 2, player.pos.y * room + room / 2, r, playerColor);
+function renderFollowMarker(ctx, x, y, radius, playerColor) {
+  // The board is built from square cells, so a small square marker fits the
+  // visual language better than a second circular outline. Its contrasting
+  // color is derived from the player's own color and remains readable across
+  // all schemes.
+  const side = Math.max(2, radius * 1.2);
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 0.18;
-  ctx.drawImage(_outlineCanvas, 0, 0);
+  const left = x - side / 2;
+  const top = y - side / 2;
+  ctx.fillStyle = contrastText(playerColor);
+  ctx.fillRect(left, top, side, side);
+  ctx.strokeStyle = playerColor;
+  ctx.lineWidth = Math.max(1, radius * 0.12);
+  ctx.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
   ctx.restore();
 }
 

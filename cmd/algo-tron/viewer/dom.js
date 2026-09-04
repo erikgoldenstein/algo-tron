@@ -30,9 +30,14 @@ function updateDom({ scoreboard = true, renderModal = true } = {}) {
   if (modalView && view) modalView.textContent = viewURL(view);
 
   const players = gameState.game ? Object.values(gameState.game.players) : [];
-  const alive = players.filter((p) => p.alive).length;
+  let playerCount = players.length;
+  let alive = players.filter((p) => p.alive).length;
+  if (gameState.scoreboardScope === 'global') {
+    playerCount = gameState.globalPlayers ?? gameState.boards.reduce((total, board) => total + (Number(board.players) || 0), 0);
+    alive = gameState.globalAlive ?? gameState.boards.reduce((total, board) => total + (Number(board.alive) || 0), 0);
+  }
   const aliveEl = document.getElementById('alive-count');
-  if (aliveEl) aliveEl.textContent = players.length ? `(${alive}/${players.length} alive)` : '';
+  if (aliveEl) aliveEl.textContent = playerCount ? `(${alive}/${playerCount} alive)` : '';
 
   updateTabs();
   updateScoreboardTools();
@@ -60,6 +65,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
   scoreboardEl.innerHTML = scores.length
     ? scores.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
+  if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(scoreboardEl);
 
   // The name cell now exists in the DOM, so we can measure its actual width
   // and reflow the labels if the available space differs from what we used
@@ -335,11 +341,13 @@ function scoreRow(p, i) {
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username);
   const label = scoreNameLabel(p);
+  const followed = sameName(label, gameState.followName);
+  const followedDead = followed && p.online !== false && !followNameIsAlive(label);
   const contact = p.bio?.contact || '';
   const src = p.bio?.src || '';
-  return '<tr>'
+  return '<tr' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

@@ -197,6 +197,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 	s.updateScoreboardLocked()
 	s.broadcastScoreboardLocked()
+	s.broadcastBoardsLocked()
 	s.mu.Unlock()
 	if accountReset && !resetAccountRows(s.db, username, replacement) {
 		slog.Error("db account recovery persistence failed", "user", username)
@@ -236,6 +237,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		s.markDirtyLocked(p)
 		s.updateScoreboardLocked()
 		s.broadcastScoreboardLocked()
+		s.broadcastBoardsLocked()
 	}
 	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()

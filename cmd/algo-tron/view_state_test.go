@@ -49,3 +49,44 @@ func TestBoardListIncludesPlayerNames(t *testing.T) {
 		t.Errorf("board tick = %d, want 17", boards[0].Tick)
 	}
 }
+
+func TestBoardListOmitsDeadPlayerNames(t *testing.T) {
+	s := testServer(t)
+	alice, _ := testPlayer("alice")
+	bob, _ := testPlayer("bob")
+	g := makeGame(s, []*Player{alice, bob})
+	g.seats[0].alive = false
+	s.games = []*Game{g}
+
+	boards := s.boardListLocked()
+
+	if got := boards[0].Names; len(got) != 1 || got[0] != "bob" {
+		t.Fatalf("board names = %+v, want [bob]", got)
+	}
+}
+
+func TestGlobalViewerStatsCountsConnectedPlayersNotSeats(t *testing.T) {
+	s := testServer(t)
+	alive, _ := testPlayer("alive")
+	dead, _ := testPlayer("dead")
+	queued, _ := testPlayer("queued")
+	_, aliveConn := mustPipe(t)
+	_, deadConn := mustPipe(t)
+	_, queuedConn := mustPipe(t)
+	alive.conn = aliveConn
+	dead.conn = deadConn
+	queued.conn = queuedConn
+	g := makeGame(s, []*Player{alive, dead})
+	g.seats[1].alive = false
+	s.games = []*Game{g}
+	s.players = map[string]*Player{
+		playerKey(alive.Username, versionOf(alive)):   alive,
+		playerKey(dead.Username, versionOf(dead)):     dead,
+		playerKey(queued.Username, versionOf(queued)): queued,
+	}
+
+	players, aliveCount := s.globalViewerStatsLocked()
+	if players != 3 || aliveCount != 1 {
+		t.Fatalf("global viewer stats = (%d, %d), want (3, 1)", players, aliveCount)
+	}
+}

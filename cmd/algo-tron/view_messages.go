@@ -12,7 +12,8 @@ package main
 // snapshot followed by that board's ticks.
 //
 //	init   — full snapshot, sent once on connect; auto-subscribes the first board.
-//	boards — broadcast to all viewers whenever a board starts or ends.
+//	boards — broadcast to all viewers when board/player state changes; includes
+//	           the live global connected/alive counters.
 //	game   — full snapshot of one board, sent on subscribe; includes that board's scoreboard.
 //	tick   — per-tick delta for the subscribed board: positions, deaths, chats.
 //	end    — a board finished: refreshed scoreboard + chart, broadcast to all.
@@ -27,6 +28,8 @@ type initMsg struct {
 	ChartData         []map[string]any  `json:"chartData"`
 	LastWinners       []string          `json:"lastWinners"`
 	Boards            []boardMsg        `json:"boards"`
+	GlobalPlayers     int               `json:"globalPlayers"`
+	GlobalAlive       int               `json:"globalAlive"`
 	Game              *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
 }
 
@@ -42,8 +45,10 @@ type boardMsg struct {
 }
 
 type boardsMsg struct {
-	Type   string     `json:"type"` // "boards"
-	Boards []boardMsg `json:"boards"`
+	Type          string     `json:"type"` // "boards"
+	Boards        []boardMsg `json:"boards"`
+	GlobalPlayers int        `json:"globalPlayers"`
+	GlobalAlive   int        `json:"globalAlive"`
 }
 
 type gameMsg struct {

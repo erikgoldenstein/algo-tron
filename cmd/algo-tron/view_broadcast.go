@@ -13,13 +13,20 @@ func (s *Server) broadcastViewLocked(data []byte) {
 }
 
 // broadcastBoardsLocked tells every viewer the current board list. Sent
-// whenever a board starts or ends; clients use it to render tabs and to
+// whenever a board starts or ends, and after a death so the global viewer
+// counters can stay current; clients also use it to render tabs and to
 // re-subscribe when their board disappears.
 func (s *Server) broadcastBoardsLocked() {
 	if len(s.viewClients) == 0 {
 		return
 	}
-	data, _ := json.Marshal(boardsMsg{Type: "boards", Boards: s.boardListLocked()})
+	globalPlayers, globalAlive := s.globalViewerStatsLocked()
+	data, _ := json.Marshal(boardsMsg{
+		Type:          "boards",
+		Boards:        s.boardListLocked(),
+		GlobalPlayers: globalPlayers,
+		GlobalAlive:   globalAlive,
+	})
 	s.broadcastViewLocked(data)
 }
 

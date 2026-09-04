@@ -415,6 +415,7 @@ func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	target, _ := testPlayer("target")
 	z, _ := testPlayer("zara")
 	s.games = append(s.games, newGame(s, []*Player{a, b}), newGame(s, []*Player{target, z}))
+	firstID := s.games[0].id
 	s.mu.Unlock()
 
 	ctx := browser(t)
@@ -444,6 +445,20 @@ func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	}
 	if active != "2:board-2*" {
 		t.Errorf("active tab after follow = %q, want %q", active, "2:board-2*")
+	}
+
+	// Manual board switching explicitly exits follow mode and clears the
+	// control, so a later board-list update cannot silently pull the viewer
+	// back to the old target.
+	var cleared bool
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#tabs .tab:nth-child(1)`),
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q && gameState.followName === '' && document.getElementById('follow-player-input').value === ''`, firstID), &cleared),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !cleared {
+		t.Error("manual board switch did not clear follow mode")
 	}
 }
 
