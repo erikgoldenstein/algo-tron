@@ -1,6 +1,9 @@
 package main
 
-import "strconv"
+import (
+	"sort"
+	"strconv"
+)
 
 func (s *Server) buildInitLocked(watch *Game) *initMsg {
 	globalPlayers, globalAlive := s.globalViewerStatsLocked()
@@ -13,6 +16,7 @@ func (s *Server) buildInitLocked(watch *Game) *initMsg {
 		ChartData:         s.viewState.ChartData,
 		LastWinners:       s.viewState.LastWinners,
 		Boards:            s.boardListLocked(),
+		Lobbies:           s.viewerLobbyNamesLocked(),
 		GlobalPlayers:     globalPlayers,
 		GlobalAlive:       globalAlive,
 	}
@@ -20,6 +24,17 @@ func (s *Server) buildInitLocked(watch *Game) *initMsg {
 		m.Game = buildGameMsgLocked(watch)
 	}
 	return m
+}
+
+func (s *Server) viewerLobbyNamesLocked() []string {
+	names := []string{defaultLobbyName}
+	for name := range s.lobbies {
+		if name != defaultLobbyName {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names[1:])
+	return names
 }
 
 // globalViewerStatsLocked reports the live TCP population, independent of

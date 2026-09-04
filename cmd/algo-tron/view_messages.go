@@ -11,9 +11,10 @@ package main
 // sending {"watch":"<gameId>"} and the server answers with a "game"
 // snapshot followed by that board's ticks.
 //
-//	init   — full snapshot, sent once on connect; auto-subscribes the first board.
+//	init   — full snapshot, sent once on connect; auto-subscribes the preferred
+//	           lobby board when requested, otherwise the first board.
 //	boards — broadcast to all viewers when board/player state changes; includes
-//	           the live global connected/alive counters.
+//	           the live global connected/alive counters and active lobbies.
 //	game   — full snapshot of one board, sent on subscribe; includes that board's scoreboard.
 //	tick   — per-tick delta for the subscribed board: positions, deaths, chats.
 //	end    — a board finished: refreshed scoreboard + chart, broadcast to all.
@@ -28,6 +29,7 @@ type initMsg struct {
 	ChartData         []map[string]any  `json:"chartData"`
 	LastWinners       []string          `json:"lastWinners"`
 	Boards            []boardMsg        `json:"boards"`
+	Lobbies           []string          `json:"lobbies"`
 	GlobalPlayers     int               `json:"globalPlayers"`
 	GlobalAlive       int               `json:"globalAlive"`
 	Game              *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
@@ -47,6 +49,7 @@ type boardMsg struct {
 type boardsMsg struct {
 	Type          string     `json:"type"` // "boards"
 	Boards        []boardMsg `json:"boards"`
+	Lobbies       []string   `json:"lobbies"`
 	GlobalPlayers int        `json:"globalPlayers"`
 	GlobalAlive   int        `json:"globalAlive"`
 }

@@ -72,6 +72,10 @@ function setFollowName(value) {
     updateDom();
     return;
   }
+  // Choosing a player is an explicit viewer preference and overrides a
+  // screen URL's lobby preference.
+  gameState.lobbyPreference = '';
+  gameState.autoLobby = '';
   gameState.followName = allBoardNames().find((name) => sameName(name, trimmed)) || trimmed;
   gameState.followEditing = false;
   followOptionIndex = -1;

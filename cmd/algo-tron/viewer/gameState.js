@@ -8,8 +8,8 @@
 // (sending {"watch": id}); the server answers with a "game" snapshot.
 //
 // Wire protocol — see view.go for the canonical definition.
-//   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, game?}
-//   {type:"boards", boards:[{id,tick,players,alive,names}...]} — a board started or ended
+//   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, lobbies, game?}
+//   {type:"boards", boards:[{id,tick,players,alive,names}...], lobbies:[...]} — board/lobby state
 //   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
@@ -20,6 +20,9 @@
 // earlier points until enough new games have been played.
 
 const screenMode = location.pathname.replace(/\/+$/, '') === '/screen';
+const initialLobbyPreference = screenMode
+  ? (new URLSearchParams(location.search).get('lobby') || '').trim()
+  : '';
 
 const gameState = {
   screenMode,
@@ -30,6 +33,9 @@ const gameState = {
   boardChartData: [],
   scoreboardScope: screenMode ? 'global' : 'board', // 'board' | 'global'
   chatScope: 'board', // 'board' | 'global'; screen mode keeps chat local
+  lobbies: null,
+  lobbyPreference: initialLobbyPreference,
+  autoLobby: '',
   globalPlayers: null,
   globalAlive: null,
   followName: '',
@@ -64,6 +70,7 @@ function applyInit(msg) {
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
   gameState.boards      = msg.boards      || [];
+  gameState.lobbies = Array.isArray(msg.lobbies) ? msg.lobbies : null;
   gameState.globalPlayers = Number.isFinite(msg.globalPlayers) ? msg.globalPlayers : null;
   gameState.globalAlive = Number.isFinite(msg.globalAlive) ? msg.globalAlive : null;
   gameState.game = msg.game ? buildGame(msg.game) : null;
@@ -77,6 +84,7 @@ function applyGame(msg) {
 
 function applyBoards(msg) {
   gameState.boards = msg.boards || [];
+  gameState.lobbies = Array.isArray(msg.lobbies) ? msg.lobbies : null;
   gameState.globalPlayers = Number.isFinite(msg.globalPlayers) ? msg.globalPlayers : null;
   gameState.globalAlive = Number.isFinite(msg.globalAlive) ? msg.globalAlive : null;
   if (gameState.game && !gameState.boards.some((b) => b.id === gameState.game.id)) {

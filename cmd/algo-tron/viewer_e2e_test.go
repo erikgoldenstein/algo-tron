@@ -293,6 +293,31 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	}
 }
 
+func TestE2EScreenModeLobbyPreference(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	a, _ := testPlayer("default-player")
+	b, _ := testPlayer("workshop-player")
+	s.lobbies["workshop"] = &Lobby{Name: "workshop", MaxPlayersPerBoard: 8}
+	defaultBoard := newGame(s, []*Player{a})
+	workshopBoard := newGame(s, []*Player{b})
+	workshopBoard.lobby = "workshop"
+	s.games = []*Game{defaultBoard, workshopBoard}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var selected bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url+"/screen?lobby=workshop"),
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q`, workshopBoard.id), &selected),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !selected {
+		t.Error("screen lobby preference did not select the requested lobby")
+	}
+}
+
 func TestE2EChatAndScoreboardScopesAreIndependent(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
@@ -367,6 +392,47 @@ func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
 	}
 	if !switched {
 		t.Error("viewer did not switch to the live board with the lowest tick count")
+	}
+}
+
+func TestE2EBoardEndStaysInCurrentLobby(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	currentPlayer, _ := testPlayer("current")
+	sameLobbyPlayer, _ := testPlayer("same-lobby")
+	otherLobbyPlayer, _ := testPlayer("other-lobby")
+	current := newGame(s, []*Player{currentPlayer})
+	current.lobby = "red"
+	current.tick = 10
+	sameLobby := newGame(s, []*Player{sameLobbyPlayer})
+	sameLobby.lobby = "red"
+	sameLobby.tick = 20
+	otherLobby := newGame(s, []*Player{otherLobbyPlayer})
+	otherLobby.lobby = "blue"
+	otherLobby.tick = 1
+	s.games = []*Game{current, sameLobby, otherLobby}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active:nth-child(1)`),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	s.mu.Lock()
+	s.endGameLocked(current, nil)
+	s.mu.Unlock()
+
+	var switched bool
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(fmt.Sprintf(`gameState.game !== null && gameState.game.id === %q`, sameLobby.id), &switched),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !switched {
+		t.Error("viewer switched out of the current lobby after board end")
 	}
 }
 
