@@ -252,8 +252,8 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	if first != "1:board-1*" {
 		t.Errorf("initial active tab = %q, want %q", first, "1:board-1*")
 	}
-	if scope != "(board / global / spectate)" {
-		t.Errorf("scoreboard scope = %q, want %q", scope, "(board / global / spectate)")
+	if scope != "(board / global)" {
+		t.Errorf("scoreboard scope = %q, want %q", scope, "(board / global)")
 	}
 	if second != "2:board-2*" {
 		t.Errorf("active tab after click = %q, want %q", second, "2:board-2*")
@@ -336,7 +336,7 @@ func TestE2EFollowPlayerAutocompleteAndSwitch(t *testing.T) {
 	}
 }
 
-func TestE2ESpectatorAdvancesOnBoardEnd(t *testing.T) {
+func TestE2EBoardEndWithEqualTicksPicksFirstRemaining(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
 	for i := 0; i < 3; i++ {
@@ -349,12 +349,11 @@ func TestE2ESpectatorAdvancesOnBoardEnd(t *testing.T) {
 
 	ctx := browser(t)
 
-	// Watch the last board in spectate mode, then end it server-side: the
-	// viewer must hop to the next board, wrapping around to the first.
+	// Watch the last board, then end it server-side: all remaining boards have
+	// the same tick count, so the viewer should choose the first one.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#tabs .tab.active`),
-		chromedp.Click(`.scope-option[data-scope="spectator"]`),
 		chromedp.Click(`#tabs .tab[data-id]:nth-child(3)`),
 		chromedp.WaitVisible(`#tabs .tab.active:nth-child(3)`),
 	); err != nil {
@@ -372,7 +371,7 @@ func TestE2ESpectatorAdvancesOnBoardEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !wrapped {
-		t.Errorf("spectator did not wrap to the first board after the last one ended")
+		t.Errorf("viewer did not pick the first equal-tick board after the watched board ended")
 	}
 }
 
