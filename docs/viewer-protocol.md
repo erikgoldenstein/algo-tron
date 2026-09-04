@@ -1,6 +1,6 @@
 # Viewer WebSocket protocol
 
-The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode starts with the global leaderboard selected in the sidebar; normal mode starts with the subscribed board's leaderboard. The scope can still be changed manually. Messages are JSON, one per WS frame. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The single client → server message is the subscription switch:
+The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode starts with the global leaderboard and the subscribed board's chat selected in the sidebar; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Messages are JSON, one per WS frame. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The single client → server message is the subscription switch:
 
 ```json
 { "watch": "<gameId>" }

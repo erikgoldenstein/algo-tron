@@ -271,11 +271,13 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	s.mu.Unlock()
 
 	ctx := browser(t)
-	var globalActive, screenMode bool
+	var globalActive, chatGlobalActive, screenMode bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url+"/screen"),
 		chromedp.WaitVisible(`#scoreboard-scope:not([hidden])`),
+		chromedp.WaitVisible(`#chat-tools:not([hidden])`),
 		chromedp.Evaluate(`document.querySelector('[data-scope="global"]').classList.contains('active')`, &globalActive),
+		chromedp.Evaluate(`document.querySelector('#chat-scope [data-scope="global"]').classList.contains('active')`, &chatGlobalActive),
 		chromedp.Evaluate(`gameState.screenMode`, &screenMode),
 	); err != nil {
 		t.Fatal(err)
@@ -283,8 +285,52 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	if !globalActive {
 		t.Error("screen mode should select the global scoreboard")
 	}
+	if chatGlobalActive {
+		t.Error("screen mode should keep chat scoped to the board")
+	}
 	if !screenMode {
 		t.Error("/screen should enable screen mode")
+	}
+}
+
+func TestE2EChatAndScoreboardScopesAreIndependent(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for i := 0; i < 2; i++ {
+		a, _ := testPlayer(fmt.Sprintf("independent-a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("independent-b%d", i))
+		s.games = append(s.games, newGame(s, []*Player{a, b}))
+	}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var scoreboardGlobal, chatGlobal bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#scoreboard-scope:not([hidden])`),
+		chromedp.WaitVisible(`#chat-tools:not([hidden])`),
+		chromedp.Click(`#chat-scope [data-scope="global"]`),
+		chromedp.Evaluate(`document.querySelector('#scoreboard-scope [data-scope="global"]').classList.contains('active')`, &scoreboardGlobal),
+		chromedp.Evaluate(`document.querySelector('#chat-scope [data-scope="global"]').classList.contains('active')`, &chatGlobal),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if scoreboardGlobal {
+		t.Error("changing chat scope should not change scoreboard scope")
+	}
+	if !chatGlobal {
+		t.Error("chat global scope should be active after selecting it")
+	}
+
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#scoreboard-scope [data-scope="global"]`),
+		chromedp.Evaluate(`document.querySelector('#scoreboard-scope [data-scope="global"]').classList.contains('active')`, &scoreboardGlobal),
+		chromedp.Evaluate(`document.querySelector('#chat-scope [data-scope="global"]').classList.contains('active')`, &chatGlobal),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !scoreboardGlobal || !chatGlobal {
+		t.Error("changing scoreboard scope should preserve the chat scope")
 	}
 }
 

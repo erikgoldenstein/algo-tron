@@ -98,7 +98,16 @@
     </section>
 
     <section class="chat-section">
-      <h2>chat</h2>
+      <div class="chat-header">
+        <h2>chat</h2>
+        <div class="muted chat-scope" id="chat-tools" hidden>
+          (<span id="chat-scope">
+            <button class="scope-option active" data-scope="board">board</button>
+            <span>/</span>
+            <button class="scope-option" data-scope="global">global</button>
+          </span>)
+        </div>
+      </div>
       <div id="chat"><div class="chat-empty">no messages yet</div></div>
     </section>
 

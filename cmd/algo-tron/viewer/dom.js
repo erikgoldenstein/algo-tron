@@ -36,6 +36,7 @@ function updateDom({ scoreboard = true, renderModal = true } = {}) {
 
   updateTabs();
   updateScoreboardTools();
+  updateChatTools();
 
   if (scoreboard) {
     renderScoreboardDom({ renderModal });
@@ -83,7 +84,10 @@ function renderScoreboardDom({ renderModal = true } = {}) {
 // Chat is purely client-side state: it stays put across round and board
 // changes, capped only by message count (see applyChat's 100-cap).
 function visibleChats() {
-  return gameState.chatLog.slice(-30);
+  const chats = gameState.boards.length > 1 && gameState.chatScope === 'board'
+    ? gameState.chatLog.filter((m) => m.gameId && m.gameId === gameState.game?.id)
+    : gameState.chatLog;
+  return chats.slice(-30);
 }
 
 function currentScoreboard() {
@@ -285,6 +289,23 @@ function updateScoreboardScope() {
       if (gameState.scoreboardScope === btn.dataset.scope) return;
       gameState.scoreboardScope = btn.dataset.scope;
       updateDom();
+    };
+  });
+}
+
+function updateChatTools() {
+  const tools = document.getElementById('chat-tools');
+  if (!tools) return;
+  tools.hidden = gameState.boards.length <= 1;
+  if (tools.hidden) return;
+  const scope = document.getElementById('chat-scope');
+  if (!scope) return;
+  scope.querySelectorAll('.scope-option').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.scope === gameState.chatScope);
+    btn.onclick = () => {
+      if (gameState.chatScope === btn.dataset.scope) return;
+      gameState.chatScope = btn.dataset.scope;
+      updateDom({ scoreboard: false });
     };
   });
 }
