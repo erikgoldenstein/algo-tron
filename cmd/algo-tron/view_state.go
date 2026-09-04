@@ -1,5 +1,7 @@
 package main
 
+import "strconv"
+
 func (s *Server) buildInitLocked(watch *Game) *initMsg {
 	m := &initMsg{
 		Type:              "init",
@@ -17,15 +19,30 @@ func (s *Server) buildInitLocked(watch *Game) *initMsg {
 	return m
 }
 
+func boardLabel(g *Game, fallback int) string {
+	lobby := g.lobby
+	if lobby == "" {
+		lobby = defaultLobbyName
+	}
+	if lobby == defaultLobbyName {
+		return "board-" + strconv.Itoa(fallback)
+	}
+	n := g.boardNo
+	if n <= 0 {
+		n = fallback
+	}
+	return lobby + "-" + strconv.Itoa(n)
+}
+
 func (s *Server) boardListLocked() []boardMsg {
 	boards := []boardMsg{}
-	for _, g := range s.games {
+	for i, g := range s.games {
 		g.mu.Lock()
 		names := make([]string, 0, len(g.seats))
 		for _, st := range g.seats {
 			names = append(names, s.displayNameLocked(st.player))
 		}
-		boards = append(boards, boardMsg{ID: g.id, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
+		boards = append(boards, boardMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, i+1), Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
 		g.mu.Unlock()
 	}
 	return boards
@@ -39,7 +56,7 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 	s := g.server
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	m := &gameMsg{ID: g.id, Width: g.width, Height: g.height}
+	m := &gameMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, 1), Width: g.width, Height: g.height}
 	players := make([]*Player, 0, len(g.seats))
 	for _, st := range g.seats {
 		if !st.player.InternalBot {

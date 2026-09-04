@@ -149,7 +149,17 @@
 
         <section class="modal-section admin-section" id="admin-section" hidden>
           <div class="modal-section-title">admin</div>
-          <div class="muted">admin session active</div>
+          <button type="button" class="admin-submenu-button" id="admin-lobbies-toggle">lobbies</button>
+          <div class="admin-lobbies" id="admin-lobbies" hidden>
+            <form class="admin-lobby-create" id="admin-lobby-create">
+              <input id="admin-lobby-name" maxlength="16" placeholder="name" autocomplete="off" spellcheck="false" required>
+              <input id="admin-lobby-password" maxlength="32" placeholder="password (optional)" autocomplete="off" spellcheck="false">
+              <input id="admin-lobby-max" type="number" value="24" min="-1" placeholder="max players">
+              <button type="submit">create</button>
+            </form>
+            <div class="admin-lobby-status" id="admin-lobby-status" role="status" aria-live="polite"></div>
+            <div class="admin-lobby-list" id="admin-lobby-list"></div>
+          </div>
         </section>
 
         <section class="modal-section keys-section">

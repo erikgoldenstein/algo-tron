@@ -233,7 +233,8 @@ function updateTabs() {
   tabsEl.innerHTML = gameState.boards.length
     ? gameState.boards.map((b, i) => {
         const active = b.id === current;
-        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:board-${i + 1}${active ? '*' : ''}</span>`;
+        const label = b.label || ('board-' + (i + 1));
+        return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:${esc(label)}${active ? '*' : ''}</span>`;
       }).join('')
     : '<span class="tab">no games</span>';
   tabsEl.querySelectorAll('.tab[data-id]').forEach((el) => {

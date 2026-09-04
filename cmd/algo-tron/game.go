@@ -37,7 +37,7 @@ func (s *Server) statsLoop() {
 
 func newGame(s *Server, players []*Player) *Game {
 	rand.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
-	g := &Game{server: s, id: randID(), width: len(players) * 2, height: len(players) * 2, startTime: time.Now(), deathTick: map[*Seat]int{}}
+	g := &Game{server: s, id: randID(), lobby: defaultLobbyName, width: len(players) * 2, height: len(players) * 2, startTime: time.Now(), deathTick: map[*Seat]int{}}
 	g.fields = make([][]int, g.width)
 	for x := range g.fields {
 		g.fields[x] = make([]int, g.height)

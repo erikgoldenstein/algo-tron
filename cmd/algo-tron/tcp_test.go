@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -22,19 +23,54 @@ func joinAsVersion(t *testing.T, s *Server, username, password, version string) 
 }
 
 func joinAsVersionField(t *testing.T, s *Server, username, password, versionField string) *bufio.Reader {
+	return joinAsFields(t, s, username, password, func() []string {
+		if versionField == "" {
+			return nil
+		}
+		return []string{versionField}
+	}()...)
+}
+
+func joinAsFields(t *testing.T, s *Server, username, password string, fields ...string) *bufio.Reader {
+	br, _ := joinAsFieldsConn(t, s, username, password, fields...)
+	return br
+}
+
+func joinAsFieldsConn(t *testing.T, s *Server, username, password string, fields ...string) (*bufio.Reader, net.Conn) {
 	t.Helper()
 	client, server := mustPipe(t)
 	go s.handleConn(server, false)
 	br := bufio.NewReader(client)
 	drainMotd(t, br)
 	join := "join|" + username + "|" + password
-	if versionField != "" {
-		join += "|" + versionField
+	for _, field := range fields {
+		join += "|" + field
 	}
 	if _, err := client.Write([]byte(join + "\n")); err != nil {
 		t.Fatalf("write join: %v", err)
 	}
-	return br
+	return br, client
+}
+
+func TestMissingLobbyFallsBackAndReportsGenericError(t *testing.T) {
+	s := testServer(t)
+	clientReader, client := joinAsFieldsConn(t, s, "newbie", "pw", "lobby workshop", "lobby-pw wrong")
+	defer client.Close()
+
+	// The error is queued after the join handshake and is the only lobby
+	// diagnostic exposed to a bot.
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	line, err := clientReader.ReadString('\n')
+	if err != nil || line != "error|LOBBY_NOT_FOUND\n" {
+		t.Fatalf("lobby error = %q, %v", line, err)
+	}
+	s.mu.Lock()
+	p := s.players[playerKey("newbie", defaultBotVersion)]
+	if p == nil || p.Lobby != defaultLobbyName {
+		s.mu.Unlock()
+		t.Fatalf("player lobby = %+v, want default", p)
+	}
+	s.mu.Unlock()
 }
 
 func TestJoinSupportsIndependentVersionsAndLegacyDefaultsToV1(t *testing.T) {

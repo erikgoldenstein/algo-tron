@@ -43,6 +43,7 @@ type Player struct {
 	UUID         string
 	Username     string
 	Version      string
+	Lobby        string
 	Bio          map[string]string
 	PwHash       string
 	Chat         string
