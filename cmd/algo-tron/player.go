@@ -24,19 +24,25 @@ func (st *Seat) setPos(x, y int) {
 	st.trail = append(st.trail, st.pos)
 }
 
-func (st *Seat) readMoveLocked() Move {
-	move := MoveUp
+func (st *Seat) readMoveLocked(g *Game) (Move, bool) {
 	if st.move == MoveNone {
-		st.player.send("error", "ERROR_NO_MOVE")
-		if st.lastMove != MoveNone {
-			move = st.lastMove
+		st.invalidMoveStreak++
+		st.invalidMoveTotal++
+		if st.invalidMoveStreak >= invalidMoveConsecutiveLimit || st.invalidMoveTotal > maxInvalidMovesAllowed(g.tick) {
+			g.kickInvalidMoveLocked(st)
+			return MoveNone, false
 		}
-	} else {
-		st.lastMove = st.move
-		move = st.move
-		st.move = MoveNone
+		st.player.send("error", "ERROR_NO_MOVE")
+		// Resolve the fallback against the board as it exists before this
+		// tick's movement/collision phase. The resulting position is then
+		// included in the same tick frame as every other move.
+		return g.fallbackMoveLocked(st), true
 	}
-	return move
+	move := st.move
+	st.move = MoveNone
+	st.lastMove = move
+	st.invalidMoveStreak = 0
+	return move, true
 }
 
 func (st *Seat) winLocked()  { st.scoreTime = st.player.recordScoreLocked(st.game.server, 1) }

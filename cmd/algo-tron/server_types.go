@@ -100,7 +100,7 @@ type viewerSink struct {
 func (v *viewerSink) closeDone() { v.once.Do(func() { close(v.done) }) }
 
 // Game is one board. mu guards all per-board state: seats' game fields
-// (alive, pos, trail, move, lastMove), fields, tick, deathTick, and the
+// (alive, pos, trail, move, lastMove, and invalid-move counters), fields, tick, deathTick, and the
 // scratch buffers. Functions suffixed Locked that live on *Game assume
 // g.mu is held; *Server methods suffixed Locked assume Server.mu is held
 // (see the Server doc comment for the lock order).

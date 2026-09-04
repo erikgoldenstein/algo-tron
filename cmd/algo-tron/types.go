@@ -225,8 +225,13 @@ type Seat struct {
 	pos    Vec2
 	trail  []Vec2 // every cell visited in order; trail[len-1] == pos
 
-	move     Move
-	lastMove Move
+	move Move
+	// lastMove is the last direction supplied by the player and accepted for
+	// a tick. Fallback moves do not update it, so assistance remains anchored
+	// to the player's actual input rather than becoming self-reinforcing.
+	lastMove          Move
+	invalidMoveStreak int
+	invalidMoveTotal  int
 
 	// UnixMilli of the ScoreHistory entry written when this seat won/lost,
 	// so endLocked can patch the post-game elo onto exactly that entry —
