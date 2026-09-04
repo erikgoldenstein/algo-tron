@@ -114,7 +114,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.mu.Lock()
 	lobby, lobbyError := s.resolveLobbyLocked(attrs.lobby, attrs.lobbyPW)
 	p := s.playerForVersionLocked(username, attrs.version)
-	var archived []playerRow
+	var accountReset bool
 	if p == nil {
 		account := s.accountPlayerLocked(username)
 		if account != nil && account.PwHash != pwHash {
@@ -124,7 +124,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 				reject("error", "ERROR_WRONG_PASSWORD")
 				return
 			}
-			p, archived = s.resetAccountLocked(username, attrs.version, pwHash, now)
+			p, accountReset = s.resetAccountLocked(username, attrs.version, pwHash, now)
 		} else {
 			p = &Player{UUID: randUUID(), Username: username, Version: attrs.version, Lobby: lobby, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, FirstSeen: now, LastSeen: now}
 			s.players[playerKey(username, attrs.version)] = p
@@ -136,10 +136,17 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 			reject("error", "ERROR_WRONG_PASSWORD")
 			return
 		}
-		p, archived = s.resetAccountLocked(username, attrs.version, pwHash, now)
+		p, accountReset = s.resetAccountLocked(username, attrs.version, pwHash, now)
+	}
+	if accountReset {
+		s.invalidateScoreCachesLocked()
 	}
 	if p.Version == "" {
 		p.Version = defaultBotVersion
+	}
+	var replacement playerRow
+	if accountReset {
+		replacement = snapshotRow(p)
 	}
 	if remaining := time.Until(p.reconnectAllowedAt); remaining > 0 {
 		s.mu.Unlock()
@@ -188,8 +195,8 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	s.updateScoreboardLocked()
 	s.broadcastScoreboardLocked()
 	s.mu.Unlock()
-	for _, row := range archived {
-		archiveRow(s.db, row)
+	if accountReset && !resetAccountRows(s.db, username, replacement) {
+		slog.Error("db account recovery persistence failed", "user", username)
 	}
 	recordPlayerIP(s.db, s.secret, s.geo, ensureUUID(p), ip, now)
 	go sink.run()

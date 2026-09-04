@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -444,21 +446,65 @@ func TestIdleTakeoverResetsStatsAndArchives(t *testing.T) {
 		var n int
 		var elo float64
 		_ = s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'carol'`).Scan(&n, &elo)
-		if reset && n == 1 && elo == 1500 {
+		if reset && n == 0 && elo == 0 {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("idle takeover did not reset stats and archive the old career")
+	t.Fatal("idle recovery did not reset stats and purge the old career")
 }
 
-func TestPruneIdleAccountsArchives(t *testing.T) {
+func TestIdleRecoveryRemovesAllOldLiveVersionsBeforeRestart(t *testing.T) {
+	s := testDB(t)
+	now := time.Now()
+	for _, version := range []string{"v1", "v2"} {
+		s.players[playerKey("carol", version)] = &Player{
+			Username: "carol", Version: version, UUID: "old-" + version,
+			PwHash: "old", Elo: 1200, TsMu: tsMu0, TsSigma: tsSigma0,
+			FirstSeen: now.Add(-365 * 24 * time.Hour), LastSeen: now.Add(-accountPasswordResetAfter - time.Hour),
+		}
+	}
+	s.store()
+
+	s.mu.Lock()
+	p, reset := s.resetAccountLocked("carol", "v3", "new", now)
+	replacement := snapshotRow(p)
+	s.mu.Unlock()
+	if !reset || !resetAccountRows(s.db, "carol", replacement) {
+		t.Fatal("resetAccountRows failed")
+	}
+
+	s.players = map[string]*Player{}
+	s.load()
+	if len(s.players) != 1 || s.players[playerKey("carol", "v3")] == nil {
+		t.Fatalf("live careers after restart = %#v", s.players)
+	}
+	var live int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM players WHERE username = 'carol'`).Scan(&live); err != nil {
+		t.Fatalf("count live careers: %v", err)
+	}
+	if live != 1 {
+		t.Fatalf("live database careers = %d, want 1", live)
+	}
+}
+
+func TestPruneIdleAccountsPurges(t *testing.T) {
 	s := testDB(t)
 	s.players["old"] = &Player{Username: "old", PwHash: "h", Elo: 1200, TsMu: tsMu0, TsSigma: tsSigma0,
+		UUID:     "old-uuid",
 		LastSeen: time.Now().Add(-accountPruneAfter - time.Hour)}
 	s.players["fresh"] = &Player{Username: "fresh", PwHash: "h", Elo: 1100, TsMu: tsMu0, TsSigma: tsSigma0,
 		LastSeen: time.Now()}
 	s.store()
+	oldUnix := time.Now().Add(-accountPruneAfter - time.Hour).UnixMilli()
+	if _, err := s.db.Exec(`INSERT INTO player_ips (uuid, ip_hash, family, first_seen_unix, last_seen_unix) VALUES ('old-uuid', 'ip', 'ipv4', ?, ?)`, oldUnix/1000, oldUnix/1000); err != nil {
+		t.Fatalf("insert old IP: %v", err)
+	}
+	for _, table := range []string{"game_participants", "game_participants_archive"} {
+		if _, err := s.db.Exec("INSERT INTO "+table+" (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES ('old-game', 1, 'old-uuid', 'old', 'v1', 0, '', 1200, 300, 20, ?)", oldUnix); err != nil {
+			t.Fatalf("insert old history in %s: %v", table, err)
+		}
+	}
 
 	pruneIdleAccounts(s.db, time.Now().Add(-accountPruneAfter).Unix())
 
@@ -475,8 +521,13 @@ func TestPruneIdleAccountsArchives(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(elo), 0) FROM players_archive WHERE username = 'old'`).Scan(&n, &elo); err != nil {
 		t.Fatalf("archive query: %v", err)
 	}
-	if n != 1 || elo != 1200 {
-		t.Errorf("archive row count = %d elo = %v, want 1 row with elo 1200", n, elo)
+	if n != 0 || elo != 0 {
+		t.Errorf("archive row count = %d elo = %v, want no archived row", n, elo)
+	}
+	for _, table := range []string{"player_ips", "game_participants", "game_participants_archive"} {
+		if got := countRows(t, s, table); got != 0 {
+			t.Errorf("%s rows = %d, want expired data purged", table, got)
+		}
 	}
 }
 
@@ -574,6 +625,47 @@ func TestLedgerRetentionExceedsLongestBoardWindow(t *testing.T) {
 	if !retentionCutoff.Before(halfyearCutoff) {
 		t.Fatalf("gameLedgerRetention (%s) must exceed the halfyear board window: retention cutoff %s is not before halfyear cutoff %s",
 			gameLedgerRetention, retentionCutoff, halfyearCutoff)
+	}
+}
+
+func TestPruneOldGameParticipantArchiveUsesHistoryRange(t *testing.T) {
+	s := testDB(t)
+	now := time.Now().UnixMilli()
+	for i, ended := range []int64{now - historyMaxRange.Milliseconds() - 1, now - historyMaxRange.Milliseconds() + 1} {
+		if _, err := s.db.Exec(`INSERT INTO game_participants_archive
+			(game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms)
+			VALUES (?, 1, 'uuid', 'alice', 'v1', 0, '', 1000, 300, 20, ?)`, fmt.Sprintf("archive-%d", i), ended); err != nil {
+			t.Fatalf("insert archive row: %v", err)
+		}
+	}
+	pruneOldGameParticipantArchive(s.db, now-historyMaxRange.Milliseconds())
+	if got := countRows(t, s, "game_participants_archive"); got != 1 {
+		t.Fatalf("archive rows = %d, want 1 recent row", got)
+	}
+}
+
+func TestPurgeOldScoreHistory(t *testing.T) {
+	s := testDB(t)
+	now := time.Now().UnixMilli()
+	s.players["alice"] = &Player{
+		Username: "alice", Version: "v1", PwHash: "h",
+		ScoreHistory: []Score{{Type: 1, Time: now - accountPruneAfter.Milliseconds() - 1}, {Type: 0, Time: now}},
+	}
+	s.store()
+
+	if !purgeOldScoreHistory(s.db, now-accountPruneAfter.Milliseconds()) {
+		t.Fatal("purgeOldScoreHistory failed")
+	}
+	var encoded string
+	if err := s.db.QueryRow(`SELECT score_history FROM players WHERE username = 'alice'`).Scan(&encoded); err != nil {
+		t.Fatalf("read score history: %v", err)
+	}
+	var scores []Score
+	if err := json.Unmarshal([]byte(encoded), &scores); err != nil {
+		t.Fatalf("decode score history: %v", err)
+	}
+	if len(scores) != 1 || scores[0].Type != 0 {
+		t.Fatalf("scores after purge = %+v, want only recent score", scores)
 	}
 }
 
@@ -735,11 +827,10 @@ func TestRecordPlayerIPNoOps(t *testing.T) {
 	}
 }
 
-// — idle takeover starts a fresh career identity ——————————————————————
+// — idle recovery starts a fresh career identity ——————————————————————
 
-// A takeover must give the new owner a fresh UUID while the archived old career
-// keeps its original UUID — that split is what lets the period boards label the
-// reclaimed username's old rows as "(old owner)".
+// Recovery must give the new account a fresh UUID and must not retain the old
+// account's live or archived data.
 func TestIdleTakeoverAssignsNewUUID(t *testing.T) {
 	s := testServer(t)
 	oldHash := hashPassword(s.secret, "old")
@@ -766,12 +857,12 @@ func TestIdleTakeoverAssignsNewUUID(t *testing.T) {
 		s.mu.Lock()
 		newUUID := p.UUID
 		s.mu.Unlock()
-		var archivedUUID string
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(uuid), '') FROM players_archive WHERE username = 'carol'`).Scan(&archivedUUID)
-		if newUUID != "" && newUUID != "old-uuid" && archivedUUID == "old-uuid" {
+		var archived int
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM players_archive WHERE username = 'carol'`).Scan(&archived)
+		if newUUID != "" && newUUID != "old-uuid" && archived == 0 {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("takeover did not assign a fresh UUID and archive the old one")
+	t.Fatal("recovery did not assign a fresh UUID and purge the old one")
 }

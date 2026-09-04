@@ -153,7 +153,7 @@ The optional version identifies an independent bot career under the username. A 
 
 > **Never reuse a real password.** The protocol is plain TCP — the password travels unencrypted, and the server stores only a fast keyed hash. Treat it as a claim ticket for the username, nothing more.
 
-**Idle accounts are recycled.** A username whose account hasn't connected for 30 days can be claimed by joining with any new password. The previous owner's stats (ELO, TrueSkill, score history) are reset for the new owner; the old career is archived server-side (see [persistence.md](persistence.md)), not deleted.
+**Inactive accounts can be recovered/re-registered after 14 months.** A username whose account has not connected for 14 months can be joined with a new password. The previous career's stats (ELO, TrueSkill, score history) are purged and the live account starts fresh (see [persistence.md](persistence.md)). This lets annual chaos-event participants miss one event without losing their account while preventing indefinite abandoned account data.
 
 **Reconnecting mid-game:** if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
 

@@ -15,14 +15,16 @@ import (
 // Server.mu may then be held while acquiring a Game.mu, never the reverse — a
 // goroutine holding a Game.mu must release it before touching server state.
 type Server struct {
-	mu          sync.Mutex
-	persistMu   sync.Mutex // serializes persistence snapshots and writes
-	players     map[string]*Player
-	ipCount     map[string]int
-	games       []*Game
-	viewState   ViewState
-	viewClients map[*websocket.Conn]*viewerSink
-	filler      []*Player
+	mu           sync.Mutex
+	persistMu    sync.Mutex // serializes persistence snapshots and writes
+	adminLoginMu sync.Mutex
+	historyMu    sync.Mutex
+	players      map[string]*Player
+	ipCount      map[string]int
+	games        []*Game
+	viewState    ViewState
+	viewClients  map[*websocket.Conn]*viewerSink
+	filler       []*Player
 
 	// boards caches the expensive period scoreboards (all/daily/monthly/
 	// halfyear), shared across viewers and refreshed on a TTL. See
@@ -57,6 +59,10 @@ type Server struct {
 
 	secret        []byte
 	adminPassword string
+	adminLogins   map[string]adminLoginState
+	historySlots  chan struct{}
+	historyCache  map[string]historyCacheEntry
+	historyRates  map[string]historyRateState
 	lobbies       map[string]*Lobby
 	lobbyBoardSeq map[string]int
 	db            *sql.DB

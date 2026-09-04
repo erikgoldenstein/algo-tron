@@ -65,12 +65,17 @@ func (s *Server) handleBio(p *Player, parts []string) {
 	}
 
 	s.mu.Lock()
-	if p.Bio == nil {
-		p.Bio = map[string]string{}
+	oldValue, hadValue := p.Bio[field]
+	if value == "" && !hadValue || value != "" && hadValue && oldValue == value {
+		s.mu.Unlock()
+		return
 	}
 	if value == "" {
 		delete(p.Bio, field)
 	} else {
+		if p.Bio == nil {
+			p.Bio = map[string]string{}
+		}
 		p.Bio[field] = value
 	}
 	s.markDirtyLocked(p)

@@ -48,6 +48,11 @@ func loadLobbies(db *sql.DB) (map[string]*Lobby, error) {
 		if l.MaxPlayersPerBoard == 0 {
 			l.MaxPlayersPerBoard = maxBoardSize
 		}
+		if validateLobbyMax(l.MaxPlayersPerBoard) != "" {
+			// Do not allow an old invalid database value to bypass the current
+			// admin validation rule after a restart.
+			l.MaxPlayersPerBoard = maxBoardSize
+		}
 		l.CreatedAt = time.Unix(created, 0)
 		lobbies[l.Name] = &l
 	}
@@ -79,8 +84,8 @@ func validateLobbyPassword(password string) string {
 }
 
 func validateLobbyMax(max int) string {
-	if max == 0 || max < -1 {
-		return "max players per board must be -1 or a positive number"
+	if max != -1 && max < 4 {
+		return "max players per board must be -1 or at least 4"
 	}
 	return ""
 }
@@ -144,17 +149,18 @@ func (s *Server) resolveLobbyLocked(name, password string) (string, bool) {
 }
 
 func (s *Server) lobbyResponsesLocked() []lobbyResponse {
-	if len(s.lobbies) == 0 {
-		return []lobbyResponse{}
-	}
-	names := make([]string, 0, len(s.lobbies))
+	names := make([]string, 0, len(s.lobbies)+1)
+	names = append(names, defaultLobbyName)
 	for name := range s.lobbies {
+		if name == defaultLobbyName {
+			continue
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	responses := make([]lobbyResponse, 0, len(names))
 	for _, name := range names {
-		l := s.lobbies[name]
+		l := s.lobbyLocked(name)
 		active := 0
 		for _, p := range s.players {
 			if p.conn != nil && s.lobbyNameLocked(p) == name {

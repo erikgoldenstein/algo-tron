@@ -35,6 +35,21 @@ func TestHandleMove(t *testing.T) {
 	}
 }
 
+func TestHandleBioIgnoresUnchangedValue(t *testing.T) {
+	s := testServer(t)
+	p, recorder := testPlayer("alice")
+	p.Bio = map[string]string{"contact": "mail@example.com"}
+	s.players["alice"] = p
+
+	s.handleBio(p, []string{"bio", "contact", "mail@example.com"})
+	if recorder.String() != "" {
+		t.Fatalf("unchanged bio generated packets: %q", recorder.String())
+	}
+	if _, dirty := s.dirty[p]; dirty {
+		t.Fatal("unchanged bio marked player dirty")
+	}
+}
+
 func TestHandleMoveDeadSeatDropsSilently(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("p")

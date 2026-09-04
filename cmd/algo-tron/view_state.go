@@ -55,7 +55,6 @@ func (s *Server) boardListLocked() []boardMsg {
 func buildGameMsgLocked(g *Game) *gameMsg {
 	s := g.server
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	m := &gameMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, 1), Width: g.width, Height: g.height}
 	players := make([]*Player, 0, len(g.seats))
 	for _, st := range g.seats {
@@ -68,6 +67,10 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 			Alive: st.alive, Chat: st.player.Chat, Bio: cloneBio(st.player.Bio),
 		})
 	}
+	g.mu.Unlock()
+	// Scoreboard/chart construction is unrelated to the board's mutable
+	// simulation state. Keep only the required trail/state copy under g.mu;
+	// the potentially larger sorting and history work runs afterward.
 	m.BoardScoreboard = buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
 	s.annotateVersionTagsLocked(m.BoardScoreboard)
 	m.BoardChartData = buildChartDataLocked(s.players, m.BoardScoreboard)

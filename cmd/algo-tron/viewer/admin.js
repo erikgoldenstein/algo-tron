@@ -46,12 +46,15 @@ function renderAdminLobbies(lobbies) {
     const info = document.createElement('span');
     info.className = 'muted';
     info.textContent = (lobby.passwordRequired ? 'locked' : 'open') + ' · max ' + lobby.maxPlayersPerBoard + ' · ' + lobby.activePlayers + ' online';
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'admin-lobby-remove';
-    remove.textContent = 'remove';
-    remove.addEventListener('click', () => removeAdminLobby(lobby.name));
-    row.append(name, info, remove);
+    row.append(name, info);
+    if (lobby.name !== 'default') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'admin-lobby-remove';
+      remove.textContent = 'remove';
+      remove.addEventListener('click', () => removeAdminLobby(lobby.name));
+      row.appendChild(remove);
+    }
     root.appendChild(row);
   });
 }

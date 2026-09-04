@@ -9,6 +9,28 @@ import (
 	"testing"
 )
 
+func TestAdminLoginRateLimit(t *testing.T) {
+	s := testServer(t)
+	s.secret = []byte("test signing secret")
+	s.adminPassword = strings.Repeat("a", adminPasswordLength)
+	for i := 0; i < adminLoginMaxFails; i++ {
+		req := httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"password":"bad"}`))
+		req.RemoteAddr = "192.0.2.20:1234"
+		rr := httptest.NewRecorder()
+		s.adminLoginHTTP(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d status = %d, want 401", i+1, rr.Code)
+		}
+	}
+	req := httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"password":"bad"}`))
+	req.RemoteAddr = "192.0.2.20:5678"
+	rr := httptest.NewRecorder()
+	s.adminLoginHTTP(rr, req)
+	if rr.Code != http.StatusTooManyRequests || rr.Header().Get("Retry-After") == "" {
+		t.Fatalf("rate-limited status = %d, retry-after = %q", rr.Code, rr.Header().Get("Retry-After"))
+	}
+}
+
 func TestLoadOrCreateAdminPassword(t *testing.T) {
 	dir := t.TempDir()
 	first, err := loadOrCreateAdminPassword(dir)

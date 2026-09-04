@@ -44,7 +44,7 @@ func TestAdminLobbyCRUD(t *testing.T) {
 	if err := json.NewDecoder(listed.Body).Decode(&lobbies); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if len(lobbies) != 1 || lobbies[0].Name != "workshop" || !lobbies[0].PasswordRequired || lobbies[0].MaxPlayersPerBoard != 8 {
+	if len(lobbies) != 2 || lobbies[0].Name != defaultLobbyName || lobbies[0].PasswordRequired || lobbies[0].MaxPlayersPerBoard != maxBoardSize || lobbies[1].Name != "workshop" || !lobbies[1].PasswordRequired || lobbies[1].MaxPlayersPerBoard != 8 {
 		t.Fatalf("lobbies = %+v", lobbies)
 	}
 
@@ -63,6 +63,23 @@ func TestAdminLobbyCRUD(t *testing.T) {
 	deleted := adminRequest(t, s, "DELETE", "/api/admin/lobbies/workshop", "")
 	if deleted.Code != http.StatusOK || s.lobbies["workshop"] != nil {
 		t.Fatalf("delete status = %d, lobbies = %+v", deleted.Code, s.lobbies)
+	}
+	defaultDelete := adminRequest(t, s, "DELETE", "/api/admin/lobbies/default", "")
+	if defaultDelete.Code != http.StatusNotFound {
+		t.Fatalf("default lobby delete status = %d, want 404", defaultDelete.Code)
+	}
+}
+
+func TestLobbyMaxRequiresFourOrUnlimited(t *testing.T) {
+	for _, max := range []int{0, 1, 2, 3, -2} {
+		if validateLobbyMax(max) == "" {
+			t.Errorf("validateLobbyMax(%d) accepted", max)
+		}
+	}
+	for _, max := range []int{4, 24, -1} {
+		if errText := validateLobbyMax(max); errText != "" {
+			t.Errorf("validateLobbyMax(%d) = %q", max, errText)
+		}
 	}
 }
 

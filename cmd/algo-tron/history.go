@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -16,7 +18,19 @@ const (
 	maxHistoryPoints = 256
 	maxHistoryUsers  = 16
 	historyGapAfter  = scoreWindow
+	historyMaxRange  = 7 * 24 * time.Hour
+	// This bounds database reads and sorting work, rather than only bounding
+	// the number of points returned after downsampling.
+	maxHistoryRowsPerUser = 4096
+	historyCacheTTL       = 10 * time.Second
+	maxHistoryCacheItems  = 64
+	historyRateBurst      = 12
+	historyRatePerSecond  = 0.1 // one sustained request every 10 seconds
+	historyRateStateTTL   = 10 * time.Minute
+	maxHistoryRateClients = 4096
 )
+
+var errHistoryTooLarge = errors.New("history range contains too much data")
 
 type historyMetric string
 
@@ -44,6 +58,16 @@ type historyResponse struct {
 	From   int64           `json:"from"`
 	To     int64           `json:"to"`
 	Series []historySeries `json:"series"`
+}
+
+type historyCacheEntry struct {
+	response historyResponse
+	stored   time.Time
+}
+
+type historyRateState struct {
+	tokens  float64
+	updated time.Time
 }
 
 type historyRow struct {
@@ -88,14 +112,107 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	series := s.historySeries(users, metric, from, to)
+	if allowed, retry := s.allowHistoryRequest(historyClientKey(r), time.Now()); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int((retry+time.Second-1)/time.Second)))
+		metricHistoryRateLimited.Inc()
+		historyError(w, http.StatusTooManyRequests, errors.New("too many history requests"))
+		return
+	}
+	if !s.tryHistorySlot() {
+		w.Header().Set("Retry-After", "1")
+		historyError(w, http.StatusTooManyRequests, errors.New("too many history requests"))
+		return
+	}
+	defer s.releaseHistorySlot()
+	cacheKey := historyCacheKey(users, metric, from, to)
+	if response, ok := s.cachedHistory(cacheKey, time.Now()); ok {
+		writeHistoryResponse(w, response)
+		return
+	}
+	series, err := s.historySeries(users, metric, from, to)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errHistoryTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		historyError(w, status, err)
+		return
+	}
 	response := historyResponse{Metric: metric, From: from, To: to, Series: series}
+	s.cacheHistory(cacheKey, response, time.Now())
+	writeHistoryResponse(w, response)
+}
+
+func writeHistoryResponse(w http.ResponseWriter, response historyResponse) {
+	w.Header().Set("Cache-Control", "public, max-age=10")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(response)
 }
 
 func historyError(w http.ResponseWriter, status int, err error) {
 	http.Error(w, err.Error(), status)
+}
+
+// historyClientKey uses the socket peer address. It deliberately does not
+// trust forwarded headers, since this endpoint is public and those headers
+// are client-controlled unless a trusted proxy strips and replaces them.
+func historyClientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
+}
+
+// allowHistoryRequest is a small per-client token bucket. A client may burst
+// a normal interactive sequence, then settles at one expensive request every
+// ten seconds. The global concurrency limit and short response cache remain
+// the second layer of protection for many distinct clients.
+func (s *Server) allowHistoryRequest(key string, now time.Time) (bool, time.Duration) {
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+	if s.historyRates == nil {
+		s.historyRates = map[string]historyRateState{}
+	}
+	for client, state := range s.historyRates {
+		if now.Sub(state.updated) >= historyRateStateTTL {
+			delete(s.historyRates, client)
+		}
+	}
+	if _, exists := s.historyRates[key]; !exists && len(s.historyRates) >= maxHistoryRateClients {
+		var oldestKey string
+		var oldest time.Time
+		for client, state := range s.historyRates {
+			if oldestKey == "" || state.updated.Before(oldest) {
+				oldestKey, oldest = client, state.updated
+			}
+		}
+		delete(s.historyRates, oldestKey)
+	}
+	state := s.historyRates[key]
+	if state.updated.IsZero() {
+		state.tokens = historyRateBurst
+	} else if elapsed := now.Sub(state.updated).Seconds(); elapsed > 0 {
+		state.tokens += elapsed * historyRatePerSecond
+		if state.tokens > historyRateBurst {
+			state.tokens = historyRateBurst
+		}
+	}
+	state.updated = now
+	if state.tokens < 1 {
+		retry := time.Duration(math.Ceil((1-state.tokens)/historyRatePerSecond) * float64(time.Second))
+		if retry < time.Second {
+			retry = time.Second
+		}
+		s.historyRates[key] = state
+		return false, retry
+	}
+	state.tokens--
+	s.historyRates[key] = state
+	return true, 0
 }
 
 func parseHistoryMetric(value string) (historyMetric, error) {
@@ -176,6 +293,9 @@ func parseHistoryRange(values url.Values) (int64, int64, error) {
 	}
 	if from > to {
 		return 0, 0, errors.New("from must not be after to")
+	}
+	if to-from > historyMaxRange.Milliseconds() {
+		return 0, 0, errors.New("history range cannot exceed 7 days")
 	}
 	return from, to, nil
 }
@@ -280,16 +400,93 @@ func parseHistoryTime(value string, now time.Time) (int64, error) {
 	return base - offset, nil
 }
 
-func (s *Server) historySeries(users []historyUser, metric historyMetric, from, to int64) []historySeries {
+func (s *Server) tryHistorySlot() bool {
+	s.historyMu.Lock()
+	if s.historySlots == nil {
+		s.historySlots = make(chan struct{}, 2)
+	}
+	slots := s.historySlots
+	s.historyMu.Unlock()
+	select {
+	case slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) releaseHistorySlot() {
+	s.historyMu.Lock()
+	slots := s.historySlots
+	s.historyMu.Unlock()
+	if slots != nil {
+		<-slots
+	}
+}
+
+func historyCacheKey(users []historyUser, metric historyMetric, from, to int64) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%d|%d|", metric, from, to)
+	for _, user := range users {
+		b.WriteString(user.Username)
+		b.WriteByte('/')
+		b.WriteString(historySeriesVersion(user))
+		b.WriteByte('|')
+	}
+	return b.String()
+}
+
+func (s *Server) cachedHistory(key string, now time.Time) (historyResponse, bool) {
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+	entry, ok := s.historyCache[key]
+	if !ok || now.Sub(entry.stored) >= historyCacheTTL {
+		if ok {
+			delete(s.historyCache, key)
+		}
+		return historyResponse{}, false
+	}
+	return entry.response, true
+}
+
+func (s *Server) cacheHistory(key string, response historyResponse, now time.Time) {
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
+	if s.historyCache == nil {
+		s.historyCache = map[string]historyCacheEntry{}
+	}
+	for cachedKey, entry := range s.historyCache {
+		if now.Sub(entry.stored) >= historyCacheTTL {
+			delete(s.historyCache, cachedKey)
+		}
+	}
+	if len(s.historyCache) >= maxHistoryCacheItems {
+		var oldestKey string
+		var oldest time.Time
+		for cachedKey, entry := range s.historyCache {
+			if oldestKey == "" || entry.stored.Before(oldest) {
+				oldestKey, oldest = cachedKey, entry.stored
+			}
+		}
+		delete(s.historyCache, oldestKey)
+	}
+	s.historyCache[key] = historyCacheEntry{response: response, stored: now}
+}
+
+func (s *Server) historySeries(users []historyUser, metric historyMetric, from, to int64) ([]historySeries, error) {
 	series := make([]historySeries, 0, len(users))
 	for _, user := range users {
+		points, err := s.historyPoints(user, metric, from, to)
+		if err != nil {
+			return nil, err
+		}
 		series = append(series, historySeries{
 			Username: user.Username,
 			Version:  historySeriesVersion(user),
-			Points:   s.historyPoints(user, metric, from, to),
+			Points:   points,
 		})
 	}
-	return series
+	return series, nil
 }
 
 func historySeriesVersion(user historyUser) string {
@@ -299,10 +496,10 @@ func historySeriesVersion(user historyUser) string {
 	return user.Version
 }
 
-func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to int64) []historyPoint {
+func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to int64) ([]historyPoint, error) {
 	// Resolve current careers under the server lock. UUID is intentionally
 	// never accepted from or returned to the public API; it prevents a
-	// reclaimed username/version from merging two careers.
+	// recovered username/version from merging two careers.
 	s.mu.Lock()
 	uuidSet := map[string]struct{}{}
 	if user.AllVersions {
@@ -320,7 +517,7 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 		}
 	}
 	if len(uuids) == 0 {
-		return []historyPoint{}
+		return []historyPoint{}, nil
 	}
 
 	records := make([]historyRow, 0)
@@ -332,10 +529,10 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 		SELECT game_id, won, elo, ts_mu, ts_sigma, ended_unix_ms
 		FROM game_participants_archive
 		WHERE uuid = ? AND ended_unix_ms >= ? AND ended_unix_ms <= ?
-		ORDER BY ended_unix_ms ASC, game_id ASC`, uuid, from, to, uuid, from, to)
+			ORDER BY ended_unix_ms ASC, game_id ASC LIMIT ?`, uuid, from, to, uuid, from, to, maxHistoryRowsPerUser+1)
 		if err != nil {
 			metricDBErrors.WithLabelValues("history").Inc()
-			return []historyPoint{}
+			return nil, err
 		}
 		for rows.Next() {
 			var row historyRow
@@ -351,9 +548,12 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 		if err := rows.Err(); err != nil {
 			rows.Close()
 			metricDBErrors.WithLabelValues("history").Inc()
-			return []historyPoint{}
+			return nil, err
 		}
 		rows.Close()
+		if len(records) > maxHistoryRowsPerUser {
+			return nil, errHistoryTooLarge
+		}
 	}
 
 	sort.Slice(records, func(i, j int) bool {
@@ -398,7 +598,7 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 		points = append(points, point)
 		lastPointTime = ended
 	}
-	return downsampleHistoryPoints(points)
+	return downsampleHistoryPoints(points), nil
 }
 
 func bestHistoryPoint(state map[string]*historyCareerState, metric historyMetric) (historyPoint, bool) {
