@@ -19,13 +19,16 @@
 // Players whose ScoreHistory predates elo tracking will be missing from the
 // earlier points until enough new games have been played.
 
+const screenMode = location.pathname.replace(/\/+$/, '') === '/screen';
+
 const gameState = {
+  screenMode,
   serverInfo: [],
   viewInfo: [],
   scoreboard: [],
   boardScoreboard: [],
   boardChartData: [],
-  scoreboardScope: 'board', // 'board' | 'global'
+  scoreboardScope: screenMode ? 'global' : 'board', // 'board' | 'global'
   followName: '',
   followEditing: false,
   chartData: [],

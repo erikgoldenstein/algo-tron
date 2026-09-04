@@ -260,6 +260,34 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	}
 }
 
+func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for i := 0; i < 2; i++ {
+		a, _ := testPlayer(fmt.Sprintf("screen-a%d", i))
+		b, _ := testPlayer(fmt.Sprintf("screen-b%d", i))
+		s.games = append(s.games, newGame(s, []*Player{a, b}))
+	}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var globalActive, screenMode bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url+"/screen"),
+		chromedp.WaitVisible(`#scoreboard-scope:not([hidden])`),
+		chromedp.Evaluate(`document.querySelector('[data-scope="global"]').classList.contains('active')`, &globalActive),
+		chromedp.Evaluate(`gameState.screenMode`, &screenMode),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !globalActive {
+		t.Error("screen mode should select the global scoreboard")
+	}
+	if !screenMode {
+		t.Error("/screen should enable screen mode")
+	}
+}
+
 func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
