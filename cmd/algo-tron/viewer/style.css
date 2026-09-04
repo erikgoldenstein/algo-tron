@@ -610,6 +610,46 @@ canvas#game { display: block; }
   font-size: 11px;
 }
 .admin-login-status.error { color: var(--accent); }
+.admin-submenu-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.admin-submenu-button:hover { color: var(--accent); }
+.admin-lobbies { margin-top: 8px; }
+.admin-lobby-create {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr .75fr auto;
+  gap: 5px;
+}
+.admin-lobby-create input {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 3px 5px;
+}
+.admin-lobby-create button,
+.admin-lobby-remove {
+  border: 1px solid var(--border);
+  padding: 3px 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.admin-lobby-create button:hover,
+.admin-lobby-remove:hover { border-color: var(--accent); color: var(--accent); }
+.admin-lobby-status { min-height: 17px; margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+.admin-lobby-status.error { color: var(--accent); }
+.admin-lobby-list { display: grid; gap: 4px; margin-top: 5px; }
+.admin-lobby-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+.admin-lobby-name { color: var(--text); }
 
 .scoreplot-chart-section { margin-top: 0; }
 #scoreplot-view { overflow-y: auto; }

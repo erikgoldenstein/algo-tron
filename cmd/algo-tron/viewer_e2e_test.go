@@ -119,6 +119,34 @@ func TestE2EAdminHotspotLogin(t *testing.T) {
 	}
 }
 
+func TestE2EAdminCanCreateAndRemoveLobby(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.adminPassword = strings.Repeat("a", adminPasswordLength)
+	ctx := browser(t)
+	var noLobby bool
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.Click(`#help-btn`),
+		chromedp.Click(`#admin-hotspot`),
+		chromedp.SendKeys(`#admin-password`, strings.Repeat("a", adminPasswordLength)),
+		chromedp.WaitVisible(`#admin-section:not([hidden])`),
+		chromedp.Click(`#admin-lobbies-toggle`),
+		chromedp.WaitVisible(`#admin-lobbies:not([hidden])`),
+		chromedp.SendKeys(`#admin-lobby-name`, "workshop"),
+		chromedp.SendKeys(`#admin-lobby-password`, "begin"),
+		chromedp.Click(`#admin-lobby-create button[type="submit"]`),
+		chromedp.WaitVisible(`#admin-lobby-list .admin-lobby-name`),
+		chromedp.Click(`#admin-lobby-list .admin-lobby-remove`),
+		chromedp.Poll(`document.querySelector('#admin-lobby-list .admin-lobby-name') === null`, &noLobby),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !noLobby {
+		t.Fatal("lobby remained after removal")
+	}
+}
+
 func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 	url, _ := e2eViewer(t)
 	ctx := browser(t)

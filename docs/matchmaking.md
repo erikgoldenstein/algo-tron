@@ -10,7 +10,9 @@ server lock and works from three concepts:
 
 A player is **queued** when they have a live TCP connection and no seat
 (`Player.seat == nil`). There is no explicit queue structure — the matchmaker
-recomputes it every tick, ordered by `queuedSince` (longest wait first).
+recomputes each lobby's queue every tick, ordered by `queuedSince` (longest
+wait first). Players with different lobby assignments are never placed on the
+same board.
 Players enter the queue:
 
 - on `join` (unless they're reconnecting into a still-alive seat),
@@ -18,6 +20,14 @@ Players enter the queue:
   rating math and rendering, but the player can be seated on a new board
   while the old game plays out,
 - at game end (survivors).
+
+The default lobby is the compatibility path and uses the historical
+`maxBoardSize` limit of 24. Each named lobby has its own queue and an
+administrator-configured `maxPlayersPerBoard`. A positive value caps each
+board; `-1` puts all currently eligible players from that lobby on one board
+and allows only one concurrent board in that lobby, subject to the existing
+global board-count budget. Lobby separation does not
+create separate rating pools: ELO and TrueSkill updates remain global.
 
 Re-queue-on-death is what keeps waits short: a bot that dies in the first
 seconds of a 100-second game doesn't idle until that game ends.
@@ -33,7 +43,7 @@ excluded from ratings and leaderboards — see
 
 | Constant             | Value | Meaning                                                                  |
 |----------------------|-------|--------------------------------------------------------------------------|
-| `maxBoardSize`       | 24    | Players per board, upper bound.                                          |
+| `maxBoardSize`       | 24    | Legacy default-lobby players-per-board limit.                             |
 | `minBoardSize`       | 4     | Players per board, lower bound — waived while fewer than 4 bots are connected (tiny populations play immediately, even solo, once everyone idle is queued). |
 | `boardBudgetDivisor` | 12    | At most `max(1, connected/12)` boards run at once, so waves of deaths can't fragment into many tiny games. |
 | `matchWaitCap`       | 20s   | Hard bound: once the oldest waiter passes this, boards start regardless of the score below. |
@@ -67,11 +77,16 @@ never make the matchmaker wait for arrivals that cannot happen.
 
 ## Banding (who plays whom)
 
-When boards start, the candidates (longest-waiting first, capped at
-`budget × maxBoardSize`) are sorted by TrueSkill `mu` and cut into `k`
+When boards start, candidates are selected independently per lobby (longest-
+waiting first, capped by that lobby's board limit and the global board budget),
+then sorted by TrueSkill `mu` and cut into `k`
 contiguous, near-equal bands. Contiguous slices of a sorted list are the
 minimum-variance partition: strong players face strong players, and no board
 gets dominated by a ringer.
+
+Board labels are `board-N` for the default lobby and `<lobby>-N` for named
+lobbies. The label is viewer metadata only; the TCP game protocol remains
+unchanged.
 
 Sorting uses plain `mu`, not the conservative `mu − 3σ` shown on the
 scoreboard — an unrated newcomer belongs in the middle of the field, not at

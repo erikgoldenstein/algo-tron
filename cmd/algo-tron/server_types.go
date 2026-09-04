@@ -56,6 +56,8 @@ type Server struct {
 
 	secret        []byte
 	adminPassword string
+	lobbies       map[string]*Lobby
+	lobbyBoardSeq map[string]int
 	db            *sql.DB
 	geo           *geoLookup
 	scheduleURL   string
@@ -99,6 +101,8 @@ type Game struct {
 	mu        sync.Mutex
 	server    *Server
 	id        string
+	lobby     string
+	boardNo   int
 	seats     []*Seat
 	width     int
 	height    int

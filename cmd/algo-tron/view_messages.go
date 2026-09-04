@@ -33,6 +33,8 @@ type initMsg struct {
 // boardMsg is one entry in the board list shown as tabs in the viewer.
 type boardMsg struct {
 	ID      string   `json:"id"`
+	Lobby   string   `json:"lobby,omitempty"`
+	Label   string   `json:"label,omitempty"`
 	Players int      `json:"players"`
 	Alive   int      `json:"alive"`
 	Names   []string `json:"names"`
@@ -46,6 +48,8 @@ type boardsMsg struct {
 type gameMsg struct {
 	Type            string            `json:"type,omitempty"` // "game" when sent as its own message, "" when nested in init
 	ID              string            `json:"id"`
+	Lobby           string            `json:"lobby,omitempty"`
+	Label           string            `json:"label,omitempty"`
 	Width           int               `json:"width"`
 	Height          int               `json:"height"`
 	Players         []playerMsg       `json:"players"`

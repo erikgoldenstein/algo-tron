@@ -46,7 +46,7 @@ this page documents how `algo-tron` implements it and the small divergences.
 
 The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` packet ends the game frame.
 
-Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)); a board holds at most 24 players. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
+Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)). The legacy default lobby holds at most 24 players per board; named lobbies can use their own limit. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
 
 ## Server → bot packets
 
@@ -71,7 +71,16 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 | `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
 | `bio` | `field\|value` | Optional post-join metadata. Current fields are `contact` and `src`; invalid values receive `ERROR_INVALID_BIO` and do not affect the connection. |
 
-The optional join fields use `keyword value` syntax and may appear in any order. The current implementation gives meaning to `version`; unknown optional attributes are ignored for forward compatibility. A single bare fourth field such as `join|name|password|v2` remains accepted for compatibility with clients using the earlier version extension, but new clients should use `join|name|password|version v2`. Attribute values cannot contain `|`, and version values cannot contain spaces.
+The optional join fields use `keyword value` syntax and may appear in any order. Supported keys are `version`, `lobby`, and `lobby-pw`; unknown optional attributes are ignored for forward compatibility. A single bare fourth field such as `join|name|password|v2` remains accepted for compatibility with clients using the earlier version extension, but new clients should use `join|name|password|version v2`. Attribute values cannot contain `|`, and version, lobby, and lobby-password values cannot contain spaces. Versions are `[a-zA-Z0-9._-]+` and at most 8 bytes. Lobby names are `[a-zA-Z0-9._-]+` and at most 16 bytes; lobby passwords are at most 32 printable ASCII bytes.
+
+`lobby` and `lobby-pw` are entirely additive. A join without them uses the existing `default` lobby and behaves as before. A named lobby must be created by an administrator. The lobby password is optional, but a password must not be supplied for an open lobby. A missing lobby, a wrong password, or any other failed lobby authorization always falls back to `default` and sends `error|LOBBY_NOT_FOUND` after the join; the error intentionally does not reveal whether the name or password was wrong. A valid lobby join is queued only with players from that lobby. Lobby queues and boards are separate, but all players continue to use the same global ELO/TrueSkill ratings and leaderboard.
+
+Examples:
+
+```text
+join|mybot|secret|version v8|lobby workshop|lobby-pw spring
+join|mybot|secret|lobby workshop
+```
 
 After joining, a bot may publish optional descriptive metadata without changing its game behavior:
 
