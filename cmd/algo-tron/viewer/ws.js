@@ -33,8 +33,12 @@ let ws = null;
 // update can't bounce us back to the first board.
 let pendingWatchID = '';
 
-function watchBoard(id) {
+function watchBoard(id, { preserveFollow = false } = {}) {
   if (id && ws && ws.readyState === WebSocket.OPEN) {
+    if (!preserveFollow && id !== gameState.game?.id && gameState.followName) {
+      clearFollow();
+      updateDom({ scoreboard: false });
+    }
     pendingWatchID = id;
     ws.send(JSON.stringify({ watch: id }));
   }
@@ -71,23 +75,25 @@ function lowestTickBoard() {
 // If the board we're watching is gone (or we never had one), subscribe to
 // the followed player's board, otherwise the live board with the lowest
 // progress. Called after board-list changes.
-function ensureWatched() {
+function ensureWatched({ preserveFollow = false } = {}) {
   const ids = gameState.boards.map((b) => b.id);
   const followed = followedBoardID();
+  const keepFollow = preserveFollow || !!gameState.followName;
+  if (followed && pendingWatchID === followed) return;
   if (followed && gameState.game?.id !== followed) {
-    watchBoard(followed);
+    watchBoard(followed, { preserveFollow: keepFollow });
     return;
   }
   if (pendingWatchID && ids.includes(pendingWatchID)) return;
   if (gameState.game && ids.includes(gameState.game.id)) return;
   const next = lowestTickBoard();
-  if (next) watchBoard(next.id);
+  if (next) watchBoard(next.id, { preserveFollow: keepFollow });
 }
 
 function followedBoardID() {
   const name = gameState.followName;
   if (!name) return '';
-  return gameState.boards.find((b) => (b.names || []).includes(name))?.id || '';
+  return gameState.boards.find((b) => (b.names || []).some((candidate) => sameName(candidate, name)))?.id || '';
 }
 
 function connect() {
@@ -103,10 +109,23 @@ function connect() {
     if (msg.type === 'game' && msg.id === pendingWatchID) pendingWatchID = '';
     const watchedID = gameState.game?.id || '';
     applyMessage(msg);
+    const followedID = followedBoardID();
     const watchedBoardEnded = msg.type === 'boards'
       && watchedID
       && !gameState.boards.some((board) => board.id === watchedID);
-    if (msg.type === 'init' || watchedBoardEnded) ensureWatched();
+    // A followed player can appear or move to another board in a later board
+    // snapshot. Track that case without making unrelated board updates move
+    // the viewer away from its current board.
+    const followedBoardChanged = msg.type === 'boards'
+      && followedID
+      && followedID !== watchedID;
+    // A boards update can arrive after init while the first game snapshot is
+    // still pending. Keep retrying selection until either a game snapshot or
+    // a watch request exists; the viewer should never sit on an empty board.
+    const noBoardSelected = !gameState.game?.id && !pendingWatchID;
+    if (msg.type === 'init' || watchedBoardEnded || followedBoardChanged || noBoardSelected) {
+      ensureWatched({ preserveFollow: followedBoardChanged });
+    }
     const scoreboardResponse = msg.type === 'scoreboard';
     updateDom({
       scoreboard: !['tick', 'chat', 'misc'].includes(msg.type),

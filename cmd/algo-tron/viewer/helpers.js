@@ -92,6 +92,13 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Display names are user-controlled and may arrive with different casing
+// from separate server messages. Follow identity is case-insensitive, while
+// the original spelling is kept for display.
+function sameName(a, b) {
+  return String(a || '').trim().toLocaleLowerCase() === String(b || '').trim().toLocaleLowerCase();
+}
+
 // Settings toggles persisted in localStorage. The modal renders/owns these;
 // other code just reads via getSwitch(key). Defaults live here so a new
 // setting can be enabled without requiring a localStorage entry.

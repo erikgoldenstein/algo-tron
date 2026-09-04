@@ -30,6 +30,8 @@ const gameState = {
   boardChartData: [],
   scoreboardScope: screenMode ? 'global' : 'board', // 'board' | 'global'
   chatScope: 'board', // 'board' | 'global'; screen mode keeps chat local
+  globalPlayers: null,
+  globalAlive: null,
   followName: '',
   followEditing: false,
   chartData: [],
@@ -62,6 +64,8 @@ function applyInit(msg) {
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
   gameState.boards      = msg.boards      || [];
+  gameState.globalPlayers = Number.isFinite(msg.globalPlayers) ? msg.globalPlayers : null;
+  gameState.globalAlive = Number.isFinite(msg.globalAlive) ? msg.globalAlive : null;
   gameState.game = msg.game ? buildGame(msg.game) : null;
 }
 
@@ -73,6 +77,8 @@ function applyGame(msg) {
 
 function applyBoards(msg) {
   gameState.boards = msg.boards || [];
+  gameState.globalPlayers = Number.isFinite(msg.globalPlayers) ? msg.globalPlayers : null;
+  gameState.globalAlive = Number.isFinite(msg.globalAlive) ? msg.globalAlive : null;
   if (gameState.game && !gameState.boards.some((b) => b.id === gameState.game.id)) {
     gameState.game = null;
     gameState.boardScoreboard = [];

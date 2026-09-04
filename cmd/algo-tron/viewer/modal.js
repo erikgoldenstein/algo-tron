@@ -86,6 +86,7 @@ let scoreboardFetchController = null;
 let scoreboardFetchID = 0;
 let scoreboardFetchKey = '';
 let scoreboardFetchError = '';
+let scoreboardSearchTimer = 0;
 
 function fetchScoreboardPage(q) {
   const key = scorePageKey(q.period, q.sort, q.search);
@@ -175,6 +176,7 @@ function renderScoreboardModalRows() {
   root.innerHTML = rows.length
     ? rows.map(scoreRow).join('')
     : '<tr><td colspan="12" class="empty">' + (scoreboardFetchKey === key ? 'loading...' : (scoreboardFetchError || 'nobody found')) + '</td></tr>';
+  if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(root);
   const asof = document.getElementById('scoreboard-asof');
   if (asof) asof.textContent = page?.computedAt ? 'as of ' + new Date(page.computedAt).toLocaleString() : '';
 }
@@ -191,6 +193,7 @@ function openScoreboardModal() {
 function closeScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (m) m.hidden = true;
+  clearTimeout(scoreboardSearchTimer);
   if (scoreboardFetchController) scoreboardFetchController.abort();
   document.querySelectorAll('#scoreboard-modal .app-select.open').forEach(closeAppSelect);
   document.getElementById('scoreplot-user-options')?.setAttribute('hidden', '');
@@ -220,7 +223,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initAppSelect('scoreboard-period', refreshScoreboard);
   initAppSelect('scoreboard-sort', refreshScoreboard);
   document.addEventListener('click', () => document.querySelectorAll('.app-select.open').forEach(closeAppSelect));
-  document.getElementById('scoreboard-search')?.addEventListener('input', () => fetchScoreboardPage(scoreModalQuery(0)));
+  document.getElementById('scoreboard-search')?.addEventListener('input', () => {
+    clearTimeout(scoreboardSearchTimer);
+    scoreboardSearchTimer = setTimeout(() => fetchScoreboardPage(scoreModalQuery(0)), 150);
+  });
   document.getElementById('scoreboard-modal-scroll')?.addEventListener('scroll', (e) => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreModalScores();
@@ -289,8 +295,9 @@ document.addEventListener('keydown', (e) => {
       if (gameState.followName) {
         setFollowName('');
       } else {
-        const leader = gameState.scoreboard[0]?.username;
-        if (leader) setFollowName(leader);
+        const leader = gameState.scoreboard[0];
+        const leaderName = leader ? scoreNameLabel(leader) : '';
+        if (leaderName) setFollowName(leaderName);
       }
       updateDom();
       return;

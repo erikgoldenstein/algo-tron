@@ -2,7 +2,9 @@
 //
 // Depends on: helpers.js (esc), gameState.js.
 // Runtime callbacks call updateDom and ensureWatched after all scripts load.
-// Provides: updateFollowPlayer, setFollowName, stepFollow.
+// Provides: updateFollowPlayer, setFollowName, stepFollow, clearFollow.
+
+let followOptionIndex = -1;
 
 function updateFollowPlayer() {
   const start = document.getElementById('follow-player-start');
@@ -23,20 +25,39 @@ function updateFollowPlayer() {
   if (document.activeElement !== input && input.value.trim() !== gameState.followName) {
     input.value = gameState.followName;
   }
-  input.oninput = () => setFollowName(input.value);
+  input.oninput = () => {
+    gameState.followName = input.value.trim();
+    followOptionIndex = -1;
+    updateFollowOptions();
+  };
   input.onkeydown = (e) => {
-    if (e.key !== 'Tab') return;
     const options = followOptions(input.value);
-    if (!options.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!options.length) return;
+      e.preventDefault();
+      const delta = e.key === 'ArrowDown' ? 1 : -1;
+      const visibleCount = Math.min(options.length, 10);
+      followOptionIndex = (followOptionIndex + delta + visibleCount) % visibleCount;
+      updateFollowOptions();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      followOptionIndex = -1;
+      hideFollowOptions();
+      return;
+    }
+    if (e.key !== 'Tab' && e.key !== 'Enter') return;
+    const selected = options[followOptionIndex >= 0 ? followOptionIndex : 0];
+    if (!selected) return;
     e.preventDefault();
-    input.value = options[0];
-    setFollowName(input.value);
+    input.value = selected;
+    setFollowName(selected);
     hideFollowOptions();
   };
   input.onblur = () => setTimeout(() => {
     if (!input.value.trim()) {
-      gameState.followName = '';
-      gameState.followEditing = false;
+      clearFollow();
       updateDom();
     }
     hideFollowOptions();
@@ -45,9 +66,27 @@ function updateFollowPlayer() {
 }
 
 function setFollowName(value) {
-  gameState.followName = value.trim();
+  const trimmed = value.trim();
+  if (!trimmed) {
+    clearFollow();
+    updateDom();
+    return;
+  }
+  gameState.followName = allBoardNames().find((name) => sameName(name, trimmed)) || trimmed;
+  gameState.followEditing = false;
+  followOptionIndex = -1;
   updateFollowOptions();
-  ensureWatched();
+  ensureWatched({ preserveFollow: true });
+  updateDom({ scoreboard: false });
+}
+
+function clearFollow() {
+  gameState.followName = '';
+  gameState.followEditing = false;
+  followOptionIndex = -1;
+  const input = document.getElementById('follow-player-input');
+  if (input) input.value = '';
+  hideFollowOptions();
 }
 
 // stepFollow cycles the followed player through all known names ("j"/"k"
@@ -55,7 +94,7 @@ function setFollowName(value) {
 function stepFollow(delta) {
   const names = allBoardNames();
   if (!names.length) return;
-  const i = names.indexOf(gameState.followName);
+  const i = names.findIndex((name) => sameName(name, gameState.followName));
   const next = i < 0 ? names[0] : names[(i + delta + names.length) % names.length];
   setFollowName(next);
   updateDom();
@@ -69,9 +108,13 @@ function allBoardNames() {
   return [...seen].sort();
 }
 
+function followNameIsAlive(name = gameState.followName) {
+  return !!name && allBoardNames().some((candidate) => sameName(candidate, name));
+}
+
 function followOptions(value) {
   const q = value.trim().toLowerCase();
-  return allBoardNames().filter((name) => !q || name.toLowerCase().startsWith(q));
+  return allBoardNames().filter((name) => !q || name.toLowerCase().includes(q));
 }
 
 function updateFollowOptions() {
@@ -79,11 +122,13 @@ function updateFollowOptions() {
   const box = document.getElementById('follow-player-options');
   if (!input || !box || document.activeElement !== input) return;
   const options = followOptions(input.value);
-  box.hidden = options.length === 0 || options.length >= 10;
+  const visible = options.slice(0, 10);
+  box.hidden = visible.length === 0;
   if (box.hidden) return;
-  box.innerHTML = options.map((name) => '<button data-name="' + esc(name) + '">' + esc(name) + '</button>').join('');
+  input.setAttribute('aria-expanded', 'true');
+  box.innerHTML = visible.map((name, i) => '<button type="button" role="option" aria-selected="' + (i === followOptionIndex) + '" class="' + (i === followOptionIndex ? 'active' : '') + '" data-name="' + esc(name) + '">' + esc(name) + '</button>').join('');
   box.querySelectorAll('button').forEach((btn) => {
-    btn.onmousedown = (e) => {
+    btn.onpointerdown = (e) => {
       e.preventDefault();
       input.value = btn.dataset.name;
       setFollowName(input.value);
@@ -94,5 +139,25 @@ function updateFollowOptions() {
 
 function hideFollowOptions() {
   const box = document.getElementById('follow-player-options');
+  const input = document.getElementById('follow-player-input');
   if (box) box.hidden = true;
+  if (input) input.setAttribute('aria-expanded', 'false');
+}
+
+// Scoreboard names are useful, unambiguous follow targets. This is bound
+// after each scoreboard render because rows are intentionally rebuilt.
+function bindScoreFollowTargets(root = document) {
+  root.querySelectorAll?.('.score-follow-target').forEach((el) => {
+    el.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (sameName(el.dataset.followName || '', gameState.followName)) {
+        clearFollow();
+      } else {
+        setFollowName(el.dataset.followName || '');
+      }
+      updateDom();
+    };
+    el.title = 'follow ' + (el.dataset.followName || 'player');
+  });
 }

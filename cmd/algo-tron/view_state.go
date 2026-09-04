@@ -3,6 +3,7 @@ package main
 import "strconv"
 
 func (s *Server) buildInitLocked(watch *Game) *initMsg {
+	globalPlayers, globalAlive := s.globalViewerStatsLocked()
 	m := &initMsg{
 		Type:              "init",
 		ServerInfo:        s.viewState.ServerInfoList,
@@ -12,11 +13,35 @@ func (s *Server) buildInitLocked(watch *Game) *initMsg {
 		ChartData:         s.viewState.ChartData,
 		LastWinners:       s.viewState.LastWinners,
 		Boards:            s.boardListLocked(),
+		GlobalPlayers:     globalPlayers,
+		GlobalAlive:       globalAlive,
 	}
 	if watch != nil {
 		m.Game = buildGameMsgLocked(watch)
 	}
 	return m
+}
+
+// globalViewerStatsLocked reports the live TCP population, independent of
+// board seats. Dead players may remain in a game's seat list until it ends,
+// and connected players may be waiting in matchmaking, so neither of those
+// structures is a correct global denominator.
+func (s *Server) globalViewerStatsLocked() (players, alive int) {
+	for _, p := range s.players {
+		if p.conn != nil {
+			players++
+		}
+	}
+	for _, g := range s.games {
+		g.mu.Lock()
+		for _, st := range g.seats {
+			if st.alive && st.player.conn != nil {
+				alive++
+			}
+		}
+		g.mu.Unlock()
+	}
+	return players, alive
 }
 
 func boardLabel(g *Game, fallback int) string {
@@ -40,6 +65,12 @@ func (s *Server) boardListLocked() []boardMsg {
 		g.mu.Lock()
 		names := make([]string, 0, len(g.seats))
 		for _, st := range g.seats {
+			// Follow/autocomplete should resolve live players only. Dead seats
+			// remain in the game for scoring, but are no longer on this board
+			// for viewing purposes.
+			if !st.alive {
+				continue
+			}
 			names = append(names, s.displayNameLocked(st.player))
 		}
 		boards = append(boards, boardMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, i+1), Tick: g.tick, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})

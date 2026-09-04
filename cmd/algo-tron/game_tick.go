@@ -156,6 +156,9 @@ func (s *Server) finishTickLocked(g *Game, res tickResult) time.Duration {
 		s.releaseSeatLocked(st)
 		st.loseLocked()
 	}
+	if len(res.dead) > 0 && !res.done {
+		s.broadcastBoardsLocked()
+	}
 	fanoutStart := time.Now()
 	s.broadcastTickLocked(g, res)
 	fanoutDur := time.Since(fanoutStart)
