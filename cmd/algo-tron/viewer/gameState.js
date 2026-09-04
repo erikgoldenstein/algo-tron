@@ -25,7 +25,7 @@ const gameState = {
   scoreboard: [],
   boardScoreboard: [],
   boardChartData: [],
-  scoreboardScope: 'board', // 'board' | 'global' | 'spectator'
+  scoreboardScope: 'board', // 'board' | 'global'
   followName: '',
   followEditing: false,
   chartData: [],
