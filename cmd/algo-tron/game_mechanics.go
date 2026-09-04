@@ -89,6 +89,15 @@ func maxInvalidMovesAllowed(tick int) int {
 // reason and marks the seat dead. The sink's final packet is used so the bot
 // receives the reason before the connection is closed.
 func (g *Game) kickInvalidMoveLocked(st *Seat) {
+	slog.Warn("player kicked for invalid moves",
+		"user", st.player.Username,
+		"game", g.id,
+		"seat", st.id,
+		"tick", g.tick,
+		"invalid_streak", st.invalidMoveStreak,
+		"invalid_total", st.invalidMoveTotal,
+		"invalid_allowed", maxInvalidMovesAllowed(g.tick),
+	)
 	if sink := st.player.sink.Load(); sink != nil {
 		sink.shutdownWithPacket(formatPacket("error", "ERROR_INVALID_MOVE_LIMIT"), deathReasonInvalidMove)
 	} else {
