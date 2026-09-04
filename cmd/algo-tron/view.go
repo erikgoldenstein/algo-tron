@@ -89,7 +89,7 @@ func (s *Server) viewerHandler(metricsAuth string) http.Handler {
 	if metricsAuth != "" {
 		mux.Handle("/metrics", basicAuth("metrics", metricsAuth, promhttp.Handler()))
 	}
-	return mux
+	return instrumentHTTP(mux)
 }
 
 func (s *Server) listenHTTP(ctx context.Context, addr, metricsAuth string) error {

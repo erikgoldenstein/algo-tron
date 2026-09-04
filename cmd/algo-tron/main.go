@@ -63,7 +63,8 @@ func run() error {
 		return fmt.Errorf("admin password: %w", err)
 	}
 
-	db, err := openDB(filepath.Join(*dataDir, "players.db"))
+	dbPath := filepath.Join(*dataDir, "players.db")
+	db, err := openDB(dbPath)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
@@ -90,6 +91,7 @@ func run() error {
 		lobbies:       lobbies,
 		lobbyBoardSeq: map[string]int{},
 		db:            db,
+		dbPath:        dbPath,
 		geo:           geo,
 		scheduleURL:   *scheduleURL,
 		publicViewURL: *publicViewScheme + "://" + *publicView,

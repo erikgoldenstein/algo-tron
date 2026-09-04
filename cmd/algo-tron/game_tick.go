@@ -36,6 +36,8 @@ func (g *Game) run() {
 			timer.Reset(d)
 			<-timer.C
 		} else {
+			metricTickDeadlineMisses.Inc()
+			metricTickSchedulerLag.Observe((-d).Seconds())
 			next = time.Now() // fell a full interval behind — re-anchor
 		}
 		now := time.Now()
@@ -78,6 +80,9 @@ func (g *Game) run() {
 		metricTicks.Inc()
 		metricTickBudget.Observe(tickDur.Seconds() / interval.Seconds())
 		metricFanoutBudget.Observe(fanoutDur.Seconds() / interval.Seconds())
+		if tickDur >= interval {
+			metricTickOverruns.Inc()
+		}
 		if res.done {
 			return
 		}

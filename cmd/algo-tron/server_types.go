@@ -66,6 +66,7 @@ type Server struct {
 	lobbies       map[string]*Lobby
 	lobbyBoardSeq map[string]int
 	db            *sql.DB
+	dbPath        string
 	geo           *geoLookup
 	scheduleURL   string
 	publicViewURL string // absolute base URL of the viewer, for og:image etc.
