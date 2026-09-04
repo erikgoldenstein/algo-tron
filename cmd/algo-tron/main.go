@@ -112,9 +112,10 @@ func run() error {
 	defer cancelDrain()
 	go func() {
 		<-sigCtx.Done()
-		slog.Info("shutdown signal received; draining viewers", "drain", shutdownDrain)
+		slog.Info("shutdown signal received; draining viewers and bots", "drain", shutdownDrain)
 		s.mu.Lock()
 		s.broadcastShutdownLocked()
+		s.broadcastTCPShutdownLocked()
 		s.mu.Unlock()
 		time.Sleep(shutdownDrain)
 		cancelDrain()

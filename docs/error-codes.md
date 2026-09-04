@@ -28,6 +28,7 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 | Code                         | When                                                                                                |
 |------------------------------|-----------------------------------------------------------------------------------------------------|
 | `ERROR_ALREADY_CONNECTED`    | New connection joins as an account that already has a live conn. The *old* conn gets this and is closed; the new one takes over. |
+| `ERROR_SERVER_RESTARTING`    | Server is shutting down for a restart or redeploy. The bot receives this after joining and the connection is then closed; clients should reconnect. *algo-tron-specific.* |
 | `LOBBY_NOT_FOUND`            | A post-join lobby selection failed because the lobby is missing or the password did not authorize it. The bot is placed in the default lobby; the same code is used for both cases to avoid revealing lobby existence. |
 | `ERROR_UNKNOWN_PACKET`       | First field of a post-join packet isn't `move` or `chat`.                                           |
 | `ERROR_NO_MOVE`              | The game tick processed this player without a queued move. Server uses the last move (or `up`).     |
