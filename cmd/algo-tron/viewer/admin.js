@@ -49,7 +49,8 @@ function renderAdminLobbies(lobbies) {
     name.textContent = lobby.name;
     const info = document.createElement('span');
     info.className = 'muted';
-    info.textContent = (lobby.passwordRequired ? 'locked' : 'open') + ' · max ' + lobby.maxPlayersPerBoard + ' · ' + lobby.activePlayers + ' online';
+    const maxPlayers = lobby.maxPlayersPerBoard === -1 ? 'unlimited' : lobby.maxPlayersPerBoard;
+    info.textContent = (lobby.passwordRequired ? 'locked' : 'open') + ' · max ' + maxPlayers + ' · ' + lobby.activePlayers + ' online';
     row.append(name, info);
     if (lobby.name !== 'default') {
       const remove = document.createElement('button');
