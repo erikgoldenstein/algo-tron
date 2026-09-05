@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 #
-# deploy.sh — provision or redeploy algo-tron on a Debian/Ubuntu or Rocky/RHEL
-#             VM. Routine deployments should normally go through CI; this
-#             script is useful for first setup and deliberate manual releases.
+# deploy.sh — deploy algo-tron to the production VM, or provision the local
+#             machine with --local. Routine deployments should normally go
+#             through CI; this script is useful for deliberate manual releases.
 #
 # nginx (IPv4 + IPv6) fronts both the HTTP viewer and the raw TCP game port;
 # the app only binds localhost. The game port is forwarded with PROXY protocol
 # so the app still sees real client IPs.
 #
-# Run as root, either from a checkout or straight from the internet (use bash,
-# not sh — prompts are read from your terminal):
+# Run locally from a checkout. By default the script streams itself over SSH to
+# the production host alias and runs there as root (use bash, not sh):
 #
 #   sudo ./deploy.sh
 #   sudo ./deploy.sh --dry-run
 #   sudo ./deploy.sh --rollback
-#   curl -fsSL https://raw.githubusercontent.com/erikgoldenstein/algo-tron/main/deploy.sh | sudo bash -s -- --domain tron.example.com
+#   sudo ./deploy.sh --local
+#   curl -fsSL https://raw.githubusercontent.com/erikgoldenstein/algo-tron/main/deploy.sh | sudo bash -s -- --local
 #
 # Flags (defaults are used without prompting; pass --interactive to ask for
 # omitted values):
 #   --domain --cloudflare-token --acme-email --tcp-port --view-port --repo --ref
-#   --interactive
+#   --interactive --host --local
 #   --deploy-only --dry-run --allow-dirty --rollback --no-backup --backup-dir --backup-keep
 #   --no-firewall --no-auditd --no-fail2ban --no-upgrades --no-hardening
 #   --no-metrics --reset-metrics-creds
@@ -59,6 +60,9 @@ DOMAIN="${DOMAIN:-tron.erik.gdn}"
 CLOUDFLARE_TOKEN=""
 ACME_EMAIL="${ACME_EMAIL:-}"
 INTERACTIVE=0
+DEPLOY_HOST="${DEPLOY_HOST:-tron-prod-vm}"
+DEPLOY_REMOTE_EXEC="${DEPLOY_REMOTE_EXEC:-0}"
+LOCAL_MODE=0
 DOMAIN_SET=""
 CLOUDFLARE_TOKEN_SET=""
 DRY_RUN=0
@@ -113,6 +117,43 @@ fi
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+shell_quote() {
+  local value="$1"
+  value="${value//\'/\'\\\'\'}"
+  printf "'%s'" "$value"
+}
+
+ssh_as_invoking_user() {
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+    sudo -u "$SUDO_USER" -H -- "$@"
+  else
+    "$@"
+  fi
+}
+
+dispatch_remote() {
+  if [ "$DEPLOY_REMOTE_EXEC" = 1 ] || [ "$LOCAL_MODE" = 1 ]; then
+    return 0
+  fi
+
+  local arg remote_cmd="sudo env DEPLOY_REMOTE_EXEC=1 bash -s --" ssh_user="${SUDO_USER:-}"
+  [ -r "$0" ] || err "cannot forward $0; run the checked-out deploy.sh file"
+  for arg in "$@"; do remote_cmd="$remote_cmd $(shell_quote "$arg")"; done
+
+  log "Deploying on $DEPLOY_HOST via SSH"
+  if [ "$INTERACTIVE" = 1 ]; then
+    local remote_script="/tmp/algo-tron-deploy-$USER-$$-$RANDOM.sh"
+    ssh_as_invoking_user scp "$0" "$DEPLOY_HOST:$remote_script"
+    remote_cmd="sudo env DEPLOY_REMOTE_EXEC=1 bash $(shell_quote "$remote_script")"
+    for arg in "$@"; do remote_cmd="$remote_cmd $(shell_quote "$arg")"; done
+    remote_cmd="$remote_cmd; status=\$?; rm -f $(shell_quote "$remote_script"); exit \$status"
+    ssh_as_invoking_user ssh -tt "$DEPLOY_HOST" "$remote_cmd"
+  else
+    ssh_as_invoking_user ssh "$DEPLOY_HOST" "$remote_cmd" < "$0"
+  fi
+  exit $?
+}
+
 # True only when /dev/tty can actually be opened for reading. A bare [ -r /dev/tty ]
 # is not enough: under a non-interactive SSH command the device node exists and
 # passes -r, but opening it fails with ENXIO (no controlling terminal).
@@ -143,6 +184,8 @@ parse_args() {
       --repo)             [ $# -ge 2 ] || err "--repo needs a value"; REPO_SLUG="$2"; shift 2 ;;
       --ref)              [ $# -ge 2 ] || err "--ref needs a value"; REPO_REF="$2"; REPO_REF_SET=1; shift 2 ;;
       --interactive)      INTERACTIVE=1; shift ;;
+      --host)             [ $# -ge 2 ] || err "--host needs a value"; DEPLOY_HOST="$2"; shift 2 ;;
+      --local)            LOCAL_MODE=1; shift ;;
       --dry-run)          DRY_RUN=1; shift ;;
       --deploy-only)      DEPLOY_ONLY=1; shift ;;
       --allow-dirty)      ALLOW_DIRTY=1; shift ;;
@@ -857,6 +900,7 @@ summary() {
 
 main() {
   parse_args "$@"
+  dispatch_remote "$@"
   preflight
   if [ "$ROLLBACK" = 1 ]; then
     # A rollback must work with units created by older deploys that did not

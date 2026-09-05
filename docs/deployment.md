@@ -138,7 +138,8 @@ Both endpoints live on the same hostname (`tron.erik.gdn`): the viewer on `443` 
 
 ## Deploy script
 
-`deploy.sh` provisions a host and can also be rerun for a manual release.
+`deploy.sh` deploys to the `tron-prod-vm` SSH alias by default and can also
+provision the current machine with `--local`.
 Routine production updates should use the `prod` GitHub Actions workflow: it
 runs the full test and benchmark gate, then installs the resulting binary. The
 script is useful when preparing a new VM or when CI is unavailable.
@@ -156,6 +157,10 @@ when targeting a different domain or replacing the token.
 TCP port `4000` and HTTPS port `443` are also used by default, without prompts.
 Use `--interactive` when you want the old prompt-driven setup, or pass the
 individual flags directly.
+
+From a local checkout, `sudo ./deploy.sh` forwards the script to
+`tron-prod-vm` over SSH and runs it there. Use `--host alias` for another SSH
+alias, or `--local` to run directly on the current machine.
 
 For a routine manual binary update on an already-provisioned host, use
 deploy-only mode. It leaves nginx, certificates, firewall rules, and host
