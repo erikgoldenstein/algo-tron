@@ -7,6 +7,7 @@ let adminLoginAttempt = '';
 let adminLoginBusy = false;
 let adminStatusRequestID = 0;
 let adminSessionActive = false;
+let adminLobbyRequestID = 0;
 let resetPasswordUsername = '';
 let resetPasswordCard = null;
 let resetPasswordBusy = false;
@@ -65,6 +66,7 @@ function renderAdminLobbies(lobbies) {
 }
 
 function loadAdminLobbies() {
+  const requestID = ++adminLobbyRequestID;
   return fetch('/api/admin/lobbies', { cache: 'no-store', credentials: 'same-origin' })
     .then((response) => {
       if (response.status === 401) {
@@ -75,11 +77,13 @@ function loadAdminLobbies() {
       return response.json();
     })
     .then((lobbies) => {
+      if (requestID !== adminLobbyRequestID) return null;
       renderAdminLobbies(lobbies);
       setAdminLobbyStatus('');
       return lobbies;
     })
     .catch((error) => {
+      if (requestID !== adminLobbyRequestID) return null;
       setAdminLobbyStatus(error.message || 'could not load lobbies', true);
       return null;
     });

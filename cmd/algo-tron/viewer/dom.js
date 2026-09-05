@@ -176,7 +176,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
 function visibleChats() {
   let chats = gameState.chatLog;
   if (gameState.chatScope === 'board') {
-    chats = chats.filter((m) => m.gameId && m.gameId === gameState.game?.id);
+    chats = chats.filter((m) => (m.system && !m.gameId) || (m.gameId && m.gameId === gameState.game?.id));
   } else if (gameState.chatScope === 'lobby') {
     chats = chats.filter((m) => m.lobby === gameState.chatLobby);
   }
@@ -439,6 +439,9 @@ function updateScoreboardScope() {
       if (gameState.scoreboardScope === btn.dataset.scope && gameState.scoreboardLobby === lobby) return;
       gameState.scoreboardScope = btn.dataset.scope;
       gameState.scoreboardLobby = lobby;
+      el.querySelectorAll('.scope-option').forEach((option) => {
+        option.classList.toggle('active', option.dataset.scope === gameState.scoreboardScope);
+      });
       if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
       updateDom();
     };
@@ -460,6 +463,9 @@ function updateChatTools() {
       if (gameState.chatScope === btn.dataset.scope && gameState.chatLobby === lobby) return;
       gameState.chatScope = btn.dataset.scope;
       gameState.chatLobby = lobby;
+      scope.querySelectorAll('.scope-option').forEach((option) => {
+        option.classList.toggle('active', option.dataset.scope === gameState.chatScope);
+      });
       if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
       updateDom({ scoreboard: false });
     };
