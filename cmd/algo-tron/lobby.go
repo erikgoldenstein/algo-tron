@@ -85,7 +85,7 @@ func validateLobbyPassword(password string) string {
 
 func validateLobbyMax(max int) string {
 	if max != -1 && max < 4 {
-		return "max players per board must be -1 or at least 4"
+		return "max players per board has to be at least 4 or -1 for unlimited"
 	}
 	return ""
 }

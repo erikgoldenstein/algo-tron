@@ -17,8 +17,12 @@ function renderChart() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const boardScope = gameState.boards.length > 1 && gameState.scoreboardScope === 'board';
-  const data = (boardScope ? gameState.boardChartData : gameState.chartData) || [];
+  const boardScope = gameState.scoreboardScope === 'board';
+  const data = (boardScope
+    ? gameState.boardChartData
+    : gameState.scoreboardScope === 'lobby'
+      ? gameState.lobbyChartData[gameState.scoreboardLobby]
+      : gameState.chartData) || [];
   const names = [...new Set(data.flatMap((p) => Object.keys(p).filter((k) => k !== 'name')))].sort();
   if (!data.length || !names.length) return;
 

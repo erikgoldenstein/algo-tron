@@ -24,6 +24,7 @@ type Server struct {
 	games        []*Game
 	viewState    ViewState
 	viewClients  map[*websocket.Conn]*viewerSink
+	chatHistory  []chatMsg
 	filler       []*Player
 
 	// boards caches the expensive period scoreboards (all/daily/monthly/
@@ -64,7 +65,6 @@ type Server struct {
 	historyCache  map[string]historyCacheEntry
 	historyRates  map[string]historyRateState
 	lobbies       map[string]*Lobby
-	lobbyBoardSeq map[string]int
 	db            *sql.DB
 	dbPath        string
 	geo           *geoLookup
@@ -89,10 +89,14 @@ type Server struct {
 // Server.mu); only that board's tick stream is sent to them. Every write to
 // game must keep the board's viewSubs counter in sync.
 type viewerSink struct {
-	ch   chan []byte
-	done chan struct{}
-	once sync.Once
-	game *Game
+	ch              chan []byte
+	done            chan struct{}
+	once            sync.Once
+	game            *Game
+	scoreboardScope string
+	scoreboardLobby string
+	chatScope       string
+	chatLobby       string
 }
 
 // closeDone signals the writer to exit. A kick (sendToSinkLocked) and the
@@ -110,7 +114,6 @@ type Game struct {
 	server    *Server
 	id        string
 	lobby     string
-	boardNo   int
 	seats     []*Seat
 	width     int
 	height    int

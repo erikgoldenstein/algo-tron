@@ -7,9 +7,15 @@ The default is 64 bots. Every run prints a `profile_seed`; pass it back with
 ```sh
 make run-bot
 make run-bot BOT_ARGS='--seed 7 --verbose'
+make run-bot BOT_ARGS='--count 64 --prefix mrmcd-swarm --lobby mrmcd --pid-file scripts/.tron-swarm-mrmcd.pid'
 make dry-run BOT_ARGS='--seed 7'
 make stop-bots
 ```
+
+Use `--lobby-password` as well when the named lobby requires a password. Run
+each additional swarm with a unique `--prefix` and `--pid-file`; the default
+PID file prevents accidentally starting two swarms under the same control
+file.
 
 ## Profiles
 

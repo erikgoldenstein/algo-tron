@@ -84,7 +84,7 @@ func (s *Server) computeBoardEntries(period string) []ScoreboardEntry {
 				players = append(players, p)
 			}
 		}
-		return boardEntriesFromPlayers(players)
+		return s.boardEntriesFromPlayers(players)
 	}
 	return s.computePeriodEntries(period)
 }
@@ -101,16 +101,16 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 		cutoff = time.Now().AddDate(0, -6, 0).UnixMilli()
 	}
 	rows, err := s.db.Query(`WITH ranked AS (
-		SELECT uuid, username, version, won, elo, ts_mu, ts_sigma,
+		SELECT uuid, username, version, lobby, won, elo, ts_mu, ts_sigma,
 			ROW_NUMBER() OVER (PARTITION BY uuid ORDER BY ended_unix_ms DESC, rowid DESC) AS rn
 		FROM game_participants
 		WHERE ended_unix_ms >= ?
 	), latest AS (
-		SELECT uuid, username, version, elo, ts_mu, ts_sigma FROM ranked WHERE rn = 1
+		SELECT uuid, username, version, lobby, elo, ts_mu, ts_sigma FROM ranked WHERE rn = 1
 		)
-		SELECT latest.uuid, latest.username, latest.version, SUM(ranked.won), COUNT(*) - SUM(ranked.won), latest.elo, latest.ts_mu, latest.ts_sigma
+		SELECT latest.uuid, latest.username, latest.version, latest.lobby, SUM(ranked.won), COUNT(*) - SUM(ranked.won), latest.elo, latest.ts_mu, latest.ts_sigma
 		FROM ranked JOIN latest ON ranked.uuid = latest.uuid
-		GROUP BY latest.uuid, latest.username, latest.version, latest.elo, latest.ts_mu, latest.ts_sigma`, cutoff)
+		GROUP BY latest.uuid, latest.username, latest.version, latest.lobby, latest.elo, latest.ts_mu, latest.ts_sigma`, cutoff)
 	if err != nil {
 		metricDBErrors.WithLabelValues("scoreboard_period").Inc()
 		return nil
@@ -118,7 +118,7 @@ func (s *Server) computePeriodEntries(period string) []ScoreboardEntry {
 	entries := []ScoreboardEntry{}
 	for rows.Next() {
 		var e ScoreboardEntry
-		if err := rows.Scan(&e.UUID, &e.Username, &e.Version, &e.Wins, &e.Losses, &e.Elo, &e.TsMu, &e.TsSigma); err != nil {
+		if err := rows.Scan(&e.UUID, &e.Username, &e.Version, &e.Lobby, &e.Wins, &e.Losses, &e.Elo, &e.TsMu, &e.TsSigma); err != nil {
 			metricDBErrors.WithLabelValues("scoreboard_period_row").Inc()
 			continue
 		}
@@ -161,6 +161,9 @@ func (s *Server) scoreboardCachedPage(q scoreboardQuery) ([]ScoreboardEntry, boo
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 	entries := make([]ScoreboardEntry, 0, len(full))
 	for _, e := range full {
+		if q.Lobby != "" && e.Lobby != q.Lobby {
+			continue
+		}
 		if search != "" && !strings.Contains(strings.ToLower(e.Username), search) {
 			continue
 		}

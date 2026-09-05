@@ -5,20 +5,26 @@ import (
 	"strconv"
 )
 
-func (s *Server) buildInitLocked(watch *Game) *initMsg {
+func (s *Server) buildInitLocked(watch *Game, sink *viewerSink) *initMsg {
 	globalPlayers, globalAlive := s.globalViewerStatsLocked()
 	m := &initMsg{
 		Type:              "init",
 		ServerInfo:        s.viewState.ServerInfoList,
 		ViewInfo:          s.viewState.ViewInfoList,
-		Scoreboard:        s.viewState.Scoreboard,
-		ScoreboardHasMore: s.viewState.ScoreboardHasMore,
-		ChartData:         s.viewState.ChartData,
+		Scoreboard:        nil,
+		ScoreboardHasMore: false,
+		ChartData:         nil,
 		LastWinners:       s.viewState.LastWinners,
 		Boards:            s.boardListLocked(),
 		Lobbies:           s.viewerLobbyNamesLocked(),
+		Chat:              s.chatHistoryForLocked(sink),
 		GlobalPlayers:     globalPlayers,
 		GlobalAlive:       globalAlive,
+	}
+	if sink != nil && sink.scoreboardScope == "global" {
+		m.Scoreboard = s.viewState.Scoreboard
+		m.ScoreboardHasMore = s.viewState.ScoreboardHasMore
+		m.ChartData = s.viewState.ChartData
 	}
 	if watch != nil {
 		m.Game = buildGameMsgLocked(watch)
@@ -67,16 +73,37 @@ func boardLabel(g *Game, fallback int) string {
 	if lobby == defaultLobbyName {
 		return "board-" + strconv.Itoa(fallback)
 	}
-	n := g.boardNo
-	if n <= 0 {
-		n = fallback
+	return lobby + "-" + strconv.Itoa(fallback)
+}
+
+// boardLabelLocked numbers boards by their current position within a lobby.
+// This keeps a lone named-lobby board at lobby-1 instead of carrying a
+// lifetime sequence across finished games. Caller holds Server.mu.
+func (s *Server) boardLabelLocked(g *Game) string {
+	lobby := g.lobby
+	if lobby == "" {
+		lobby = defaultLobbyName
 	}
-	return lobby + "-" + strconv.Itoa(n)
+	position := 0
+	for _, other := range s.games {
+		otherLobby := other.lobby
+		if otherLobby == "" {
+			otherLobby = defaultLobbyName
+		}
+		if otherLobby != lobby {
+			continue
+		}
+		position++
+		if other == g {
+			return boardLabel(g, position)
+		}
+	}
+	return boardLabel(g, 1)
 }
 
 func (s *Server) boardListLocked() []boardMsg {
 	boards := []boardMsg{}
-	for i, g := range s.games {
+	for _, g := range s.games {
 		g.mu.Lock()
 		names := make([]string, 0, len(g.seats))
 		for _, st := range g.seats {
@@ -88,7 +115,7 @@ func (s *Server) boardListLocked() []boardMsg {
 			}
 			names = append(names, s.displayNameLocked(st.player))
 		}
-		boards = append(boards, boardMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, i+1), Tick: g.tick, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
+		boards = append(boards, boardMsg{ID: g.id, Lobby: g.lobby, Label: s.boardLabelLocked(g), Tick: g.tick, Players: len(g.seats), Alive: len(g.aliveLocked()), Names: names})
 		g.mu.Unlock()
 	}
 	return boards
@@ -101,7 +128,7 @@ func (s *Server) boardListLocked() []boardMsg {
 func buildGameMsgLocked(g *Game) *gameMsg {
 	s := g.server
 	g.mu.Lock()
-	m := &gameMsg{ID: g.id, Lobby: g.lobby, Label: boardLabel(g, 1), Width: g.width, Height: g.height}
+	m := &gameMsg{ID: g.id, Lobby: g.lobby, Label: s.boardLabelLocked(g), Width: g.width, Height: g.height}
 	players := make([]*Player, 0, len(g.seats))
 	for _, st := range g.seats {
 		if !st.player.InternalBot {
@@ -117,7 +144,7 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 	// Scoreboard/chart construction is unrelated to the board's mutable
 	// simulation state. Keep only the required trail/state copy under g.mu;
 	// the potentially larger sorting and history work runs afterward.
-	m.BoardScoreboard = buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
+	m.BoardScoreboard = s.buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
 	s.annotateVersionTagsLocked(m.BoardScoreboard)
 	m.BoardChartData = buildChartDataLocked(s.players, m.BoardScoreboard)
 	return m

@@ -30,7 +30,7 @@ function renderSchemes() {
 // section. Read by other modules via getSwitch(key) in helpers.js.
 const SWITCHES = [
   { key: 'scrollNames', label: 'scroll long names' },
-  { key: 'confirmForwarding', label: 'confirm forwarding' },
+  { key: 'confirmForwarding', label: 'confirm link forwarding' },
 ];
 
 function renderSwitches() {
@@ -65,6 +65,26 @@ function toggleHelp(force) {
   }
 }
 
+function closeFrontModal() {
+  if (!document.getElementById('forward-confirm-modal')?.hidden) {
+    hideForwardConfirm();
+    return true;
+  }
+  if (!document.getElementById('admin-login-modal')?.hidden) {
+    closeAdminLogin();
+    return true;
+  }
+  if (!document.getElementById('scoreboard-modal')?.hidden) {
+    closeScoreboardModal();
+    return true;
+  }
+  if (!document.getElementById('help-modal')?.hidden) {
+    toggleHelp(false);
+    return true;
+  }
+  return false;
+}
+
 function cycleScheme() {
   const i = SCHEME_KEYS.indexOf(currentScheme);
   const next = SCHEME_KEYS[(i + 1) % SCHEME_KEYS.length];
@@ -77,6 +97,7 @@ function scoreModalQuery(offset) {
     period: document.getElementById('scoreboard-period')?.dataset.value || 'online',
     sort: document.getElementById('scoreboard-sort')?.dataset.value || 'ts',
     search: document.getElementById('scoreboard-search')?.value || '',
+    lobby: gameState.scoreboardScope === 'lobby' ? gameState.scoreboardLobby : '',
     offset: offset || 0,
     limit: 25,
   };
@@ -89,7 +110,7 @@ let scoreboardFetchError = '';
 let scoreboardSearchTimer = 0;
 
 function fetchScoreboardPage(q) {
-  const key = scorePageKey(q.period, q.sort, q.search);
+  const key = scorePageKey(q.period, q.sort, q.search, q.lobby);
   if (scoreboardFetchController) scoreboardFetchController.abort();
   const controller = new AbortController();
   scoreboardFetchController = controller;
@@ -105,6 +126,7 @@ function fetchScoreboardPage(q) {
     offset: String(q.offset || 0),
     limit: String(q.limit || 25),
   });
+  if (q.lobby) params.set('lobby', q.lobby);
   return fetch('/api/scoreboard?' + params.toString(), { signal: controller.signal })
     .then((response) => {
       if (!response.ok) throw new Error('scoreboard request failed');
@@ -170,7 +192,7 @@ function renderScoreboardModalRows() {
   if (!root) return;
   hideScoreHover();
   const q = scoreModalQuery(0);
-  const key = scorePageKey(q.period, q.sort, q.search);
+  const key = scorePageKey(q.period, q.sort, q.search, q.lobby);
   const page = gameState.scorePages[key];
   const rows = page?.entries || [];
   root.innerHTML = rows.length
@@ -201,18 +223,20 @@ function closeScoreboardModal() {
 
 function loadMoreSidebarScores() {
   if (!matchMedia('(min-width: 801px)').matches) return;
-  const key = scorePageKey('online', 'ts', '');
+  const lobby = gameState.scoreboardScope === 'lobby' ? gameState.scoreboardLobby : '';
+  const key = scorePageKey('online', 'ts', '', lobby);
   const page = gameState.scorePages[key];
   if (page && !page.hasMore) return;
-  requestScoreboard({ period: 'online', sort: 'ts', search: '', offset: gameState.scoreboard.length, limit: 25 });
+  const entries = page?.entries || (lobby ? gameState.lobbyScoreboards[lobby] : gameState.scoreboard) || [];
+  requestScoreboard({ period: 'online', sort: 'ts', search: '', lobby, offset: entries.length, limit: 25 });
 }
 
 function loadMoreModalScores() {
   const q = scoreModalQuery(0);
-  const key = scorePageKey(q.period, q.sort, q.search);
+  const key = scorePageKey(q.period, q.sort, q.search, q.lobby);
   const page = gameState.scorePages[key];
   if (!page?.hasMore) return;
-  fetchScoreboardPage({ period: q.period, sort: q.sort, search: q.search, offset: page.entries.length, limit: 25 });
+  fetchScoreboardPage({ period: q.period, sort: q.sort, search: q.search, lobby: q.lobby, offset: page.entries.length, limit: 25 });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -242,17 +266,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (!document.getElementById('forward-confirm-modal')?.hidden) {
-    if (e.key === 'q' || e.key === 'Escape') {
+  if (e.key === 'q' || e.key === 'Escape') {
+    if (closeFrontModal()) {
       e.preventDefault();
-      hideForwardConfirm();
       return;
     }
-  }
-  if (e.key === 'Escape' && !document.getElementById('admin-login-modal')?.hidden) {
-    e.preventDefault();
-    closeAdminLogin();
-    return;
   }
   // Don't steal shortcuts while the user is typing in a field.
   const t = e.target;
@@ -266,13 +284,6 @@ document.addEventListener('keydown', (e) => {
       return;
     case 'q':
     case 'Escape':
-      if (!document.getElementById('scoreboard-modal')?.hidden) {
-        e.preventDefault();
-        closeScoreboardModal();
-      } else if (!document.getElementById('help-modal')?.hidden) {
-        e.preventDefault();
-        toggleHelp(false);
-      }
       return;
     case 'c':
       e.preventDefault();
@@ -312,7 +323,7 @@ document.addEventListener('keydown', (e) => {
       return;
     default:
       if (e.key >= '1' && e.key <= '9') {
-        const board = gameState.boards[Number(e.key) - 1];
+        const board = orderedBoards()[Number(e.key) - 1];
         if (board) {
           e.preventDefault();
           watchBoard(board.id);

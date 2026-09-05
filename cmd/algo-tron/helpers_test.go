@@ -54,13 +54,12 @@ func testServer(t *testing.T) *Server {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	s := &Server{
-		players:       map[string]*Player{},
-		ipCount:       map[string]int{},
-		viewClients:   map[*websocket.Conn]*viewerSink{},
-		secret:        make([]byte, 32),
-		lobbies:       map[string]*Lobby{},
-		lobbyBoardSeq: map[string]int{},
-		db:            db,
+		players:     map[string]*Player{},
+		ipCount:     map[string]int{},
+		viewClients: map[*websocket.Conn]*viewerSink{},
+		secret:      make([]byte, 32),
+		lobbies:     map[string]*Lobby{},
+		db:          db,
 	}
 	return s
 }

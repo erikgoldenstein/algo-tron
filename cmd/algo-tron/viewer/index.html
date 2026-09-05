@@ -161,7 +161,7 @@
             <form class="admin-lobby-create" id="admin-lobby-create">
               <input id="admin-lobby-name" maxlength="16" placeholder="name" autocomplete="off" spellcheck="false" required>
               <input id="admin-lobby-password" maxlength="32" placeholder="password (optional)" autocomplete="off" spellcheck="false">
-              <input id="admin-lobby-max" type="number" value="24" min="4" placeholder="max players (-1 unlimited)">
+              <input id="admin-lobby-max" type="number" value="24" min="-1" step="1" placeholder="max players (-1 unlimited)">
               <button type="submit">create</button>
             </form>
             <div class="admin-lobby-status" id="admin-lobby-status" role="status" aria-live="polite"></div>
@@ -217,7 +217,7 @@
           <span>password</span>
           <input id="admin-password" type="password" maxlength="64" autocomplete="off" spellcheck="false">
         </label>
-        <div class="admin-login-status" id="admin-login-status" role="status" aria-live="polite">enter 64 characters</div>
+        <div class="admin-login-status" id="admin-login-status" role="status" aria-live="polite"></div>
       </div>
     </div>
   </div>

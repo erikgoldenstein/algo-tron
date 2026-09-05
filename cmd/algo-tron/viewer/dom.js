@@ -35,6 +35,10 @@ function updateDom({ scoreboard = true, renderModal = true } = {}) {
   if (gameState.scoreboardScope === 'global') {
     playerCount = gameState.globalPlayers ?? gameState.boards.reduce((total, board) => total + (Number(board.players) || 0), 0);
     alive = gameState.globalAlive ?? gameState.boards.reduce((total, board) => total + (Number(board.alive) || 0), 0);
+  } else if (gameState.scoreboardScope === 'lobby') {
+    const stats = gameState.lobbyStats[gameState.scoreboardLobby];
+    playerCount = stats?.players || 0;
+    alive = stats?.alive || 0;
   }
   const aliveEl = document.getElementById('alive-count');
   if (aliveEl) aliveEl.textContent = playerCount ? `(${alive}/${playerCount} alive)` : '';
@@ -90,15 +94,21 @@ function renderScoreboardDom({ renderModal = true } = {}) {
 // Chat is purely client-side state: it stays put across round and board
 // changes, capped only by message count (see applyChat's 100-cap).
 function visibleChats() {
-  const chats = gameState.boards.length > 1 && gameState.chatScope === 'board'
-    ? gameState.chatLog.filter((m) => m.gameId && m.gameId === gameState.game?.id)
-    : gameState.chatLog;
+  let chats = gameState.chatLog;
+  if (gameState.chatScope === 'board') {
+    chats = chats.filter((m) => m.gameId && m.gameId === gameState.game?.id);
+  } else if (gameState.chatScope === 'lobby') {
+    chats = chats.filter((m) => m.lobby === gameState.chatLobby);
+  }
   return chats.slice(-30);
 }
 
 function currentScoreboard() {
-  if (gameState.boards.length > 1 && gameState.scoreboardScope === 'board') {
+  if (gameState.scoreboardScope === 'board') {
     return gameState.boardScoreboard;
+  }
+  if (gameState.scoreboardScope === 'lobby') {
+    return gameState.lobbyScoreboards[gameState.scoreboardLobby] || [];
   }
   return gameState.scoreboard;
 }
@@ -280,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateScoreboardTools() {
   const tools = document.getElementById('scoreboard-tools');
   if (!tools) return;
-  tools.hidden = gameState.boards.length <= 1;
+  tools.hidden = gameState.boards.length <= 1 && !(gameState.lobbies && gameState.lobbies.length > 1);
   if (tools.hidden) return;
   updateScoreboardScope();
   updateFollowPlayer();
@@ -289,11 +299,15 @@ function updateScoreboardTools() {
 function updateScoreboardScope() {
   const el = document.getElementById('scoreboard-scope');
   if (!el) return;
+  renderScopeOptions(el, gameState.scoreboardScope);
   el.querySelectorAll('.scope-option').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.scope === gameState.scoreboardScope);
     btn.onclick = () => {
-      if (gameState.scoreboardScope === btn.dataset.scope) return;
+      const lobby = btn.dataset.scope === 'lobby' ? watchedLobby() : '';
+      if (gameState.scoreboardScope === btn.dataset.scope && gameState.scoreboardLobby === lobby) return;
       gameState.scoreboardScope = btn.dataset.scope;
+      gameState.scoreboardLobby = lobby;
+      if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
       updateDom();
     };
   });
@@ -302,18 +316,38 @@ function updateScoreboardScope() {
 function updateChatTools() {
   const tools = document.getElementById('chat-tools');
   if (!tools) return;
-  tools.hidden = gameState.boards.length <= 1;
+  tools.hidden = gameState.boards.length <= 1 && !(gameState.lobbies && gameState.lobbies.length > 1);
   if (tools.hidden) return;
   const scope = document.getElementById('chat-scope');
   if (!scope) return;
+  renderScopeOptions(scope, gameState.chatScope);
   scope.querySelectorAll('.scope-option').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.scope === gameState.chatScope);
     btn.onclick = () => {
-      if (gameState.chatScope === btn.dataset.scope) return;
+      const lobby = btn.dataset.scope === 'lobby' ? watchedLobby() : '';
+      if (gameState.chatScope === btn.dataset.scope && gameState.chatLobby === lobby) return;
       gameState.chatScope = btn.dataset.scope;
+      gameState.chatLobby = lobby;
+      if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
       updateDom({ scoreboard: false });
     };
   });
+}
+
+function renderScopeOptions(root, selectedScope) {
+  const lobbySignature = gameState.lobbies && gameState.lobbies.length > 1 ? 'lobby' : '';
+  if (root.dataset.scopeLobbies === lobbySignature) return;
+  const options = [
+    { scope: 'board', label: 'board' },
+    { scope: 'global', label: 'global' },
+  ];
+  if (gameState.lobbies && gameState.lobbies.length > 1) options.push({ scope: 'lobby', label: 'lobby' });
+  root.dataset.scopeLobbies = lobbySignature;
+  root.innerHTML = '(' + options.map((option, index) => {
+    const active = option.scope === selectedScope;
+    const separator = index ? ' <span>/</span> ' : '';
+    return separator + '<button class="scope-option' + (active ? ' active' : '') + '" data-scope="' + option.scope + '">' + esc(option.label) + '</button>';
+  }).join('') + ')';
 }
 
 // One tmux-style tab per running board; the subscribed one carries the `*`.
@@ -323,8 +357,9 @@ function updateTabs() {
   const tabsEl = document.getElementById('tabs');
   if (!tabsEl) return;
   const current = gameState.game?.id;
-  tabsEl.innerHTML = gameState.boards.length
-    ? gameState.boards.map((b, i) => {
+  const boards = orderedBoards();
+  tabsEl.innerHTML = boards.length
+    ? boards.map((b, i) => {
         const active = b.id === current;
         const label = b.label || ('board-' + (i + 1));
         return `<span class="tab${active ? ' active' : ''}" data-id="${esc(b.id)}">${i + 1}:${esc(label)}${active ? '*' : ''}</span>`;

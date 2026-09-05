@@ -24,12 +24,13 @@ type initMsg struct {
 	Type              string            `json:"type"` // "init"
 	ServerInfo        []ServerInfo      `json:"serverInfo"`
 	ViewInfo          []ServerInfo      `json:"viewInfo"`
-	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
-	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
-	ChartData         []map[string]any  `json:"chartData"`
+	Scoreboard        []ScoreboardEntry `json:"scoreboard,omitempty"`
+	ScoreboardHasMore bool              `json:"scoreboardHasMore,omitempty"`
+	ChartData         []map[string]any  `json:"chartData,omitempty"`
 	LastWinners       []string          `json:"lastWinners"`
 	Boards            []boardMsg        `json:"boards"`
 	Lobbies           []string          `json:"lobbies"`
+	Chat              []chatMsg         `json:"chat"`
 	GlobalPlayers     int               `json:"globalPlayers"`
 	GlobalAlive       int               `json:"globalAlive"`
 	Game              *gameMsg          `json:"game,omitempty"` // snapshot of the auto-subscribed board
@@ -88,20 +89,26 @@ type tickMsg struct {
 type endMsg struct {
 	Type              string            `json:"type"` // "end"
 	GameID            string            `json:"gameId"`
-	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
-	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
-	ChartData         []map[string]any  `json:"chartData"`
+	Scoreboard        []ScoreboardEntry `json:"scoreboard,omitempty"`
+	ScoreboardHasMore bool              `json:"scoreboardHasMore,omitempty"`
+	ChartData         []map[string]any  `json:"chartData,omitempty"`
 	LastWinners       []string          `json:"lastWinners"`
+	Lobby             string            `json:"lobby,omitempty"`
+	ScoreboardScope   string            `json:"scoreboardScope"`
 }
 
 type scoreboardMsg struct {
-	Type    string            `json:"type"` // "scoreboard"
-	Period  string            `json:"period"`
-	Sort    string            `json:"sort"`
-	Search  string            `json:"search"`
-	Offset  int               `json:"offset"`
-	Entries []ScoreboardEntry `json:"entries"`
-	HasMore bool              `json:"hasMore"`
+	Type      string            `json:"type"` // "scoreboard"
+	Period    string            `json:"period"`
+	Sort      string            `json:"sort"`
+	Search    string            `json:"search"`
+	Lobby     string            `json:"lobby,omitempty"`
+	Offset    int               `json:"offset"`
+	Entries   []ScoreboardEntry `json:"entries"`
+	HasMore   bool              `json:"hasMore"`
+	Players   int               `json:"players"`
+	Alive     int               `json:"alive"`
+	ChartData []map[string]any  `json:"chartData,omitempty"`
 	// ComputedAt is the unix-ms time the shown data was computed — for cached
 	// period boards the snapshot time, for the live online board ~now. The
 	// viewer renders it as the board's "as of" timestamp.
@@ -112,8 +119,21 @@ type chatMsg struct {
 	Type       string `json:"type"` // "chat"
 	GameID     string `json:"gameId,omitempty"`
 	BoardIndex int    `json:"boardIndex,omitempty"`
+	Lobby      string `json:"lobby,omitempty"`
 	Username   string `json:"username"`
 	Message    string `json:"message"`
 	Time       int64  `json:"time"`
 	System     bool   `json:"system,omitempty"`
+}
+
+type chatSnapshotMsg struct {
+	Type     string    `json:"type"` // "chat_snapshot"
+	Messages []chatMsg `json:"messages"`
+}
+
+type viewerSubscription struct {
+	ScoreboardScope string `json:"scoreboardScope"` // board, lobby, global
+	ScoreboardLobby string `json:"scoreboardLobby,omitempty"`
+	ChatScope       string `json:"chatScope"` // board, lobby, global
+	ChatLobby       string `json:"chatLobby,omitempty"`
 }

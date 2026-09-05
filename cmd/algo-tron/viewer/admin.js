@@ -114,7 +114,11 @@ function createAdminLobby(event) {
         renderAdminStatus(false);
         throw new Error('admin session expired');
       }
-      if (!response.ok) throw new Error('could not create lobby');
+      if (!response.ok) {
+        return response.text().then((message) => {
+          throw new Error(message.trim() || 'could not create lobby');
+        });
+      }
       return response.json();
     })
     .then(() => {
@@ -204,7 +208,7 @@ function openAdminLogin() {
   adminLoginAttempt = '';
   adminLoginBusy = false;
   input.value = '';
-  status.textContent = 'enter 64 characters';
+  status.textContent = '';
   status.classList.remove('error');
   modal.hidden = false;
   input.focus();

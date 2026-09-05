@@ -97,7 +97,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
 
 ## Message types
 
-`init` is the connect snapshot; `boards` is the board list for the tab bar; `game` / `tick` / `end` are gameplay messages; `misc` is a lifecycle event tagged by `content`.
+`init` is the connect snapshot; `boards` is the board list for the tab bar; `game` / `tick` / `end` are gameplay messages; `scoreboard` and `chat_snapshot` carry subscription data; `misc` is a lifecycle event tagged by `content`.
 
 ### `init` — sent once, on connect
 
@@ -111,6 +111,7 @@ Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-onl
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
   "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}],
+  "chat":        [{"type":"chat","gameId":"…","lobby":"workshop","boardIndex":1,"username":"alice","message":"hello","time":1710000000000}],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ], "boardScoreboard": [ … ], "boardChartData": [ … ] }
 }
 ```
@@ -174,7 +175,28 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
 }
 ```
 
-Broadcast to **all** viewers (the scoreboard/chart are global). A `boards` message without the ended id follows immediately; a viewer watching that board keeps its last frame until its re-`watch` lands.
+Broadcast to all viewers. The `scoreboard` and `chartData` fields are included only for viewers subscribed to the matching global or lobby scoreboard; board-scoped viewers receive the lifecycle event without unrelated scoreboard data. A `boards` message without the ended id follows immediately; a viewer watching that board keeps its last frame until its re-`watch` lands.
+
+### `subscribe` — change viewer data scopes
+
+```json
+{
+  "subscribe": {
+    "scoreboardScope": "lobby",
+    "scoreboardLobby": "workshop",
+    "chatScope": "lobby",
+    "chatLobby": "workshop"
+  }
+}
+```
+
+Each scope is `board`, `lobby`, or `global`. Board scope follows the current
+`watch` subscription. Lobby scope follows the lobby of the current `watch`
+subscription, while global scope includes all lobbies. `scoreboardLobby` and
+`chatLobby` identify that current lobby on the wire; the viewer updates them
+when the watched board changes. A successful subscription change sends a fresh
+`scoreboard` snapshot when applicable and a `chat_snapshot` containing the
+bounded history for the selected chat scope.
 
 ### `misc` — lifecycle event
 
@@ -190,11 +212,11 @@ Each viewer has a 16-frame send buffer (`viewSinkBuf`). If `sendToSinkLocked` fi
 
 The read loop doubles as the `watch` handler — any frame that isn't a valid `{"watch": id}` JSON object is ignored, and any read error tears the viewer down.
 
-`scoreboard` messages answer lazy leaderboard requests: `{type:"scoreboard", period, sort, search, offset, entries, hasMore, computedAt}`. The default sidebar uses `period=online&sort=ts`; the daily/monthly/halfyear pages are backed by `game_participants` rows. The `all`/`daily`/`monthly`/`halfyear` boards are expensive and identical for every viewer, so the server caches one shared snapshot per period and recomputes it on a soft/hard TTL (`scoreboard_config.go`); sort/search/paging are applied per request on the cached snapshot, so they never trigger a recompute. `online` is never cached — it's the live sidebar, recomputed on every game end. `computedAt` (unix ms) is when the shown data was built; the viewer prints it under the modal table as "as of …".
+`scoreboard` messages answer lazy leaderboard requests or subscription refreshes: `{type:"scoreboard", period, sort, search, lobby, offset, entries, hasMore, players, alive, chartData, computedAt}`. The default sidebar uses `period=online&sort=ts`; the daily/monthly/halfyear pages are backed by `game_participants` rows. The `all`/`daily`/`monthly`/`halfyear` boards are expensive and identical for every viewer, so the server caches one shared snapshot per period and recomputes it on a soft/hard TTL (`scoreboard_config.go`); sort/search/paging and lobby filtering are applied per request on the cached snapshot, so they never trigger a recompute. `online` is never cached — it's the live sidebar, recomputed on every game end. `computedAt` (unix ms) is when the shown data was built; the viewer prints it under the modal table as "as of …".
 
 Leaderboards only contain accounts with a password (`pw_hash != ''`). Internal filler bots have an empty hash so the same filter covers them. `init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages.
 
-`chat` messages are viewer-only chat/system events: `{type:"chat", gameId, boardIndex, username, message, time, system}`. The old per-tick `chats` map still drives board chat bubbles.
+`chat` messages are viewer-only chat/system events: `{type:"chat", gameId, lobby, boardIndex, username, message, time, system}`. The server sends them only to viewers whose chat subscription matches. `chat_snapshot` messages use `{type:"chat_snapshot", messages:[…]}`. The old per-tick `chats` map still drives board chat bubbles.
 
 Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is a validated GitHub repository link. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. Legacy database rows may still produce `oldOwner` entries until the 14-month retention cleanup removes them.
 

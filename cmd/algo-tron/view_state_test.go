@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -62,6 +63,28 @@ func TestBoardListOmitsDeadPlayerNames(t *testing.T) {
 
 	if got := boards[0].Names; len(got) != 1 || got[0] != "bob" {
 		t.Fatalf("board names = %+v, want [bob]", got)
+	}
+}
+
+func TestNamedBoardLabelsUseActiveLobbyOrdinal(t *testing.T) {
+	s := testServer(t)
+	bigOne := makeGame(s, []*Player{{Username: "big-one"}})
+	bigOne.lobby = "big"
+	bigTwo := makeGame(s, []*Player{{Username: "big-two"}})
+	bigTwo.lobby = "big"
+	mrmcd := makeGame(s, []*Player{{Username: "mrmcd-one"}})
+	mrmcd.lobby = "mrmcd"
+	s.games = []*Game{bigOne, bigTwo, mrmcd}
+
+	boards := s.boardListLocked()
+	if got := []string{boards[0].Label, boards[1].Label, boards[2].Label}; !reflect.DeepEqual(got, []string{"big-1", "big-2", "mrmcd-1"}) {
+		t.Fatalf("active board labels = %v", got)
+	}
+
+	s.games = []*Game{bigTwo, mrmcd}
+	boards = s.boardListLocked()
+	if got := []string{boards[0].Label, boards[1].Label}; !reflect.DeepEqual(got, []string{"big-1", "mrmcd-1"}) {
+		t.Fatalf("renumbered board labels = %v", got)
 	}
 }
 

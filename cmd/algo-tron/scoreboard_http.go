@@ -22,6 +22,7 @@ func (s *Server) scoreboardHTTP(w http.ResponseWriter, r *http.Request) {
 		Period: values.Get("period"),
 		Sort:   values.Get("sort"),
 		Search: values.Get("search"),
+		Lobby:  values.Get("lobby"),
 	}
 	if q.Period == "" {
 		q.Period = "online"
@@ -47,6 +48,10 @@ func (s *Server) scoreboardHTTP(w http.ResponseWriter, r *http.Request) {
 		scoreboardHTTPError(w, "invalid sort")
 		return
 	}
+	if q.Lobby != "" && validateLobbyName(q.Lobby) != "" {
+		scoreboardHTTPError(w, "invalid lobby")
+		return
+	}
 
 	var entries []ScoreboardEntry
 	var hasMore bool
@@ -60,7 +65,7 @@ func (s *Server) scoreboardHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := scoreboardMsg{
-		Type: "scoreboard", Period: q.Period, Sort: q.Sort, Search: q.Search,
+		Type: "scoreboard", Period: q.Period, Sort: q.Sort, Search: q.Search, Lobby: q.Lobby,
 		Offset: q.Offset, Entries: entries, HasMore: hasMore,
 		ComputedAt: computedAt.UnixMilli(),
 	}
