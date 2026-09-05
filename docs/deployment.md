@@ -153,6 +153,9 @@ The script defaults to `tron.erik.gdn`. On an already-provisioned host it
 automatically reuses the root-only Cloudflare credentials at
 `/root/.secrets/cloudflare.ini`; pass `--domain` or `--cloudflare-token` only
 when targeting a different domain or replacing the token.
+TCP port `4000` and HTTPS port `443` are also used by default, without prompts.
+Use `--interactive` when you want the old prompt-driven setup, or pass the
+individual flags directly.
 
 For a routine manual binary update on an already-provisioned host, use
 deploy-only mode. It leaves nginx, certificates, firewall rules, and host
