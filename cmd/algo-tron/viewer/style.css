@@ -218,6 +218,13 @@ h2 {
   font-weight: 400;
 }
 
+.deployed-commit {
+  margin-top: 16px;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-align: right;
+}
+
 /* — Scoreboard ——————————————————————————————————————————————————————— */
 
 .scoreboard {

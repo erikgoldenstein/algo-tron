@@ -22,6 +22,7 @@ package main
 
 type initMsg struct {
 	Type              string            `json:"type"` // "init"
+	BuildCommit       string            `json:"buildCommit"`
 	ServerInfo        []ServerInfo      `json:"serverInfo"`
 	ViewInfo          []ServerInfo      `json:"viewInfo"`
 	Scoreboard        []ScoreboardEntry `json:"scoreboard,omitempty"`

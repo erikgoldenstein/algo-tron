@@ -8,7 +8,7 @@
 // (sending {"watch": id}); the server answers with a "game" snapshot.
 //
 // Wire protocol — see view.go for the canonical definition.
-//   {type:"init",   serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, lobbies, chat, game?}
+//   {type:"init",   buildCommit, serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, lobbies, chat, game?}
 //   {type:"boards", boards:[{id,tick,players,alive,names}...], lobbies:[...]} — board/lobby state
 //   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
@@ -27,6 +27,7 @@ const initialLobbyPreference = screenMode
 
 const gameState = {
   screenMode,
+  buildCommit: 'unknown',
   serverInfo: [],
   viewInfo: [],
   scoreboard: [],
@@ -90,6 +91,7 @@ function applyMessage(msg) {
 }
 
 function applyInit(msg) {
+  gameState.buildCommit = typeof msg.buildCommit === 'string' && msg.buildCommit ? msg.buildCommit : 'unknown';
   gameState.serverInfo  = msg.serverInfo  || [];
   gameState.viewInfo    = msg.viewInfo    || [];
   gameState.scoreboard  = msg.scoreboard  || [];

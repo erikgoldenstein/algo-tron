@@ -4,6 +4,7 @@ BINARY ?= ./bin/algo-tron
 SERVER_ARGS ?=
 BOT_ARGS ?=
 PYTHON ?= python3
+COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || printf dev)
 
 .PHONY: help build run run-server dev run-bot stop-bots dry-run test check clean
 
@@ -23,7 +24,7 @@ help:
 
 build:
 	@mkdir -p $(dir $(BINARY))
-	go build -o $(BINARY) ./cmd/algo-tron
+	go build -ldflags "-X main.buildCommit=$(COMMIT)" -o $(BINARY) ./cmd/algo-tron
 
 run: build
 	$(BINARY) $(SERVER_ARGS)

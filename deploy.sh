@@ -306,7 +306,7 @@ build() {
   install -d -o "$APP_USER" -g "$APP_USER" "$RELEASE_DIR"
   local staged
   staged="$(mktemp "$APP_HOME/.algo-tron.new.XXXXXX")"
-  if ! ( cd "$REPO_DIR" && go build -o "$staged" ./cmd/algo-tron ); then
+  if ! ( cd "$REPO_DIR" && go build -ldflags "-X main.buildCommit=$BUILD_COMMIT" -o "$staged" ./cmd/algo-tron ); then
     rm -f "$staged"
     err "algo-tron build failed; the running binary was left untouched"
   fi

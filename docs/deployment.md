@@ -5,8 +5,12 @@ Notes for running your own algo-tron server. If you only want to write a bot aga
 ## Build
 
 ```sh
-go build -o algo-tron ./cmd/algo-tron
+make build
 ```
+
+`make build` embeds the current Git commit in the binary. The settings modal
+shows its short form; hover it to see the full value. A plain `go build` keeps
+the local `dev` marker.
 
 From the repository root, the Makefile provides the common local commands:
 

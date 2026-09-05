@@ -111,6 +111,7 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 		chromedp.WaitVisible(`#help-btn`),
 		chromedp.Click(`#help-btn`),
 		chromedp.WaitVisible(`#help-modal .modal-window`),
+		chromedp.WaitVisible(`#deployed-commit`),
 		chromedp.Evaluate(`document.getElementById('help-modal').hidden`, &hidden),
 	); err != nil {
 		t.Fatal(err)

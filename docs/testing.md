@@ -140,6 +140,6 @@ Run before tagging a release, merging an infra change, or deploying to productio
 ```sh
 go test -bench=. -benchmem -run=^$ ./cmd/algo-tron
 go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
-go build -o /tmp/algo-tron ./cmd/algo-tron   # matches the deployment build
+make build BINARY=/tmp/algo-tron            # embeds the local commit
 nix build .#algo-tron                        # matches the flake / NixOS module
 ```
