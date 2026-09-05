@@ -16,7 +16,10 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 	}
 	c.SetReadLimit(512)
 
-	sink := &viewerSink{ch: make(chan []byte, viewSinkBuf), done: make(chan struct{})}
+	sink := &viewerSink{
+		ch: make(chan []byte, viewSinkBuf), done: make(chan struct{}),
+		scoreboardScope: "board", chatScope: "board",
+	}
 	go s.viewWriter(c, sink)
 
 	// Register the sink and enqueue the init message under one lock so no
@@ -31,7 +34,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 		// contains that tick's state and no delta is missed.
 		sink.game.viewSubs.Add(1)
 	}
-	init, _ := json.Marshal(s.buildInitLocked(sink.game))
+	init, _ := json.Marshal(s.buildInitLocked(sink.game, sink))
 	s.viewClients[c] = sink
 	sink.ch <- init // fresh sink, buffer can't be full
 	s.mu.Unlock()
@@ -53,8 +56,9 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 		}
 		metricViewerMessagesReceived.Inc()
 		var req struct {
-			Watch      string           `json:"watch"`
-			Scoreboard *scoreboardQuery `json:"scoreboard"`
+			Watch      string              `json:"watch"`
+			Scoreboard *scoreboardQuery    `json:"scoreboard"`
+			Subscribe  *viewerSubscription `json:"subscribe"`
 		}
 		if json.Unmarshal(data, &req) != nil {
 			continue
@@ -67,6 +71,9 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			if q.Sort != "elo" && q.Sort != "wr" {
 				q.Sort = "ts"
 			}
+			if q.Lobby != "" && validateLobbyName(q.Lobby) != "" {
+				q.Lobby = ""
+			}
 			var entries []ScoreboardEntry
 			var hasMore bool
 			computedAt := time.Now()
@@ -77,11 +84,20 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 			} else {
 				entries, hasMore, computedAt = s.scoreboardCachedPage(q)
 			}
-			m := scoreboardMsg{Type: "scoreboard", Period: q.Period, Sort: q.Sort, Search: q.Search, Offset: q.Offset, Entries: entries, HasMore: hasMore, ComputedAt: computedAt.UnixMilli()}
+			m := scoreboardMsg{Type: "scoreboard", Period: q.Period, Sort: q.Sort, Search: q.Search, Lobby: q.Lobby, Offset: q.Offset, Entries: entries, HasMore: hasMore, ComputedAt: computedAt.UnixMilli()}
 			data, _ := json.Marshal(m)
 			s.mu.Lock()
 			if s.viewClients[c] == sink {
 				s.sendToSinkLocked(c, sink, data)
+			}
+			s.mu.Unlock()
+			continue
+		}
+		if req.Subscribe != nil {
+			s.mu.Lock()
+			if s.viewClients[c] == sink {
+				s.updateViewerSubscriptionLocked(sink, *req.Subscribe)
+				s.sendViewerSubscriptionLocked(c, sink)
 			}
 			s.mu.Unlock()
 			continue
@@ -106,11 +122,69 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 				m.Type = "game"
 				snapshot, _ := json.Marshal(m)
 				s.sendToSinkLocked(c, sink, snapshot)
+				// A board-scoped chat subscription follows the watched board.
+				// Re-send its bounded history after the game snapshot so the
+				// client does not need to retain unrelated board messages.
+				if sink.chatScope == "board" {
+					chatSnapshot, _ := json.Marshal(chatSnapshotMsg{Type: "chat_snapshot", Messages: s.chatHistoryForLocked(sink)})
+					s.sendToSinkLocked(c, sink, chatSnapshot)
+				}
 				break
 			}
 		}
 		s.mu.Unlock()
 	}
+}
+
+func (s *Server) updateViewerSubscriptionLocked(sink *viewerSink, sub viewerSubscription) {
+	if sub.ScoreboardScope != "global" && sub.ScoreboardScope != "lobby" && sub.ScoreboardScope != "board" {
+		sub.ScoreboardScope = "board"
+	}
+	if sub.ChatScope != "global" && sub.ChatScope != "lobby" && sub.ChatScope != "board" {
+		sub.ChatScope = "board"
+	}
+	if sub.ScoreboardScope == "lobby" && (validateLobbyName(sub.ScoreboardLobby) != "" || s.lobbyLocked(sub.ScoreboardLobby) == nil) {
+		sub.ScoreboardScope = "global"
+		sub.ScoreboardLobby = ""
+	}
+	if sub.ChatScope == "lobby" && (validateLobbyName(sub.ChatLobby) != "" || s.lobbyLocked(sub.ChatLobby) == nil) {
+		sub.ChatScope = "global"
+		sub.ChatLobby = ""
+	}
+	sink.scoreboardScope = sub.ScoreboardScope
+	sink.scoreboardLobby = sub.ScoreboardLobby
+	sink.chatScope = sub.ChatScope
+	sink.chatLobby = sub.ChatLobby
+}
+
+func (s *Server) sendViewerSubscriptionLocked(c *websocket.Conn, sink *viewerSink) {
+	if sink.scoreboardScope != "board" {
+		q := scoreboardQuery{Period: "online", Sort: "ts", Limit: defaultScoreboardLimit}
+		var entries []ScoreboardEntry
+		var hasMore bool
+		players, alive := s.globalViewerStatsLocked()
+		if sink.scoreboardScope == "lobby" {
+			q.Lobby = sink.scoreboardLobby
+			entries, hasMore = s.scoreboardPageLocked(q)
+			players, alive = s.viewerLobbyStatsLocked(q.Lobby)
+		} else {
+			entries = s.viewState.Scoreboard
+			hasMore = s.viewState.ScoreboardHasMore
+		}
+		chartData := s.viewState.ChartData
+		if sink.scoreboardScope == "lobby" {
+			chartData = buildChartDataLocked(s.players, entries)
+		}
+		data, _ := json.Marshal(scoreboardMsg{
+			Type: "scoreboard", Period: q.Period, Sort: q.Sort, Lobby: q.Lobby,
+			Entries: entries, HasMore: hasMore, Players: players, Alive: alive,
+			ChartData:  chartData,
+			ComputedAt: time.Now().UnixMilli(),
+		})
+		s.sendToSinkLocked(c, sink, data)
+	}
+	data, _ := json.Marshal(chatSnapshotMsg{Type: "chat_snapshot", Messages: s.chatHistoryForLocked(sink)})
+	s.sendToSinkLocked(c, sink, data)
 }
 
 // viewWriter drains sink.ch and writes frames to c. Deltas can't be dropped

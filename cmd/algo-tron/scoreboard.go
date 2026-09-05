@@ -15,6 +15,7 @@ type scoreboardQuery struct {
 	Period string `json:"period"`
 	Sort   string `json:"sort"`
 	Search string `json:"search"`
+	Lobby  string `json:"lobby"`
 	Offset int    `json:"offset"`
 	Limit  int    `json:"limit"`
 }
@@ -47,7 +48,7 @@ func (s *Server) updateScoreboardLocked() {
 			players = append(players, p)
 		}
 	}
-	entries := buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
+	entries := s.buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
 	s.annotateVersionTagsLocked(entries)
 	s.viewState.Scoreboard = entries
 	s.viewState.ScoreboardHasMore = len(players) > len(entries)
@@ -56,7 +57,7 @@ func (s *Server) updateScoreboardLocked() {
 
 // boardEntriesFromPlayers builds one entry per player (unsorted, unpaged).
 // Caller holds Server.mu because winsLosses trims ScoreHistory.
-func boardEntriesFromPlayers(players []*Player) []ScoreboardEntry {
+func (s *Server) boardEntriesFromPlayers(players []*Player) []ScoreboardEntry {
 	entries := make([]ScoreboardEntry, 0, len(players))
 	for _, p := range players {
 		w, l := p.winsLosses()
@@ -65,13 +66,13 @@ func boardEntriesFromPlayers(players []*Player) []ScoreboardEntry {
 		if games > 0 {
 			wr = float64(w) / float64(games)
 		}
-		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, Version: versionOf(p), Bio: cloneBio(p.Bio), FirstSeen: firstSeenMillis(p), WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
+		entries = append(entries, ScoreboardEntry{UUID: ensureUUID(p), Username: p.Username, Version: versionOf(p), Lobby: s.lobbyNameLocked(p), Bio: cloneBio(p.Bio), FirstSeen: firstSeenMillis(p), WinRatio: wr, Wins: w, Losses: l, Elo: p.Elo, TsMu: p.TsMu, TsSigma: p.TsSigma, Online: p.conn != nil})
 	}
 	return entries
 }
 
-func buildScoreboardEntriesLocked(players []*Player, sortBy string, offset, limit int) []ScoreboardEntry {
-	entries := boardEntriesFromPlayers(players)
+func (s *Server) buildScoreboardEntriesLocked(players []*Player, sortBy string, offset, limit int) []ScoreboardEntry {
+	entries := s.boardEntriesFromPlayers(players)
 	sortEntries(entries, sortBy)
 	if offset < 0 {
 		offset = 0
@@ -134,12 +135,15 @@ func (s *Server) scoreboardPageLocked(q scoreboardQuery) ([]ScoreboardEntry, boo
 		if p.conn == nil || !leaderboardEligible(p) {
 			continue
 		}
+		if q.Lobby != "" && s.lobbyNameLocked(p) != q.Lobby {
+			continue
+		}
 		if search != "" && !strings.Contains(strings.ToLower(p.Username), search) {
 			continue
 		}
 		players = append(players, p)
 	}
-	entries := buildScoreboardEntriesLocked(players, q.Sort, q.Offset, q.Limit+1)
+	entries := s.buildScoreboardEntriesLocked(players, q.Sort, q.Offset, q.Limit+1)
 	s.annotateVersionTagsLocked(entries)
 	hasMore := len(entries) > q.Limit
 	if hasMore {

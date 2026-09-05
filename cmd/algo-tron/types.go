@@ -254,6 +254,7 @@ type ScoreboardEntry struct {
 	UUID        string            `json:"-"`
 	Username    string            `json:"username"`
 	Version     string            `json:"version,omitempty"`
+	Lobby       string            `json:"lobby,omitempty"`
 	ShowVersion bool              `json:"showVersion,omitempty"`
 	Bio         map[string]string `json:"bio,omitempty"`
 	FirstSeen   int64             `json:"firstSeen,omitempty"`

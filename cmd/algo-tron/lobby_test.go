@@ -68,9 +68,16 @@ func TestAdminLobbyCRUD(t *testing.T) {
 	if defaultDelete.Code != http.StatusNotFound {
 		t.Fatalf("default lobby delete status = %d, want 404", defaultDelete.Code)
 	}
+	unlimited := adminRequest(t, s, "POST", "/api/admin/lobbies", `{"name":"unlimited","maxPlayersPerBoard":-1}`)
+	if unlimited.Code != http.StatusCreated || s.lobbies["unlimited"].MaxPlayersPerBoard != -1 {
+		t.Fatalf("unlimited lobby create status = %d, lobby = %+v", unlimited.Code, s.lobbies["unlimited"])
+	}
 }
 
 func TestLobbyMaxRequiresFourOrUnlimited(t *testing.T) {
+	if got := validateLobbyMax(2); got != "max players per board has to be at least 4 or -1 for unlimited" {
+		t.Fatalf("validation message = %q", got)
+	}
 	for _, max := range []int{0, 1, 2, 3, -2} {
 		if validateLobbyMax(max) == "" {
 			t.Errorf("validateLobbyMax(%d) accepted", max)
@@ -147,7 +154,7 @@ func TestUnlimitedLobbyDoesNotStartConcurrentBoard(t *testing.T) {
 }
 
 func TestDefaultBoardLabelRemainsCompatible(t *testing.T) {
-	g := &Game{lobby: defaultLobbyName, boardNo: 9}
+	g := &Game{lobby: defaultLobbyName}
 	if got := boardLabel(g, 2); got != "board-2" {
 		t.Fatalf("default board label = %q, want board-2", got)
 	}

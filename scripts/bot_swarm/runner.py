@@ -5,6 +5,7 @@ import gc
 import os
 from pathlib import Path
 import random
+import re
 import signal
 import socket
 import threading
@@ -18,6 +19,7 @@ from .strategy import choose_direction
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_PID_FILE = SCRIPT_DIR / ".tron-swarm.pid"
 DEFAULT_SRC = "https://github.com/erikgoldenstein/tron-bot"
+LOBBY_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--count", type=int, default=64)
     parser.add_argument("--prefix", default="swarm")
     parser.add_argument("--password", default=os.environ.get("TRON_PASSWORD", "local-swarm"))
+    parser.add_argument("--lobby", default=os.environ.get("TRON_LOBBY", ""), help="named lobby to join")
+    parser.add_argument(
+        "--lobby-password",
+        default=os.environ.get("TRON_LOBBY_PASSWORD", ""),
+        help="password for the named lobby, if required",
+    )
     parser.add_argument("--src", default=DEFAULT_SRC)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--stagger-ms", type=float, default=20.0)
@@ -166,7 +174,12 @@ class Swarm:
         if rng.random() < params.join_failure_chance:
             send_packet(sock, "join", params.username, params.password, "bad")
             return
-        send_packet(sock, "join", params.username, params.password, "version swarm", params=params, rng=rng)
+        join_options = ["version swarm"]
+        if self.args.lobby:
+            join_options.append(f"lobby {self.args.lobby}")
+            if self.args.lobby_password:
+                join_options.append(f"lobby-pw {self.args.lobby_password}")
+        send_packet(sock, "join", params.username, params.password, *join_options, params=params, rng=rng)
         if rng.random() < params.unknown_packet_chance:
             send_packet(sock, "unknown_test_packet", "hello", params=params, rng=rng)
         if rng.random() < params.invalid_bio_chance:
@@ -276,6 +289,7 @@ class Swarm:
             thread.start()
         self.log(
             f"started {len(threads)} Tron bots against {self.args.host}:{self.args.port}; "
+            f"lobby={self.args.lobby or 'default'}; "
             "press Ctrl-C or run './scripts/bot_swarm.py --stop'"
         )
         try:
@@ -298,6 +312,12 @@ def main() -> int:
         raise SystemExit("--prefix would produce usernames longer than 32 characters")
     if not args.password:
         raise SystemExit("--password must be non-empty")
+    if args.lobby and (len(args.lobby) > 16 or not LOBBY_NAME_RE.fullmatch(args.lobby)):
+        raise SystemExit("--lobby must be 1-16 characters matching [a-zA-Z0-9._-]+")
+    if args.lobby_password and not args.lobby:
+        raise SystemExit("--lobby-password requires --lobby")
+    if len(args.lobby_password) > 32 or any(char in " \t\r\n|" or ord(char) < 32 or ord(char) > 126 for char in args.lobby_password):
+        raise SystemExit("--lobby-password must be at most 32 printable characters without spaces or pipes")
     if not valid_source(args.src):
         raise SystemExit("--src must be an HTTPS GitHub repository URL no longer than 48 characters")
 

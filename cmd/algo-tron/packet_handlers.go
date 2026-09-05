@@ -142,6 +142,10 @@ func (s *Server) handleChat(p *Player, parts []string) {
 		p.chatExpiry = time.Now().Add(5 * time.Second)
 		p.lastChatAt = time.Now()
 		g.broadcastAliveLocked(formatPacket("message", st.id, msg))
-		s.broadcastChatLocked(chatMsg{GameID: g.id, BoardIndex: boardIndex, Username: p.Username, Message: msg, Time: time.Now().UnixMilli()})
+		lobby := g.lobby
+		if lobby == "" {
+			lobby = defaultLobbyName
+		}
+		s.broadcastChatLocked(chatMsg{GameID: g.id, BoardIndex: boardIndex, Lobby: lobby, Username: p.Username, Message: msg, Time: time.Now().UnixMilli()})
 	}
 }

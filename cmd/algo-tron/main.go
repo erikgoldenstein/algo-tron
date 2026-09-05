@@ -89,7 +89,6 @@ func run() error {
 		secret:        secret,
 		adminPassword: adminPassword,
 		lobbies:       lobbies,
-		lobbyBoardSeq: map[string]int{},
 		db:            db,
 		dbPath:        dbPath,
 		geo:           geo,

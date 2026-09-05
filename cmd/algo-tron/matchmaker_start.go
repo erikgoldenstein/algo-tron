@@ -29,11 +29,6 @@ func (s *Server) startBoardsForLobbyLocked(lobby string, players []*Player) {
 		band := players[i*n/k : (i+1)*n/k]
 		g := newGame(s, band)
 		g.lobby = lobby
-		if s.lobbyBoardSeq == nil {
-			s.lobbyBoardSeq = map[string]int{}
-		}
-		s.lobbyBoardSeq[lobby]++
-		g.boardNo = s.lobbyBoardSeq[lobby]
 		s.games = append(s.games, g)
 		g.startLocked()
 	}

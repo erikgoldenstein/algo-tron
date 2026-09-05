@@ -54,9 +54,23 @@ function requestScoreboard(q) {
   }
 }
 
+function requestViewerSubscription() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const lobby = watchedLobby();
+    if (gameState.scoreboardScope === 'lobby') gameState.scoreboardLobby = lobby;
+    if (gameState.chatScope === 'lobby') gameState.chatLobby = lobby;
+    ws.send(JSON.stringify({ subscribe: {
+      scoreboardScope: gameState.scoreboardScope,
+      scoreboardLobby: gameState.scoreboardLobby,
+      chatScope: gameState.chatScope,
+      chatLobby: gameState.chatLobby,
+    }}));
+  }
+}
+
 // stepBoard switches to the previous (-1) / next (+1) board, wrapping.
 function stepBoard(delta) {
-  const ids = gameState.boards.map((b) => b.id);
+  const ids = orderedBoards().map((b) => b.id);
   if (!ids.length) return;
   const i = ids.indexOf(gameState.game?.id);
   watchBoard(i < 0 ? ids[0] : ids[(i + delta + ids.length) % ids.length]);
@@ -150,6 +164,10 @@ function connect() {
       ? gameState.boards.find((board) => board.id === watchedID)?.lobby || ''
       : '';
     applyMessage(msg);
+    if (msg.type === 'init'
+        || (msg.type === 'game' && (gameState.scoreboardScope === 'lobby' || gameState.chatScope === 'lobby'))) {
+      requestViewerSubscription();
+    }
     const followedID = followedBoardID();
     const watchedBoardEnded = msg.type === 'boards'
       && watchedID
