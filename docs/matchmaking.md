@@ -32,6 +32,12 @@ create separate rating pools: ELO and TrueSkill updates remain global.
 Re-queue-on-death is what keeps waits short: a bot that dies in the first
 seconds of a 100-second game doesn't idle until that game ends.
 
+Deleting a named lobby is a soft close. Its queued players are moved to the
+default lobby, and new joins fall back there with `LOBBY_NOT_FOUND`. Boards
+already running in the deleted lobby stay alive and finish normally. Players
+released from those boards fall back to the default lobby when they re-enter
+the queue.
+
 When fewer than `minBoardSize` real bots are connected, `matchmakeLocked`
 first calls `ensureFillerBotsLocked` to pad the queue with the internal
 filler bots (`alice`/`bob`) so a near-empty server still produces a real

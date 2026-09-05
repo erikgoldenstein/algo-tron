@@ -3,7 +3,7 @@
 A single Go binary serves three surfaces from one process:
 
 1. **Bot TCP listener** (`-tcp`, default `:4000`) — line-based wire protocol, one bot per connection. See [bot-protocol.md](bot-protocol.md).
-2. **Viewer HTTP listener** (`-view`, default `:3000`) — serves the embedded viewer SPA and upgrades `/ws` to a WebSocket. See [viewer-protocol.md](viewer-protocol.md). With `-view-metrics-auth user:pass` set, this listener also exposes `/metrics` behind HTTP Basic auth.
+2. **Viewer HTTP listener** (`-view`, default `:3000`) — serves the embedded viewer SPA, `/play`, the read-only scoreboard/history APIs, admin APIs, and `/ws`. `/screen` selects the screen layout. With `-view-metrics-auth user:pass` set, this listener also exposes `/metrics` behind HTTP Basic auth. See [viewer-protocol.md](viewer-protocol.md).
 3. **Optional separate Prometheus listener** (`-metrics`, disabled by default) — `/metrics` only. Bind to localhost; unauthenticated. See [metrics.md](metrics.md).
 
 ## Goroutine layout
@@ -16,7 +16,7 @@ Started from `main()`:
 | `handleConn` × N     | One per bot connection (reader side). Reads moves/chats, throttles via goroutine-local token buckets. |
 | `botSink.run` × N    | One per bot connection (writer side). Drains the per-bot send queue with a write deadline; kicks the bot if the queue overflows. No other goroutine ever writes to a bot socket. |
 | `listenHTTP`         | HTTP server for the viewer SPA + `/ws` upgrade.                  |
-| `viewWS` reader × N  | One per viewer connection. Detects disconnect and handles `{"watch": id}` board-subscription switches. |
+| `viewWS` reader × N  | One per viewer connection. Handles `watch`, scoreboard-page, and data-subscription requests. |
 | `viewWriter` × N     | One per viewer. Drains the per-viewer send queue.                |
 | `matchmakerLoop`     | Polls every 1s; clears expired chats, then groups queued players onto new boards. See [matchmaking.md](matchmaking.md). |
 | `Game.run` × boards  | One per running board. Sleeps until an absolute deadline (`next += interval`), then runs the two tick phases; exits on game end. Re-anchors instead of bursting if it falls a full interval behind. Inter-tick scheduling jitter is observed into `tron_tick_interval_offset_ratio`. |
@@ -79,7 +79,7 @@ Every bot connection gets a `botSink`: a buffered channel (`botSinkBuf = 128` pa
 
 ## Viewer fanout
 
-Each viewer subscribes to one board (`viewerSink.gameID`); `broadcastTickLocked` sends a board's tick delta only to its subscribers, while lightweight global messages (`boards`, `end`) go to everyone via `broadcastViewLocked`. All sends go through `sendToSinkLocked`: if a sink's channel is full (`viewSinkBuf = 16`), the viewer is too slow — the server drops them, closes the connection, and increments `tron_viewers_kicked_total`. Each `viewWriter` drains its sink as fast as the socket allows. See [viewer-protocol.md](viewer-protocol.md).
+Each viewer subscribes to one board (`viewerSink.game`), one scoreboard scope, and one chat scope. `broadcastTickLocked` sends a board's tick delta only to viewers subscribed to it. Board-list, lifecycle, and shutdown messages go to every viewer; scoreboard and chat updates are filtered by each sink's subscription. All sends go through `sendToSinkLocked`: if a sink's channel is full (`viewSinkBuf = 16`), the viewer is too slow — the server closes the connection and increments `tron_viewers_kicked_total`. Each `viewWriter` drains its sink as fast as the socket allows. See [viewer-protocol.md](viewer-protocol.md).
 
 ## Viewer SPA layout
 

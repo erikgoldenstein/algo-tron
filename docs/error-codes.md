@@ -30,7 +30,7 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 | `ERROR_ALREADY_CONNECTED`    | New connection joins as an account that already has a live conn. The *old* conn gets this and is closed; the new one takes over. |
 | `ERROR_SERVER_RESTARTING`    | Server is shutting down for a restart or redeploy. The bot receives this after joining and the connection is then closed; clients should reconnect. *algo-tron-specific.* |
 | `LOBBY_NOT_FOUND`            | A post-join lobby selection failed because the lobby is missing or the password did not authorize it. The bot is placed in the default lobby; the same code is used for both cases to avoid revealing lobby existence. |
-| `ERROR_UNKNOWN_PACKET`       | First field of a post-join packet isn't `move` or `chat`.                                           |
+| `ERROR_UNKNOWN_PACKET`       | First field of a post-join packet isn't `move`, `chat`, or `bio`.                                   |
 | `ERROR_NO_MOVE`              | The game tick processed this player without a queued move. For the first two consecutive invalid operations, the server repeats the last valid direction if free, otherwise chooses the first free field in clockwise order (starting at `up` for a player with no previous valid move). |
 | `ERROR_INVALID_MOVE_LIMIT`   | The player reached the third consecutive invalid operation or exceeded the cumulative invalid-operation budget (`max(5, ceil(10% × current tick count))`). The connection is closed. |
 | `WARNING_UNKNOWN_MOVE`       | `move` packet missing direction or with a direction not in `up/right/down/left`.                    |

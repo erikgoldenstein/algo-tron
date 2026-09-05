@@ -46,13 +46,13 @@ this page documents how `algo-tron` implements it and the small divergences.
 
 The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` packet ends the game frame.
 
-Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)). The legacy default lobby holds at most 24 players per board; named lobbies can use their own limit. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
+Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)). The legacy default lobby holds at most 24 players per board; named lobbies accept a maximum of at least 4 players or `-1` for one unlimited board. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
 
 ## Server → bot packets
 
 | Packet           | Args                          | When                                                            |
 |------------------|-------------------------------|-----------------------------------------------------------------|
-| `motd`           | `text`                        | Sequence of packages (at least one), immediately after connect. |
+| `motd`           | `text`                        | One or more greeting packets, immediately after connect.         |
 | `error`          | `CODE`                        | See [error-codes.md](error-codes.md).                           |
 | `game`           | `width\|height\|your_id`      | Once per game, sent to each bot individually with its own ID.   |
 | `player`         | `id\|name`                    | Once per alive player at game start.                            |
@@ -90,7 +90,7 @@ bio|contact|dect:8323
 bio|src|https://github.com/erikgoldenstein/tron-bot
 ```
 
-`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 characters and must be an HTTPS GitHub repository URL. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are entirely additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
+`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 characters and must be an HTTPS GitHub repository URL. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
 
 ## Rate limits
 

@@ -7,7 +7,7 @@ only the type definitions.
 
 ## Board
 
-- Several boards can run in parallel; each holds 4–24 players. Who plays on which board, and when a board starts, is the matchmaker's call — see [matchmaking.md](matchmaking.md).
+- Several boards can run in parallel. The default lobby holds 4–24 players per board; a named lobby can set another maximum of at least 4 players or use `-1` for one unlimited board. Who plays on which board, and when a board starts, is the matchmaker's call — see [matchmaking.md](matchmaking.md).
 - Width and height are both `2 * players on the board` (so 48×48 at the 24-player cap).
 - Coordinates wrap (toroidal): moving off any edge re-enters the opposite edge.
 - Spawn for seat `i` (0-indexed after random shuffle) is `(2i, 2i)`. No two spawns collide.
