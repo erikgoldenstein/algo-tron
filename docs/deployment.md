@@ -146,8 +146,13 @@ script is useful when preparing a new VM or when CI is unavailable.
 It requires root and supports Debian/Ubuntu and Rocky/RHEL:
 
 ```sh
-sudo ./deploy.sh --domain tron.example.com --cloudflare-token CF_TOKEN
+sudo ./deploy.sh
 ```
+
+The script defaults to `tron.erik.gdn`. On an already-provisioned host it
+automatically reuses the root-only Cloudflare credentials at
+`/root/.secrets/cloudflare.ini`; pass `--domain` or `--cloudflare-token` only
+when targeting a different domain or replacing the token.
 
 For a routine manual binary update on an already-provisioned host, use
 deploy-only mode. It leaves nginx, certificates, firewall rules, and host
