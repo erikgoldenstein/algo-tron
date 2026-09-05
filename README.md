@@ -18,7 +18,7 @@ Full ruleset in [docs/game-mechanics.md](docs/game-mechanics.md).
 
 ## Writing a bot
 
-Bots talk a small line-based TCP protocol — no HTTP, no JSON, no SDK. Connect, send your name, read messages, send moves. See [docs/bot-protocol.md](docs/bot-protocol.md) for the wire format.
+Bots talk a small line-based TCP protocol. no HTTP, no JSON, no SDK. Connect, send your name, read messages, send moves. See [docs/bot-protocol.md](docs/bot-protocol.md) for the wire format.
 
 The fastest way to get started is to read or fork one of the [example bots](example_bots/) (Python). They cover a simple connection lifecycle and a couple of basic strategies.
 
