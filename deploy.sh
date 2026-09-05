@@ -16,9 +16,10 @@
 #   sudo ./deploy.sh --rollback
 #   curl -fsSL https://raw.githubusercontent.com/erikgoldenstein/algo-tron/main/deploy.sh | sudo bash -s -- --domain tron.example.com
 #
-# Flags (anything omitted is asked for interactively; the production domain and
-# saved Cloudflare token are reused by default):
+# Flags (defaults are used without prompting; pass --interactive to ask for
+# omitted values):
 #   --domain --cloudflare-token --acme-email --tcp-port --view-port --repo --ref
+#   --interactive
 #   --deploy-only --dry-run --allow-dirty --rollback --no-backup --backup-dir --backup-keep
 #   --no-firewall --no-auditd --no-fail2ban --no-upgrades --no-hardening
 #   --no-metrics --reset-metrics-creds
@@ -57,6 +58,9 @@ fi
 DOMAIN="${DOMAIN:-tron.erik.gdn}"
 CLOUDFLARE_TOKEN=""
 ACME_EMAIL="${ACME_EMAIL:-}"
+INTERACTIVE=0
+DOMAIN_SET=""
+CLOUDFLARE_TOKEN_SET=""
 DRY_RUN=0
 DEPLOY_ONLY=0
 ALLOW_DIRTY=0
@@ -131,13 +135,14 @@ prompt() {
 parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --domain)           [ $# -ge 2 ] || err "--domain needs a value"; DOMAIN="$2"; shift 2 ;;
-      --cloudflare-token) [ $# -ge 2 ] || err "--cloudflare-token needs a value"; CLOUDFLARE_TOKEN="$2"; shift 2 ;;
+      --domain)           [ $# -ge 2 ] || err "--domain needs a value"; DOMAIN="$2"; DOMAIN_SET=1; shift 2 ;;
+      --cloudflare-token) [ $# -ge 2 ] || err "--cloudflare-token needs a value"; CLOUDFLARE_TOKEN="$2"; CLOUDFLARE_TOKEN_SET=1; shift 2 ;;
       --acme-email)       [ $# -ge 2 ] || err "--acme-email needs a value"; ACME_EMAIL="$2"; shift 2 ;;
       --tcp-port)         [ $# -ge 2 ] || err "--tcp-port needs a value"; TCP_PORT="$2"; TCP_PORT_SET=1; shift 2 ;;
       --view-port)        [ $# -ge 2 ] || err "--view-port needs a value"; VIEW_PORT="$2"; VIEW_PORT_SET=1; shift 2 ;;
       --repo)             [ $# -ge 2 ] || err "--repo needs a value"; REPO_SLUG="$2"; shift 2 ;;
       --ref)              [ $# -ge 2 ] || err "--ref needs a value"; REPO_REF="$2"; REPO_REF_SET=1; shift 2 ;;
+      --interactive)      INTERACTIVE=1; shift ;;
       --dry-run)          DRY_RUN=1; shift ;;
       --deploy-only)      DEPLOY_ONLY=1; shift ;;
       --allow-dirty)      ALLOW_DIRTY=1; shift ;;
@@ -194,7 +199,10 @@ preflight() {
 }
 
 collect_input() {
-  [ -n "$DOMAIN" ]           || prompt DOMAIN "Domain (e.g. tron.example.com): "
+  if [ "$INTERACTIVE" = 1 ] && [ -z "$DOMAIN_SET" ]; then
+    prompt _in "Domain [$DOMAIN]: "
+    DOMAIN="${_in:-$DOMAIN}"
+  fi
   [ -n "$DOMAIN" ]           || err "domain is required"
   case "$DOMAIN" in
     *[!A-Za-z0-9.-]*|.*|*.|*-*-) err "domain must contain only hostname characters" ;;
@@ -206,17 +214,31 @@ collect_input() {
   fi
 
   # On redeploys, reuse the token saved on a previous run so it need not be
-  # re-entered (a flag still overrides it).
+  # re-entered. In interactive mode, an empty response keeps the saved token;
+  # a flag always takes precedence.
   if [ -z "$CLOUDFLARE_TOKEN" ] && [ -r "$CF_INI" ]; then
-    CLOUDFLARE_TOKEN="$(sed -n 's/^[[:space:]]*dns_cloudflare_api_token[[:space:]]*=[[:space:]]*//p' "$CF_INI")"
-    [ -n "$CLOUDFLARE_TOKEN" ] && log "Reusing saved Cloudflare token from $CF_INI"
+    saved_token="$(sed -n 's/^[[:space:]]*dns_cloudflare_api_token[[:space:]]*=[[:space:]]*//p' "$CF_INI")"
+    if [ "$INTERACTIVE" = 1 ] && [ -z "$CLOUDFLARE_TOKEN_SET" ]; then
+      prompt _in "Cloudflare API token [saved, press Enter to reuse]: " silent
+      if [ -n "$_in" ]; then
+        CLOUDFLARE_TOKEN="$_in"
+      else
+        CLOUDFLARE_TOKEN="$saved_token"
+        [ -n "$CLOUDFLARE_TOKEN" ] && log "Reusing saved Cloudflare token from $CF_INI"
+      fi
+    else
+      CLOUDFLARE_TOKEN="$saved_token"
+      [ -n "$CLOUDFLARE_TOKEN" ] && log "Reusing saved Cloudflare token from $CF_INI"
+    fi
   fi
-  [ -n "$CLOUDFLARE_TOKEN" ] || prompt CLOUDFLARE_TOKEN "Cloudflare API token (Zone:DNS:Edit): " silent
-  [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token is required"
+  if [ -z "$CLOUDFLARE_TOKEN" ] && [ "$INTERACTIVE" = 1 ]; then
+    prompt CLOUDFLARE_TOKEN "Cloudflare API token (Zone:DNS:Edit): " silent
+  fi
+  [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token not found at $CF_INI — pass --cloudflare-token or use --interactive"
 
-  # Ports have defaults; only ask when there is a terminal to ask at and the
+  # Ports have defaults; only ask in explicitly interactive mode and when the
   # value was not already pinned by a flag.
-  if have_tty; then
+  if [ "$INTERACTIVE" = 1 ]; then
     [ -n "$TCP_PORT_SET" ]  || { prompt _in "Raw TCP game port [$TCP_PORT]: ";  TCP_PORT="${_in:-$TCP_PORT}"; }
     [ -n "$VIEW_PORT_SET" ] || { prompt _in "HTTPS viewer port [$VIEW_PORT]: "; VIEW_PORT="${_in:-$VIEW_PORT}"; }
   fi
