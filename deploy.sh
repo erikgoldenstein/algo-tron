@@ -11,12 +11,13 @@
 # Run as root, either from a checkout or straight from the internet (use bash,
 # not sh — prompts are read from your terminal):
 #
-#   sudo ./deploy.sh --domain tron.example.com --cloudflare-token CF_TOKEN
-#   sudo ./deploy.sh --dry-run --domain tron.example.com
+#   sudo ./deploy.sh
+#   sudo ./deploy.sh --dry-run
 #   sudo ./deploy.sh --rollback
 #   curl -fsSL https://raw.githubusercontent.com/erikgoldenstein/algo-tron/main/deploy.sh | sudo bash -s -- --domain tron.example.com
 #
-# Flags (anything omitted is asked for interactively):
+# Flags (anything omitted is asked for interactively; the production domain and
+# saved Cloudflare token are reused by default):
 #   --domain --cloudflare-token --acme-email --tcp-port --view-port --repo --ref
 #   --deploy-only --dry-run --allow-dirty --rollback --no-backup --backup-dir --backup-keep
 #   --no-firewall --no-auditd --no-fail2ban --no-upgrades --no-hardening
@@ -53,7 +54,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 
 # --- config (overridable by flags / env) -----------------------------------
-DOMAIN=""
+DOMAIN="${DOMAIN:-tron.erik.gdn}"
 CLOUDFLARE_TOKEN=""
 ACME_EMAIL="${ACME_EMAIL:-}"
 DRY_RUN=0
