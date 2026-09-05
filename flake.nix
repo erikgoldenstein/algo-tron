@@ -10,13 +10,14 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        commit = if self ? rev then self.rev else "unknown";
         package = pkgs.buildGoModule {
           pname = "algo-tron";
           version = "0.1.0";
           src = ./.;
           vendorHash = "sha256-ZBKwR1Czt3mhHCMedniIZPrRf1BsVmqVvv6nskgPZ2A=";
           subPackages = [ "cmd/algo-tron" ];
-          ldflags = [ "-s" "-w" ];
+          ldflags = [ "-s" "-w" "-X" "main.buildCommit=${commit}" ];
         };
       in
       {

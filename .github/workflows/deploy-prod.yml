@@ -62,7 +62,7 @@ jobs:
         run: go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 
       - name: Build production binary
-        run: go build -o algo-tron ./cmd/algo-tron
+        run: go build -ldflags "-X main.buildCommit=${GITHUB_SHA}" -o algo-tron ./cmd/algo-tron
 
       - name: Upload production binary artifact
         uses: actions/upload-artifact@v4
@@ -113,7 +113,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/prod_key "$PROD_SSH_USER@$PROD_HOST" '
             set -e
-            sudo install -o root -g root -m 0755 /tmp/algo-tron-${{ github.sha }} /usr/local/bin/algo-tron
+            sudo install -d -o tron -g tron -m 0755 /opt/algo-tron
+            sudo install -o tron -g tron -m 0755 /tmp/algo-tron-${{ github.sha }} /opt/algo-tron/algo-tron
             sudo systemctl restart algo-tron
             sudo systemctl is-active --quiet algo-tron
             sudo systemctl status algo-tron --no-pager

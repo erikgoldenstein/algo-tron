@@ -9,6 +9,7 @@ func (s *Server) buildInitLocked(watch *Game, sink *viewerSink) *initMsg {
 	globalPlayers, globalAlive := s.globalViewerStatsLocked()
 	m := &initMsg{
 		Type:              "init",
+		BuildCommit:       buildCommit,
 		ServerInfo:        s.viewState.ServerInfoList,
 		ViewInfo:          s.viewState.ViewInfoList,
 		Scoreboard:        nil,
