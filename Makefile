@@ -47,6 +47,8 @@ test:
 
 check: test
 	$(PYTHON) -m py_compile scripts/bot_swarm.py scripts/bot_swarm/*.py
+	bash -n deploy.sh
+	sh -n deploy/*.sh
 
 clean:
 	$(RM) $(BINARY)

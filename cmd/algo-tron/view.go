@@ -74,6 +74,11 @@ func (s *Server) viewerHandler(metricsAuth string) http.Handler {
 	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, staticFS, "robots.txt")
 	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
 	mux.HandleFunc("/play", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://github.com/erikgoldenstein/algo-tron/tree/main/example_bots", http.StatusFound)
 	})
@@ -126,6 +131,9 @@ func basicAuth(realm, credentials string, next http.Handler) http.Handler {
 
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	// The viewer has no inline scripts. Keep inline styles for the existing
 	// palette/color attributes, while preventing injected script, object, or
 	// framing content from turning a missed escaping path into XSS.
