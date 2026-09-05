@@ -23,7 +23,7 @@ const (
 	adminPasswordLength = 64
 	adminCookieName     = "algo_tron_admin"
 	adminCookieLifetime = 5 * time.Minute
-	userPasswordLength  = 8
+	userPasswordLength  = 24
 	adminLoginWindow    = time.Minute
 	adminLoginMaxFails  = 5
 )
@@ -228,9 +228,9 @@ func (s *Server) adminStatusHTTP(w http.ResponseWriter, r *http.Request) {
 	writeAdminJSON(w, http.StatusOK, map[string]bool{"admin": true})
 }
 
-// randomUserPassword creates a short recovery password. Six random bytes
-// encode to exactly eight unpadded base64url characters, avoiding modulo bias
-// while keeping the value easy to copy.
+// randomUserPassword creates a recovery password. Eighteen random bytes encode
+// to exactly twenty-four unpadded base64url characters, avoiding modulo bias while
+// keeping the value easy to copy.
 func randomUserPassword() (string, error) {
 	raw := make([]byte, userPasswordLength*3/4)
 	if _, err := rand.Read(raw); err != nil {

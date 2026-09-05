@@ -222,6 +222,45 @@
     </div>
   </div>
 
+  <div id="reset-password-confirm-modal" class="modal reset-password-confirm-modal" hidden>
+    <div class="modal-backdrop" data-reset-password-confirm-close></div>
+    <div class="modal-window reset-password-window" role="dialog" aria-modal="true" aria-labelledby="reset-password-confirm-title">
+      <div class="modal-header">
+        <span class="modal-title" id="reset-password-confirm-title"><b>reset password</b> · confirm</span>
+        <button type="button" class="modal-close" data-reset-password-confirm-close><span class="kbd">[q]</span> close</button>
+      </div>
+      <div class="modal-body">
+        <div>reset the password for <b id="reset-password-confirm-user"></b>?</div>
+        <div class="reset-password-note">The account stats will stay unchanged.</div>
+        <div class="reset-password-actions">
+          <button type="button" id="reset-password-cancel">cancel</button>
+          <button type="button" id="reset-password-confirm">reset password</button>
+        </div>
+        <div class="admin-login-status" id="reset-password-confirm-status" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reset-password-modal" class="modal reset-password-modal" hidden>
+    <div class="modal-backdrop" data-reset-password-close></div>
+    <div class="modal-window reset-password-window" role="dialog" aria-modal="true" aria-labelledby="reset-password-title">
+      <div class="modal-header">
+        <span class="modal-title" id="reset-password-title"><b>password reset</b> · new password</span>
+        <button type="button" class="modal-close" data-reset-password-close><span class="kbd">[q]</span> close</button>
+      </div>
+      <div class="modal-body">
+        <div>New password for <b id="reset-password-user"></b>:</div>
+        <div class="reset-password-value">
+          <input id="reset-password-value" type="password" readonly autocomplete="off" spellcheck="false" aria-label="new password">
+          <button type="button" class="reset-password-eye" id="reset-password-eye" aria-label="show password" title="show password">👁</button>
+          <button type="button" id="reset-password-copy">copy</button>
+        </div>
+        <div class="admin-login-status" id="reset-password-copy-status" role="status" aria-live="polite"></div>
+        <div class="reset-password-note">Save this password before closing this modal.</div>
+      </div>
+    </div>
+  </div>
+
   <div id="scoreboard-modal" class="modal" hidden>
     <div class="modal-backdrop" data-scoreboard-close></div>
     <div class="scoreboard-window scoreboard-modal-window" role="dialog" aria-modal="true" aria-labelledby="scoreboard-modal-title">

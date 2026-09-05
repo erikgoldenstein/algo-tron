@@ -66,6 +66,14 @@ function toggleHelp(force) {
 }
 
 function closeFrontModal() {
+  if (!document.getElementById('reset-password-modal')?.hidden) {
+    closeAdminResetPasswordModal();
+    return true;
+  }
+  if (!document.getElementById('reset-password-confirm-modal')?.hidden) {
+    closeAdminResetPasswordConfirm();
+    return true;
+  }
   if (!document.getElementById('forward-confirm-modal')?.hidden) {
     hideForwardConfirm();
     return true;
@@ -191,7 +199,6 @@ function renderScoreboardModalRows() {
   if (deferInteractiveRender({ scoreboard: true, renderModal: true })) return;
   const root = document.getElementById('scoreboard-modal-rows');
   if (!root) return;
-  hideScoreHover();
   const q = scoreModalQuery(0);
   const key = scorePageKey(q.period, q.sort, q.search, q.lobby);
   const page = gameState.scorePages[key];
@@ -202,6 +209,7 @@ function renderScoreboardModalRows() {
   if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(root);
   const asof = document.getElementById('scoreboard-asof');
   if (asof) asof.textContent = page?.computedAt ? 'as of ' + new Date(page.computedAt).toLocaleString() : '';
+  restoreScoreHover();
 }
 
 function openScoreboardModal() {

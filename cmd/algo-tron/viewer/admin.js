@@ -7,6 +7,10 @@ let adminLoginAttempt = '';
 let adminLoginBusy = false;
 let adminStatusRequestID = 0;
 let adminSessionActive = false;
+let resetPasswordUsername = '';
+let resetPasswordCard = null;
+let resetPasswordBusy = false;
+let resetPasswordValue = '';
 
 function renderAdminStatus(isAdmin) {
   adminSessionActive = isAdmin;
@@ -130,9 +134,52 @@ function createAdminLobby(event) {
     .catch((error) => setAdminLobbyStatus(error.message || 'could not create lobby', true));
 }
 
-function resetAdminUserPassword(username, card, confirmed = false) {
+function resetAdminUserPassword(username, card) {
   if (!adminSessionActive || !username) return;
-  if (!confirmed && !window.confirm('Reset the password for ' + username + '? The account stats will stay unchanged.')) return;
+  resetPasswordUsername = username;
+  resetPasswordCard = card || null;
+  resetPasswordBusy = false;
+  const modal = document.getElementById('reset-password-confirm-modal');
+  const user = document.getElementById('reset-password-confirm-user');
+  const status = document.getElementById('reset-password-confirm-status');
+  const confirm = document.getElementById('reset-password-confirm');
+  if (!modal || !user || !confirm) return;
+  user.textContent = username;
+  if (status) {
+    status.textContent = '';
+    status.classList.remove('error');
+  }
+  confirm.disabled = false;
+  confirm.textContent = 'reset password';
+  modal.hidden = false;
+}
+
+function closeAdminResetPasswordConfirm() {
+  const modal = document.getElementById('reset-password-confirm-modal');
+  if (modal) modal.hidden = true;
+  if (!resetPasswordBusy) {
+    resetPasswordUsername = '';
+    resetPasswordCard = null;
+  }
+}
+
+function setResetPasswordStatus(message, error = false) {
+  const status = document.getElementById('reset-password-confirm-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.classList.toggle('error', !!error);
+}
+
+function confirmAdminResetPassword() {
+  if (resetPasswordBusy || !resetPasswordUsername) return;
+  const username = resetPasswordUsername;
+  const card = resetPasswordCard;
+  const confirm = document.getElementById('reset-password-confirm');
+  resetPasswordBusy = true;
+  if (confirm) {
+    confirm.disabled = true;
+    confirm.textContent = 'resetting...';
+  }
   const button = card?.querySelector('.score-hover-reset');
   if (button) {
     button.disabled = true;
@@ -151,37 +198,102 @@ function resetAdminUserPassword(username, card, confirmed = false) {
       return response.json();
     })
     .then((data) => {
-      const result = card?.querySelector('.score-hover-reset-result');
-      if (result) {
-        result.textContent = 'new password: ' + data.password;
-        result.hidden = false;
-        result.classList.remove('error');
-        window.setTimeout(() => {
-          if (result.isConnected) {
-            result.textContent = '';
-            result.hidden = true;
-          }
-        }, 12000);
-      }
       if (button) {
         button.disabled = false;
         button.textContent = 'reset again';
       }
+      resetPasswordBusy = false;
+      closeAdminResetPasswordConfirm();
+      showAdminResetPassword(username, data.password);
       return data;
     })
     .catch((error) => {
+      resetPasswordBusy = false;
+      if (confirm) {
+        confirm.disabled = false;
+        confirm.textContent = 'reset password';
+      }
       if (button) {
         button.disabled = false;
         button.textContent = 'reset password';
       }
-      const result = card?.querySelector('.score-hover-reset-result');
-      if (result) {
-        result.textContent = error.message || 'could not reset password';
-        result.hidden = false;
-        result.classList.add('error');
-      }
+      setResetPasswordStatus(error.message || 'could not reset password', true);
       return null;
     });
+}
+
+function showAdminResetPassword(username, password) {
+  resetPasswordValue = password || '';
+  const modal = document.getElementById('reset-password-modal');
+  const user = document.getElementById('reset-password-user');
+  const input = document.getElementById('reset-password-value');
+  const eye = document.getElementById('reset-password-eye');
+  const status = document.getElementById('reset-password-copy-status');
+  if (!modal || !user || !input) return;
+  user.textContent = username;
+  input.type = 'password';
+  input.value = resetPasswordValue;
+  if (eye) {
+    eye.textContent = '👁';
+    eye.setAttribute('aria-label', 'show password');
+    eye.title = 'show password';
+  }
+  if (status) {
+    status.textContent = '';
+    status.classList.remove('error');
+  }
+  modal.hidden = false;
+}
+
+function closeAdminResetPasswordModal() {
+  const modal = document.getElementById('reset-password-modal');
+  const input = document.getElementById('reset-password-value');
+  if (modal) modal.hidden = true;
+  if (input) {
+    input.value = '';
+    input.type = 'password';
+  }
+  resetPasswordValue = '';
+}
+
+function toggleAdminResetPasswordVisibility() {
+  const input = document.getElementById('reset-password-value');
+  const eye = document.getElementById('reset-password-eye');
+  if (!input) return;
+  const visible = input.type === 'text';
+  input.type = visible ? 'password' : 'text';
+  if (eye) {
+    eye.textContent = '👁';
+    eye.setAttribute('aria-label', visible ? 'show password' : 'hide password');
+    eye.title = visible ? 'show password' : 'hide password';
+  }
+}
+
+function copyAdminResetPassword() {
+  if (!resetPasswordValue) return;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(resetPasswordValue)
+      .then(() => setResetPasswordCopyStatus(true))
+      .catch(() => setResetPasswordCopyStatus(false));
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.value = resetPasswordValue;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  area.remove();
+  setResetPasswordCopyStatus(ok);
+}
+
+function setResetPasswordCopyStatus(ok) {
+  const status = document.getElementById('reset-password-copy-status');
+  if (!status) return;
+  status.textContent = ok ? 'copied' : 'could not copy — select and copy manually';
+  status.classList.toggle('error', !ok);
 }
 
 function refreshAdminStatus() {
@@ -253,6 +365,12 @@ function submitAdminLogin(password) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-reset-password-confirm-close]').forEach((el) => el.addEventListener('click', closeAdminResetPasswordConfirm));
+  document.querySelectorAll('[data-reset-password-close]').forEach((el) => el.addEventListener('click', closeAdminResetPasswordModal));
+  document.getElementById('reset-password-cancel')?.addEventListener('click', closeAdminResetPasswordConfirm);
+  document.getElementById('reset-password-confirm')?.addEventListener('click', confirmAdminResetPassword);
+  document.getElementById('reset-password-eye')?.addEventListener('click', toggleAdminResetPasswordVisibility);
+  document.getElementById('reset-password-copy')?.addEventListener('click', copyAdminResetPassword);
   document.getElementById('admin-hotspot')?.addEventListener('click', openAdminLogin);
   document.querySelectorAll('[data-admin-close]').forEach((el) => {
     el.addEventListener('click', closeAdminLogin);
