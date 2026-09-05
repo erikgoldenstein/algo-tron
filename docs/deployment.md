@@ -8,6 +8,21 @@ Notes for running your own algo-tron server. If you only want to write a bot aga
 go build -o algo-tron ./cmd/algo-tron
 ```
 
+From the repository root, the Makefile provides the common local commands:
+
+```sh
+make build
+make run
+make dev
+make run-bot BOT_ARGS='--count 64 --prefix workshop --lobby workshop'
+make stop-bots BOT_ARGS='--pid-file scripts/.tron-swarm-workshop.pid'
+```
+
+`make dev` watches `cmd/`, `go.mod`, and `go.sum`, restarting `go run` after a
+change. The viewer reconnects and reloads its page after the restart. The
+swarm is dependency-free Python; use a unique `--prefix` and `--pid-file` for
+each additional lobby.
+
 ## Run locally
 
 ```sh
@@ -33,6 +48,11 @@ Options:
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
 - `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.
 - `-view-metrics-auth`: if set (`user:pass`), also expose `/metrics` on the viewer HTTP server protected by HTTP Basic auth (Prometheus-compatible). Useful when you'd rather scrape over the same TLS-terminated host as the viewer.
+
+The viewer is available at `/` and `/screen`. `/screen` selects the global
+scoreboard and board-local chat. Add `?lobby=name` to keep automatic board
+selection in that lobby while it exists. Lobby creation, editing, and removal
+are available to an authenticated administrator in the settings UI.
 
 The intended deployment model is to run the Go service on localhost behind nginx on a single hostname:
 

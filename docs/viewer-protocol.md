@@ -1,18 +1,19 @@
 # Viewer WebSocket protocol
 
-The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode starts with the global leaderboard and the subscribed board's chat selected in the sidebar; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Messages are JSON, one per WS frame. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The single client → server message is the subscription switch:
+The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode starts with the global leaderboard and the subscribed board's chat selected in the sidebar; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Messages are JSON, one per WS frame. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The client sends `watch`, `subscribe`, or scoreboard-page requests as needed:
 
 ```json
 { "watch": "<gameId>" }
 ```
 
-The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can also request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to the first running board.
+The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","lobby":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to a running board. If `/screen?lobby=name` names a known lobby, the client prefers that lobby for automatic board selection; if it is removed, selection falls back to another live board.
 
 The on-demand scoreboard modal uses the read-only HTTP endpoint
 `GET /api/scoreboard?period=...&sort=...&search=...&offset=...&limit=...`.
-It returns the same scoreboard page fields as the WebSocket response. The
-WebSocket scoreboard request remains supported for existing viewers and for
-the live/main-page scoreboard.
+It returns the same scoreboard page shape as the WebSocket response. Live
+players/alive counts are supplied by the WebSocket subscription; HTTP polling
+is otherwise stateless. The WebSocket scoreboard request remains supported for
+existing viewers and for the live/main-page scoreboard.
 
 ## Admin account recovery
 
@@ -21,11 +22,11 @@ password from its scoreboard hover card:
 `GET /api/admin/users/<username>/reset-password`. The browser sends the
 existing HttpOnly admin cookie automatically, and the backend validates that
 cookie before allowing the reset.
-The response is not cacheable and contains the generated eight-character
+The response is not cacheable and contains the generated 24-character
 password once:
 
 ```json
-{"username":"alice","password":"R4nd0m_x"}
+{"username":"alice","password":"A1b2C3d4E5f6G7h8J9k0LmNo"}
 ```
 
 The reset changes the shared password for all current versions of that
@@ -81,11 +82,11 @@ The response contains one series per selected career:
 ```
 
 At most 16 careers may be selected, and each series contains at most 256
-points. TrueSkill uses `value` for `mu` and
-includes `sigma`; win rate is cumulative over the requested timeframe and is
-returned between 0 and 1. The endpoint resolves careers to their backend UUID
-before querying the hot and archived game ledgers, so reclaimed usernames do
-not merge separate careers. UUIDs are never returned. `gap: true` marks the
+points. TrueSkill uses `value` for `mu` and includes `sigma`; win rate is
+cumulative over the requested timeframe and is returned between 0 and 1. The
+endpoint resolves careers to their backend UUID before querying the hot and
+archived game ledgers, so reclaimed usernames do not merge separate careers;
+UUIDs are never returned. `gap: true` marks the
 segment leading into a point when more than two hours passed since the prior
 recorded game observation; clients can render that segment as dotted. This is
 a missing-observation marker, not an exact historical TCP online/offline log.
@@ -93,7 +94,8 @@ History requests are rate-limited per client address with a small interactive
 burst and a sustained limit of one request every 10 seconds; excess
 requests receive HTTP `429` and a `Retry-After` header.
 
-Origin checks are disabled (`CheckOrigin → true`) — the endpoint is read-only data and the viewer is a sibling SPA.
+The WebSocket upgrader accepts all origins (`CheckOrigin → true`). The
+read-only HTTP endpoints do not apply a separate Origin check.
 
 ## Message types
 
@@ -190,7 +192,9 @@ Broadcast to all viewers. The `scoreboard` and `chartData` fields are included o
 }
 ```
 
-Each scope is `board`, `lobby`, or `global`. Board scope follows the current
+Each scope is `board`, `lobby`, or `global`. In the UI, `lobby` means the
+lobby of the currently watched board; the wire message carries that lobby name
+in `scoreboardLobby` or `chatLobby`. Board scope follows the current
 `watch` subscription. Lobby scope follows the lobby of the current `watch`
 subscription, while global scope includes all lobbies. `scoreboardLobby` and
 `chatLobby` identify that current lobby on the wire; the viewer updates them

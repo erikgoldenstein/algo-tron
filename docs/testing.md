@@ -38,7 +38,7 @@ Run when the matching area changes; the full suite above is still the gate.
 | `store.go`, SQLite persistence, password hashing       | `go test ./cmd/algo-tron -run 'TestHashPassword|TestLoadOrCreateSecret|TestLoadStore|TestLoadSetsDefaultElo|TestLoadInitializesTrueSkill|TestStoreIsIdempotent' -v` |
 | `view.go`, scoreboard, chart data                      | `go test ./cmd/algo-tron -run 'TestUpdateScoreboard|TestUpdateChartData' -v` |
 | `util.go`, host/port parsing, IDs                      | `go test ./cmd/algo-tron -run 'TestIsLocalhost|TestHostOnly|TestPortOnly|TestRandID' -v` |
-| Viewer UI (HTML/JS/CSS in `cmd/algo-tron/view/`)       | `go test ./cmd/algo-tron -run TestE2E -v` (requires Chrome) |
+| Viewer UI (HTML/JS/CSS in `cmd/algo-tron/viewer/`)      | `go test ./cmd/algo-tron -run TestE2E -v` (requires Chrome) |
 
 ## Test helpers
 
