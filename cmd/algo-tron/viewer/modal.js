@@ -188,6 +188,7 @@ function initAppSelect(id, onChange) {
 }
 
 function renderScoreboardModalRows() {
+  if (deferInteractiveRender({ scoreboard: true, renderModal: true })) return;
   const root = document.getElementById('scoreboard-modal-rows');
   if (!root) return;
   hideScoreHover();

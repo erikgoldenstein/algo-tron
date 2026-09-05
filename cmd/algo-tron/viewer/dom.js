@@ -15,7 +15,87 @@ let scoreNameChars = 0;
 // updateDom before the rows render.
 let tsSigmaChars = 0;
 
+// Websocket updates can arrive between pointerdown and click. Keep dynamic
+// interactive DOM in place for that short interval so a render cannot detach
+// the element the user is currently clicking.
+const activePointerIDs = new Set();
+const pointerReleaseTimers = new Map();
+let pendingDomRender = null;
+let pointerSafetyTimer = 0;
+
+function normalizedDomRenderOptions(options = {}) {
+  return {
+    scoreboard: options.scoreboard !== false,
+    renderModal: options.renderModal !== false,
+  };
+}
+
+function deferInteractiveRender(options = {}) {
+  if (!activePointerIDs.size) return false;
+  const next = normalizedDomRenderOptions(options);
+  if (!pendingDomRender) {
+    pendingDomRender = next;
+  } else {
+    // A full render supersedes a partial one while the pointer is held.
+    pendingDomRender.scoreboard ||= next.scoreboard;
+    pendingDomRender.renderModal ||= next.renderModal;
+  }
+  return true;
+}
+
+function flushDeferredDomRender() {
+  if (activePointerIDs.size || !pendingDomRender) return;
+  const options = pendingDomRender;
+  pendingDomRender = null;
+  updateDom(options);
+}
+
+function initPointerRenderGuard() {
+  document.addEventListener('pointerdown', (event) => {
+    const pointerID = event.pointerId ?? 0;
+    const previousRelease = pointerReleaseTimers.get(pointerID);
+    if (previousRelease) clearTimeout(previousRelease);
+    pointerReleaseTimers.delete(pointerID);
+    activePointerIDs.add(pointerID);
+    clearTimeout(pointerSafetyTimer);
+    pointerSafetyTimer = setTimeout(() => {
+      activePointerIDs.clear();
+      pointerReleaseTimers.clear();
+      flushDeferredDomRender();
+    }, 5000);
+  }, true);
+
+  const releasePointer = (event) => {
+    const pointerID = event.pointerId ?? 0;
+    // Keep the guard active until the current browser event sequence reaches
+    // click. A websocket render must not run in the pointerup→click gap.
+    const previousRelease = pointerReleaseTimers.get(pointerID);
+    if (previousRelease) clearTimeout(previousRelease);
+    const releaseTimer = setTimeout(() => {
+      pointerReleaseTimers.delete(pointerID);
+      activePointerIDs.delete(pointerID);
+      if (!activePointerIDs.size) {
+        clearTimeout(pointerSafetyTimer);
+        flushDeferredDomRender();
+      }
+    }, 0);
+    pointerReleaseTimers.set(pointerID, releaseTimer);
+  };
+  document.addEventListener('pointerup', releasePointer, true);
+  document.addEventListener('pointercancel', releasePointer, true);
+  window.addEventListener('blur', () => {
+    activePointerIDs.clear();
+    for (const timer of pointerReleaseTimers.values()) clearTimeout(timer);
+    pointerReleaseTimers.clear();
+    clearTimeout(pointerSafetyTimer);
+    flushDeferredDomRender();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initPointerRenderGuard);
+
 function updateDom({ scoreboard = true, renderModal = true } = {}) {
+  if (deferInteractiveRender({ scoreboard, renderModal })) return;
   const game = gameState.serverInfo[0];
   const view = gameState.viewInfo[0];
 
