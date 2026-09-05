@@ -78,6 +78,9 @@ jobs:
     environment: production
 
     steps:
+      - name: Check out repository for smoke tests
+        uses: actions/checkout@v4
+
       - name: Download production binary artifact
         uses: actions/download-artifact@v4
         with:
@@ -117,3 +120,8 @@ jobs:
             curl -fsS --retry 10 --retry-delay 1 http://127.0.0.1:3000/ >/dev/null
             rm -f /tmp/algo-tron-${{ github.sha }}
           '
+
+      - name: Smoke-test public viewer
+        env:
+          PROD_URL: ${{ secrets.PROD_URL }}
+        run: deploy/smoke.sh "${PROD_URL:-https://tron.erik.gdn}"

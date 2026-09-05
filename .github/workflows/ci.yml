@@ -47,6 +47,9 @@ jobs:
       - name: Vet all packages
         run: go vet ./...
 
+      - name: Check deployment scripts
+        run: bash -n deploy.sh && sh -n deploy/*.sh
+
       - name: Test algo-tron, including E2E
         run: go test ./cmd/algo-tron -count=1 -v
 

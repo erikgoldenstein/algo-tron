@@ -18,6 +18,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -25,6 +27,22 @@ import (
 
 	"github.com/chromedp/chromedp"
 )
+
+func TestE2EHealthEndpoint(t *testing.T) {
+	url, _ := e2eViewer(t)
+	resp, err := http.Get(url + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || string(body) != "ok\n" {
+		t.Fatalf("health response = %d %q, want 200 %q", resp.StatusCode, body, "ok\n")
+	}
+}
 
 // e2eViewer boots the real Server backed by an in-memory DB and serves it
 // over httptest. Returns the base URL the browser should navigate to.

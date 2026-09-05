@@ -131,3 +131,77 @@ stream {
 ```
 
 Both endpoints live on the same hostname (`tron.erik.gdn`): the viewer on `443` (HTTPS, terminated by nginx) and the raw TCP game server on `4000`. Make sure nothing else on the box is bound to `4000`, and open it in any upstream firewall.
+
+## Deploy script
+
+`deploy.sh` provisions a host and can also be rerun for a manual release.
+Routine production updates should use the `prod` GitHub Actions workflow: it
+runs the full test and benchmark gate, then installs the resulting binary. The
+script is useful when preparing a new VM or when CI is unavailable.
+
+It requires root and supports Debian/Ubuntu and Rocky/RHEL:
+
+```sh
+sudo ./deploy.sh --domain tron.example.com --cloudflare-token CF_TOKEN
+```
+
+For a routine manual binary update on an already-provisioned host, use
+deploy-only mode. It leaves nginx, certificates, firewall rules, and host
+hardening alone:
+
+```sh
+sudo ./deploy.sh --deploy-only
+```
+
+Use `--acme-email address@example.com` during provisioning if the certificate
+authority should have a renewal contact; otherwise the script uses Certbot's
+no-email mode.
+
+Inspect the planned configuration first with:
+
+```sh
+sudo ./deploy.sh --dry-run --domain tron.example.com
+```
+
+When run from a checkout, only committed `HEAD` is built. A dirty checkout is
+rejected; `--allow-dirty` permits the command but still deploys committed
+`HEAD`. When run through `curl`, use `--ref` to select a branch. The deployed
+commit is recorded in `/opt/algo-tron/release`.
+
+Every redeploy makes a consistent SQLite backup of the player database,
+secret, and admin password under `/var/backups/algo-tron`, retaining seven
+backups by default. Change this with `--backup-dir` and `--backup-keep`, or
+skip it explicitly with `--no-backup`. The previous five binaries are retained
+under `/opt/algo-tron/releases`; restore the newest previous one with:
+
+```sh
+sudo ./deploy.sh --rollback
+```
+
+Rollback creates a fresh state backup, restarts the service, waits for
+`/healthz`, and runs the viewer smoke test. The standalone check can be run
+against any edge URL:
+
+```sh
+deploy/smoke.sh https://tron.example.com
+```
+
+Certificate renewal is independent of application deployment:
+
+```sh
+sudo deploy/renew-cert.sh
+```
+
+The package-provided Certbot timer can renew automatically; the helper is also
+convenient for an explicit renewal check.
+
+The default deployment also enables a host firewall, auditd, an SSH fail2ban
+jail, and automatic security updates. Disable individual measures with
+`--no-firewall`, `--no-auditd`, `--no-fail2ban`, or `--no-upgrades`; disable all
+with `--no-hardening`. `--no-firewall` is appropriate when an upstream or
+cloud firewall is authoritative.
+
+The service runs as the unprivileged `tron` user with systemd filesystem and
+privilege restrictions. nginx accepts only the configured hostname, applies
+basic security headers and request limits, and keeps the application listeners
+bound to localhost.
