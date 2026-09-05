@@ -140,7 +140,6 @@ function updateDom({ scoreboard = true, renderModal = true } = {}) {
 }
 
 function renderScoreboardDom({ renderModal = true } = {}) {
-  hideScoreHover();
   const scoreboardEl = document.getElementById('scoreboard');
   const scores = currentScoreboard();
   // Pad every sigma to the widest one so the ± lines up down the ts column
@@ -169,6 +168,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
   if (renderModal && !document.getElementById('scoreboard-modal')?.hidden && typeof renderScoreboardModalRows === 'function') {
     renderScoreboardModalRows();
   }
+  restoreScoreHover();
 }
 
 // Chat is purely client-side state: it stays put across round and board
@@ -218,6 +218,9 @@ function renderScoreName(el) {
 
 let scoreHoverCard = null;
 let scoreHoverTarget = null;
+let scoreHoverKey = '';
+let scoreHoverTargetHovered = false;
+let scoreHoverCardHovered = false;
 let scoreHoverHideTimer = 0;
 let forwardConfirmUrl = '';
 
@@ -265,7 +268,7 @@ function scoreHoverMarkup(target) {
     ? '<div class="score-hover-row"><span class="score-hover-label">contact</span><span>' + esc(contact) + '</span></div>'
     : '';
   const resetRow = typeof adminSessionActive !== 'undefined' && adminSessionActive && target.dataset.oldOwner !== 'true'
-    ? '<div class="score-hover-reset-row"><button type="button" class="score-hover-reset">reset password</button><div class="score-hover-reset-result" hidden></div></div>'
+    ? '<div class="score-hover-reset-row"><button type="button" class="score-hover-reset">reset password</button></div>'
     : '';
   return '<div class="score-hover-title">' + esc(username) + versionTag + '</div>'
     + '<div class="score-hover-row"><span class="score-hover-label">version</span><span>' + esc(version || '—') + '</span></div>'
@@ -278,27 +281,56 @@ function ensureScoreHoverCard() {
   scoreHoverCard = document.createElement('div');
   scoreHoverCard.className = 'score-hover-card';
   scoreHoverCard.hidden = true;
-  scoreHoverCard.addEventListener('pointerenter', () => clearTimeout(scoreHoverHideTimer));
-  scoreHoverCard.addEventListener('pointerleave', scheduleScoreHoverHide);
+  scoreHoverCard.addEventListener('pointerenter', () => {
+    scoreHoverCardHovered = true;
+    clearTimeout(scoreHoverHideTimer);
+    scoreHoverHideTimer = 0;
+  });
+  scoreHoverCard.addEventListener('pointerleave', () => {
+    scoreHoverCardHovered = false;
+    scheduleScoreHoverHide();
+  });
   document.body.appendChild(scoreHoverCard);
   return scoreHoverCard;
 }
 
+function scoreHoverIdentity(target) {
+  if (!target) return '';
+  return (target.dataset.username || target.dataset.name || '') + '\u0000' + (target.dataset.version || '');
+}
+
+function findScoreHoverTarget() {
+  if (!scoreHoverKey) return null;
+  for (const target of document.querySelectorAll('.score-hover-target')) {
+    if (scoreHoverIdentity(target) === scoreHoverKey) return target;
+  }
+  return null;
+}
+
 function hideScoreHover() {
   clearTimeout(scoreHoverHideTimer);
+  scoreHoverHideTimer = 0;
   scoreHoverTarget = null;
+  scoreHoverKey = '';
+  scoreHoverTargetHovered = false;
+  scoreHoverCardHovered = false;
   if (scoreHoverCard) scoreHoverCard.hidden = true;
 }
 
 function scheduleScoreHoverHide() {
   clearTimeout(scoreHoverHideTimer);
-  scoreHoverHideTimer = setTimeout(hideScoreHover, 100);
+  scoreHoverHideTimer = setTimeout(() => {
+    scoreHoverHideTimer = 0;
+    hideScoreHover();
+  }, 100);
 }
 
 function showScoreHover(target) {
   clearTimeout(scoreHoverHideTimer);
+  scoreHoverHideTimer = 0;
   const card = ensureScoreHoverCard();
   scoreHoverTarget = target;
+  scoreHoverKey = scoreHoverIdentity(target);
   card.innerHTML = scoreHoverMarkup(target);
   card.querySelector('.score-hover-reset')?.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -335,21 +367,41 @@ function showScoreHover(target) {
   card.style.top = Math.round(top) + 'px';
 }
 
+function restoreScoreHover() {
+  if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
+  // If the pointer has already left both the row and the card, let the
+  // existing delayed hide finish instead of reviving the card on refresh.
+  if (!scoreHoverTargetHovered && !scoreHoverCardHovered) return;
+  const target = findScoreHoverTarget();
+  if (target) {
+    showScoreHover(target);
+  } else {
+    hideScoreHover();
+  }
+}
+
 function refreshScoreHoverCard() {
-  if (scoreHoverTarget && scoreHoverCard && !scoreHoverCard.hidden) showScoreHover(scoreHoverTarget);
+  if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
+  const target = findScoreHoverTarget();
+  if (target) showScoreHover(target);
+  else hideScoreHover();
 }
 
 function initScoreHover() {
   document.addEventListener('pointerover', (event) => {
     const target = event.target.closest?.('.score-hover-target');
-    if (!target || target === scoreHoverTarget) return;
+    if (!target) return;
+    scoreHoverTargetHovered = true;
+    if (target === scoreHoverTarget) return;
     showScoreHover(target);
   });
   document.addEventListener('pointerout', (event) => {
     const target = event.target.closest?.('.score-hover-target');
     if (!target || target !== scoreHoverTarget) return;
     const related = event.relatedTarget;
-    if (related && (target.contains(related) || scoreHoverCard?.contains(related))) return;
+    if (related && target.contains(related)) return;
+    scoreHoverTargetHovered = false;
+    if (related && scoreHoverCard?.contains(related)) return;
     scheduleScoreHoverHide();
   });
 }
