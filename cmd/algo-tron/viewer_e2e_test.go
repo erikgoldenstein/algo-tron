@@ -123,7 +123,7 @@ func TestE2EAdminCanCreateAndRemoveLobby(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.adminPassword = strings.Repeat("a", adminPasswordLength)
 	ctx := browser(t)
-	var noLobby bool
+	var lobbyCreated bool
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
@@ -131,14 +131,30 @@ func TestE2EAdminCanCreateAndRemoveLobby(t *testing.T) {
 		chromedp.Click(`#admin-hotspot`),
 		chromedp.SendKeys(`#admin-password`, strings.Repeat("a", adminPasswordLength)),
 		chromedp.WaitVisible(`#admin-section:not([hidden])`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(ctx,
 		chromedp.Click(`#admin-lobbies-toggle`),
 		chromedp.WaitVisible(`#admin-lobbies:not([hidden])`),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(ctx,
 		chromedp.SendKeys(`#admin-lobby-name`, "workshop"),
 		chromedp.SendKeys(`#admin-lobby-password`, "begin"),
 		chromedp.Click(`#admin-lobby-create button[type="submit"]`),
-		chromedp.WaitVisible(`#admin-lobby-list .admin-lobby-name`),
+		chromedp.Poll(`Array.from(document.querySelectorAll('#admin-lobby-list .admin-lobby-name')).some((el) => el.textContent === 'workshop')`, &lobbyCreated),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !lobbyCreated {
+		t.Fatal("lobby did not appear after creation")
+	}
+	var noLobby bool
+	if err := chromedp.Run(ctx,
 		chromedp.Click(`#admin-lobby-list .admin-lobby-remove`),
-		chromedp.Poll(`document.querySelector('#admin-lobby-list .admin-lobby-name') === null`, &noLobby),
+		chromedp.Poll(`!Array.from(document.querySelectorAll('#admin-lobby-list .admin-lobby-name')).some((el) => el.textContent === 'workshop')`, &noLobby),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -398,6 +414,8 @@ func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
 func TestE2EBoardEndStaysInCurrentLobby(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
+	s.lobbies["red"] = &Lobby{Name: "red", MaxPlayersPerBoard: 8}
+	s.lobbies["blue"] = &Lobby{Name: "blue", MaxPlayersPerBoard: 8}
 	currentPlayer, _ := testPlayer("current")
 	sameLobbyPlayer, _ := testPlayer("same-lobby")
 	otherLobbyPlayer, _ := testPlayer("other-lobby")
@@ -416,7 +434,7 @@ func TestE2EBoardEndStaysInCurrentLobby(t *testing.T) {
 	ctx := browser(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
-		chromedp.WaitVisible(`#tabs .tab.active:nth-child(1)`),
+		chromedp.WaitVisible(`#tabs .tab.active`),
 	); err != nil {
 		t.Fatal(err)
 	}
