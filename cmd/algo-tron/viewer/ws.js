@@ -4,9 +4,8 @@
 // mutates state) and then update the parts of the page affected by that
 // message. Scoreboard rows are deliberately not rebuilt for ticks: the board
 // table changes at round/lifecycle events, while the canvas and chat change
-// every tick.
-// The canvas redraws on its own 30fps loop in render.js — it reads gameState
-// directly, so we don't need to nudge it here.
+// every tick. The viewer store fans the message out to the independent DOM,
+// board, chart, and scoreplot renderers.
 //
 // The server streams only the board we subscribe to. watchBoard(id) asks for
 // another one (the server answers with a fresh "game" snapshot); whenever
@@ -21,9 +20,8 @@
 // again, we hard-reload the page so any new static assets shipped by a
 // redeployed server come into effect.
 //
-// Depends on: dom.js (updateDom, showShutdownBanner), gameState.js
-// (applyMessage, gameState). `updateDom({scoreboard:false})` keeps the
-// scoreboard rows and their hover targets intact during tick frames.
+// Depends on: dom.js (showShutdownBanner), gameState.js (applyMessage,
+// gameState), and store.js (published through globalThis.viewerStore).
 // Provides: watchBoard, stepBoard, ensureWatched.
 
 let hadActiveSession = false;
@@ -197,21 +195,7 @@ function connect() {
         preferredLobby: watchedBoardEnded ? watchedLobby : '',
       });
     }
-    const scoreboardResponse = msg.type === 'scoreboard';
-    updateDom({
-      scoreboard: !['tick', 'chat', 'misc'].includes(msg.type),
-      renderModal: !scoreboardResponse,
-    });
-    // A period scoreboard may be the first uncached response and can arrive
-    // after a slow cache fill. Render it directly from the state just applied
-    // so the open modal never waits for another open or unrelated frame.
-    if (scoreboardResponse && !document.getElementById('scoreboard-modal')?.hidden
-        && typeof renderScoreboardModalRows === 'function') {
-      renderScoreboardModalRows();
-    }
-    if (msg.type === 'end' && typeof scheduleScorePlotRefresh === 'function') {
-      scheduleScorePlotRefresh();
-    }
+    globalThis.viewerStore?.publish(msg.type, msg);
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();

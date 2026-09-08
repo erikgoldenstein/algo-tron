@@ -80,6 +80,7 @@ function setFollowName(value) {
   gameState.followEditing = false;
   followOptionIndex = -1;
   updateFollowOptions();
+  globalThis.viewerStore?.publish('follow');
   ensureWatched({ preserveFollow: true });
   updateDom({ scoreboard: false });
 }
@@ -88,6 +89,7 @@ function clearFollow() {
   gameState.followName = '';
   gameState.followEditing = false;
   followOptionIndex = -1;
+  globalThis.viewerStore?.publish('follow');
   const input = document.getElementById('follow-player-input');
   if (input) input.value = '';
   hideFollowOptions();

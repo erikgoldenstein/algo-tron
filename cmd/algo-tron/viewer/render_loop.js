@@ -1,9 +1,66 @@
-// Render timers and layout-driven scoreboard name reflow.
+// Event-driven render scheduling and layout-driven scoreboard name reflow.
 //
-// Depends on: render.js (render), render_chart.js (renderChart), helpers.js
-// (displayName, getSwitch, fitChars), dom.js (scoreNameChars, renderScoreName).
+// This is an ES module so rendering has one explicit subscription point while
+// the older viewer modules can continue to publish simple invalidations.
+// Depends on: store.js, render.js (render), render_chart.js (renderChart),
+// helpers.js (getSwitch, fitChars), dom.js (scoreNameChars, renderScoreName).
 
-setInterval(() => { render(); renderChart(); }, 1000 / 30);
+import { viewerStore } from './store.js';
+import { render } from './render.js';
+import { renderChart } from './render_chart.js';
+
+let frame = 0;
+let boardDirty = true;
+let chartDirty = true;
+
+function scheduleRender({ board = false, chart = false } = {}) {
+  boardDirty ||= board;
+  chartDirty ||= chart;
+  if (frame) return;
+  frame = requestAnimationFrame(() => {
+    frame = 0;
+    if (boardDirty) render();
+    if (chartDirty) renderChart();
+    boardDirty = false;
+    chartDirty = false;
+  });
+}
+
+viewerStore.subscribe(({ type }) => {
+  const scoreboardResponse = type === 'scoreboard';
+  globalThis.updateDom?.({
+    scoreboard: !['tick', 'chat', 'misc'].includes(type),
+    renderModal: !scoreboardResponse,
+  });
+  if (scoreboardResponse && !document.getElementById('scoreboard-modal')?.hidden) {
+    globalThis.renderScoreboardModalRows?.();
+  }
+  if (type === 'end') globalThis.scheduleScorePlotRefresh?.();
+
+  switch (type) {
+    case 'init':
+    case 'game':
+      scheduleRender({ board: true, chart: true });
+      break;
+    case 'tick':
+      scheduleRender({ board: true });
+      break;
+    case 'end':
+    case 'scoreboard':
+    case 'scope':
+      scheduleRender({ chart: true });
+      break;
+    case 'theme':
+    case 'follow':
+      scheduleRender({ board: true, chart: true });
+      break;
+    case 'resize':
+      scheduleRender({ board: true, chart: true });
+      break;
+  }
+});
+
+scheduleRender({ board: true, chart: true });
 
 // Tick scoreboard name cells so scrolling names slide in-place between
 // websocket-driven full re-renders. No-op when the switch is off.
@@ -18,6 +75,7 @@ setInterval(() => {
 // column's width changes too — re-measure and reflow the names. Skipping
 // this would leave names truncated to their pre-resize length.
 window.addEventListener('resize', () => {
+  viewerStore.publish('resize');
   const scoreboardEl = document.getElementById('scoreboard');
   const firstNameCell = scoreboardEl?.querySelector('td.name');
   if (!firstNameCell) return;

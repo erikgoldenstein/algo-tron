@@ -507,6 +507,7 @@ function updateScoreboardScope() {
       if (gameState.scoreboardScope === btn.dataset.scope && gameState.scoreboardLobby === lobby) return;
       gameState.scoreboardScope = btn.dataset.scope;
       gameState.scoreboardLobby = lobby;
+      globalThis.viewerStore?.publish('scope');
       el.querySelectorAll('.scope-option').forEach((option) => {
         option.classList.toggle('active', option.dataset.scope === gameState.scoreboardScope);
       });
@@ -531,6 +532,7 @@ function updateChatTools() {
       if (gameState.chatScope === btn.dataset.scope && gameState.chatLobby === lobby) return;
       gameState.chatScope = btn.dataset.scope;
       gameState.chatLobby = lobby;
+      globalThis.viewerStore?.publish('scope');
       scope.querySelectorAll('.scope-option').forEach((option) => {
         option.classList.toggle('active', option.dataset.scope === gameState.chatScope);
       });

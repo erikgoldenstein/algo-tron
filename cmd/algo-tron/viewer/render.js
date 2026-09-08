@@ -1,8 +1,9 @@
 // Canvas rendering for the game board. render_chart.js draws the TrueSkill
-// chart; render_loop.js owns timers.
+// chart; render_loop.js schedules redraws.
 //
 // The board is one canvas; the TrueSkill chart is another. Both are redrawn
-// each frame from current gameState — no incremental damage tracking.
+// each scheduled render from current gameState — no incremental damage
+// tracking.
 //
 // Depends on: helpers.js (contrastText), schemes.js (currentScheme,
 // SCHEMES, playerColor, canvasFont), gameState.js (gameState).
@@ -22,7 +23,7 @@ function line(ctx, radius, color, from, to) {
   ctx.stroke();
 }
 
-function render() {
+export function render() {
   const game = gameState.game;
   const canvas = document.getElementById('game');
   if (!game || !canvas.parentElement) return;

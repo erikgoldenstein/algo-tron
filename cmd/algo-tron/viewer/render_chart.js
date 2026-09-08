@@ -1,9 +1,9 @@
-// TrueSkill chart rendering. render_loop.js owns timers.
+// TrueSkill chart rendering. render_loop.js schedules redraws.
 //
 // Depends on: schemes.js (playerColor), gameState.js.
 // Provides: renderChart.
 
-function renderChart() {
+export function renderChart() {
   const canvas = document.getElementById('chart');
   if (!canvas?.parentElement) return;
   const ctx = canvas.getContext('2d');

@@ -125,6 +125,7 @@ function applyScheme(name) {
   document.querySelectorAll('.scheme').forEach((el) => {
     el.classList.toggle('active', el.dataset.scheme === name);
   });
+  globalThis.viewerStore?.publish('theme');
 }
 
 // expandPalette derives PALETTE_SIZE distinguishable colors from a scheme's

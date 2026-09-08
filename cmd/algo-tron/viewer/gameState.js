@@ -1,6 +1,7 @@
 // Pure game-state tracking. The server sends JSON messages over the
 // WebSocket; this file applies them to a single mutable `gameState` object
-// that everything else (UI, canvas renderer) reads from.
+// that everything else (UI, canvas renderer) reads from. WebSocket handling
+// publishes an invalidation after applying each message.
 //
 // Several boards can run at once. We only hold the full state of the board
 // we are subscribed to (`game`); `boards` is the lightweight list of all
