@@ -162,7 +162,7 @@ The penalty is per-account (keyed by username), in-memory only — it does not s
 
 ## Reserved usernames
 
-Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …) and the filler-bot names `alice` / `bob` (case-insensitive) are rejected with `ERROR_NO_PERMISSION` when the connection comes from a non-localhost IP. The `bot*` slots let local benchmark/test clients pick those names without anyone else hijacking them; `alice` and `bob` are owned by the two built-in filler bots so real players can't impersonate them.
+Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …), the filler-bot names `alice` / `bob`, and the reserved viewer command `online` (all case-insensitive for the latter names) are rejected with `ERROR_NO_PERMISSION` when the connection comes from a non-localhost IP. The `bot*` slots let local benchmark/test clients pick those names without anyone else hijacking them; `alice` and `bob` are owned by the two built-in filler bots, and `online` is reserved for the scoreplot's “all online users” option.
 
 ## Account reuse
 

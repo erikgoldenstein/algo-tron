@@ -81,7 +81,9 @@ function updateScorePlotUsers() {
   const pages = Object.values(gameState.scorePages || {});
   for (const page of pages) {
     for (const entry of page.entries || []) {
-      if (entry.username && !entry.oldOwner) scorePlotCandidates.set(entry.username, entry);
+      if (entry.username && entry.username.toLowerCase() !== 'online' && !entry.oldOwner) {
+        scorePlotCandidates.set(entry.username, entry);
+      }
     }
   }
   renderScorePlotUserOptions();
@@ -111,14 +113,17 @@ function renderScorePlotUserOptions(show) {
   if (!root || !input) return;
   const query = input.value;
   const selected = new Set(scorePlotSelected.map((user) => user.username));
+  const onlineOption = !query.trim() || fuzzyScore('online', query) >= 0
+    ? '<button type="button" data-scoreplot-user="online">online (all online users)</button>'
+    : '';
   const options = [...scorePlotCandidates.values()]
     .map((entry) => ({ entry, score: fuzzyScore(entry.username, query) }))
     .filter((item) => item.score >= 0 && !selected.has(item.entry.username))
     .sort((a, b) => b.score - a.score || a.entry.username.localeCompare(b.entry.username))
     .slice(0, 50);
-  root.innerHTML = options.length
+  root.innerHTML = onlineOption + (options.length
     ? options.map(({ entry }) => '<button type="button" data-scoreplot-user="' + esc(entry.username) + '">' + esc(entry.username) + '</button>').join('')
-    : '<span class="scoreplot-no-users">no users found</span>';
+    : (onlineOption ? '' : '<span class="scoreplot-no-users">no users found</span>'));
   if (show !== undefined) root.hidden = !show;
 }
 
@@ -130,6 +135,8 @@ function hideScorePlotOptions() {
 function renderScorePlotSelection() {
   const root = document.getElementById('scoreplot-selected');
   if (!root) return;
+  const count = document.getElementById('scoreplot-selected-count');
+  if (count) count.textContent = scorePlotSelected.length;
   root.innerHTML = scorePlotSelected.map((user) => {
     const color = playerColor(user.username);
     return '<span class="scoreplot-chip" data-scoreplot-selected="' + esc(user.username) + '" style="--scoreplot-user-color:' + esc(color) + '">'
@@ -142,6 +149,10 @@ function renderScorePlotSelection() {
 }
 
 function addScorePlotUser(username) {
+  if (username?.toLowerCase() === 'online') {
+    addOnlineScorePlotUsers();
+    return;
+  }
   addScorePlotUsers([scorePlotCandidates.get(username)]);
 }
 

@@ -18,7 +18,7 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 | `ERROR_VERSION_INVALID`     | Explicit version contains characters outside `[a-zA-Z0-9._-]` or is longer than 8 bytes.              |
 | `ERROR_PASSWORD_TOO_SHORT` | Empty password.                                                                                       |
 | `ERROR_PASSWORD_TOO_LONG`  | Password > 128 chars.                                                                                 |
-| `ERROR_NO_PERMISSION`      | Username matches `^bot\d*$` (`bot`, `bot1`, …) or is a reserved filler-bot name (`alice`/`bob`) and connection isn't from `127.0.0.1` / `::1`. |
+| `ERROR_NO_PERMISSION`      | Username matches `^bot\d*$` (`bot`, `bot1`, …) or is a reserved name (`alice`/`bob`/`online`) and connection isn't from `127.0.0.1` / `::1`. |
 | `ERROR_WRONG_PASSWORD`     | Account exists but HMAC of password doesn't match the stored hash.                                    |
 | `ERROR_RECONNECT_PENALTY`  | Account is inside its reconnect-penalty window from a previous rate-limit kick. Carries `\|<seconds_remaining>`. *algo-tron-specific.* See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits). |
 

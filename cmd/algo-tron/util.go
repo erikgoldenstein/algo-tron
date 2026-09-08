@@ -19,9 +19,10 @@ var (
 	validLobbyName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 	botName        = regexp.MustCompile(`^bot\d*$`)
 	// reservedName matches usernames owned by the built-in filler bots
-	// (alice/bob); real, remote users may not claim them. Case-insensitive so
-	// "Alice" can't impersonate the filler bot either.
-	reservedName = regexp.MustCompile(`^(?i:alice|bob)$`)
+	// (alice/bob) and viewer command words (online); real, remote users may
+	// not claim them. Case-insensitive so "Alice" and "ONLINE" cannot bypass
+	// the reservation.
+	reservedName = regexp.MustCompile(`^(?i:alice|bob|online)$`)
 )
 
 func validateJoin(username, password, ip string) string {
