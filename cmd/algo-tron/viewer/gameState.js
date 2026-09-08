@@ -121,8 +121,9 @@ function applyBoards(msg) {
   gameState.globalAlive = Number.isFinite(msg.globalAlive) ? msg.globalAlive : null;
   if (gameState.game && !gameState.boards.some((b) => b.id === gameState.game.id)) {
     gameState.game = null;
-    gameState.boardScoreboard = [];
-    gameState.boardChartData = [];
+    // Keep the last board snapshot visible while the viewer subscribes to a
+    // replacement board. The next `game` message swaps in that board's
+    // scoreboard; clearing this here creates a visible empty-board frame.
   }
 }
 

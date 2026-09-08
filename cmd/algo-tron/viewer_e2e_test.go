@@ -430,6 +430,35 @@ func TestE2EBoardEndSwitchesToLowestTickBoard(t *testing.T) {
 	}
 }
 
+func TestE2EScoreboardRowsSurviveBoardHandoff(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	a, _ := testPlayer("handoff-a")
+	b, _ := testPlayer("handoff-b")
+	s.games = append(s.games, newGame(s, []*Player{a, b}))
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var survived bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#scoreboard tr[data-score-key]`),
+		chromedp.Evaluate(`(() => {
+			const row = document.querySelector('#scoreboard tr[data-score-key]');
+			const watched = gameState.game?.id;
+			if (!row || !watched) return false;
+			applyMessage({ type: 'boards', boards: [], lobbies: gameState.lobbies || [], globalPlayers: 0, globalAlive: 0 });
+			updateDom();
+			return row.isConnected && !!document.querySelector('#scoreboard tr[data-score-key]');
+		})()`, &survived),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !survived {
+		t.Error("scoreboard rows were removed during board handoff")
+	}
+}
+
 func TestE2EBoardEndStaysInCurrentLobby(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()

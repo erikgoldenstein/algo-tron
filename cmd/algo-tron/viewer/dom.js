@@ -151,9 +151,53 @@ function renderScoreboardDom({ renderModal = true } = {}) {
   // Pad every sigma to the widest one so the ± lines up down the ts column
   // (no-break spaces — plain ones would collapse in HTML).
   tsSigmaChars = Math.max(0, ...scores.map((p) => String(Math.round(p.tsSigma)).length));
-  scoreboardEl.innerHTML = scores.length
-    ? scores.map(scoreRow).join('')
-    : '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
+  if (scores.length) {
+    // Keep row nodes alive across rank/data changes. Replacing innerHTML here
+    // made the board disappear during the end→next-game handoff and also
+    // reset the browser's layout for every scoreboard refresh.
+    scoreboardEl.querySelector('tr.empty')?.remove();
+    const rowsByKey = new Map(
+      [...scoreboardEl.querySelectorAll('tr[data-score-key]')]
+        .map((row) => [row.dataset.scoreKey, row]),
+    );
+    const firstTops = new Map(
+      [...rowsByKey.values()].map((row) => [row.dataset.scoreKey, row.getBoundingClientRect().top]),
+    );
+    const usedKeys = new Set();
+
+    for (let i = 0; i < scores.length; i++) {
+      const score = scores[i];
+      const key = scoreRowKey(score);
+      let row = rowsByKey.get(key);
+      if (!row) {
+        row = createScoreRow(score, i);
+      } else {
+        updateScoreRow(row, score, i);
+      }
+      usedKeys.add(key);
+      // appendChild moves an existing row without destroying it, so rank
+      // changes only adjust its position in the table.
+      scoreboardEl.appendChild(row);
+    }
+    for (const [key, row] of rowsByKey) {
+      if (!usedKeys.has(key)) row.remove();
+    }
+
+    // FLIP the rows that changed rank. The transform is cleared on the next
+    // frame, allowing the existing rows to glide to their new positions.
+    for (const row of scoreboardEl.querySelectorAll('tr[data-score-key]')) {
+      const first = firstTops.get(row.dataset.scoreKey);
+      if (first === undefined) continue;
+      const delta = first - row.getBoundingClientRect().top;
+      if (!delta) continue;
+      row.style.transform = 'translateY(' + delta + 'px)';
+      requestAnimationFrame(() => {
+        row.style.transform = '';
+      });
+    }
+  } else if (!scoreboardEl.querySelector('tr.empty')) {
+    scoreboardEl.innerHTML = '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
+  }
   if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(scoreboardEl);
 
   // The name cell now exists in the DOM, so we can measure its actual width
@@ -201,6 +245,24 @@ function currentScoreboard() {
 
 function scoreNameLabel(p) {
   return p.showVersion && p.version ? p.username + '-' + p.version : p.username;
+}
+
+function scoreRowKey(p) {
+  // UUID is deliberately not sent over the wire. JSON keeps the fallback
+  // key unambiguous and safe for a data-* attribute, including unusual names.
+  return JSON.stringify([p.username || '', p.version || '']);
+}
+
+function createScoreRow(p, i) {
+  const holder = document.createElement('tbody');
+  holder.innerHTML = scoreRow(p, i);
+  return holder.firstElementChild;
+}
+
+function updateScoreRow(row, p, i) {
+  const holder = createScoreRow(p, i);
+  row.className = holder.className;
+  row.replaceChildren(...holder.children);
 }
 
 function scoreNameMarkup(username, version, showVersion, maxChars) {
@@ -524,7 +586,7 @@ function scoreRow(p, i) {
   const followedDead = followed && p.online !== false && !followNameIsAlive(label);
   const contact = p.bio?.contact || '';
   const src = p.bio?.src || '';
-  return '<tr' + (followed ? ' class="followed"' : '') + '>'
+  return '<tr data-score-key="' + esc(scoreRowKey(p)) + '"' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
     + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
     + '<td class="sep">|</td>'

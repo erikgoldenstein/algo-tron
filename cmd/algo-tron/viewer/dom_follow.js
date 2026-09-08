@@ -149,7 +149,7 @@ function hideFollowOptions() {
 }
 
 // Scoreboard names are useful, unambiguous follow targets. This is bound
-// after each scoreboard render because rows are intentionally rebuilt.
+// after each scoreboard render because rows may be added or updated in place.
 function bindScoreFollowTargets(root = document) {
   root.querySelectorAll?.('.score-follow-target').forEach((el) => {
     el.onclick = (event) => {
