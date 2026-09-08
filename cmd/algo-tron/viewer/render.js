@@ -80,6 +80,7 @@ function renderBoard(ctx, game, size, room) {
 function renderPlayers(ctx, game, room, radius) {
   // Two passes: trails+heads first, then name+chat overlays so labels never
   // get drawn over by another player's trail.
+  const followingAllowed = gameState.boards.length > 1;
   for (const player of Object.values(game.players)) {
     if (!player.alive) continue;
     const c = playerColor(player.name);
@@ -87,8 +88,8 @@ function renderPlayers(ctx, game, room, radius) {
     const y = player.pos.y * room + room / 2;
     renderTrail(ctx, game, player, room, radius, c);
     renderHead(ctx, x, y, radius, c);
-    if (gameState.followName && sameName(player.name, gameState.followName)) {
-      renderFollowMarker(ctx, x, y, radius, c);
+    if (followingAllowed && gameState.followName && sameName(player.name, gameState.followName)) {
+      renderFollowMarker(ctx, x, y, radius);
     }
   }
   for (const player of Object.values(game.players)) {
@@ -101,21 +102,28 @@ function renderPlayers(ctx, game, room, radius) {
   }
 }
 
-function renderFollowMarker(ctx, x, y, radius, playerColor) {
+function renderFollowMarker(ctx, x, y, radius) {
   // The board is built from square cells, so a small square marker fits the
   // visual language better than a second circular outline. Its contrasting
-  // color is derived from the player's own color and remains readable across
+  // outline is derived from the active background and remains readable across
   // all schemes.
   const side = Math.max(2, radius * 1.2);
+  const background = SCHEMES[currentScheme].bg;
   ctx.save();
   const left = x - side / 2;
   const top = y - side / 2;
-  ctx.fillStyle = contrastText(playerColor);
+  ctx.fillStyle = background;
   ctx.fillRect(left, top, side, side);
-  ctx.strokeStyle = playerColor;
+  ctx.strokeStyle = darkerBackground(background);
   ctx.lineWidth = Math.max(1, radius * 0.12);
   ctx.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
   ctx.restore();
+}
+
+function darkerBackground(hex) {
+  const [h, s, l] = rgbToHsl(...hexToRgb(hex));
+  const [r, g, b] = hslToRgb(h, s, Math.max(0, l - 0.08));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function renderTrail(ctx, game, player, room, radius, playerColor) {

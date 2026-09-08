@@ -67,6 +67,10 @@ function updateFollowPlayer() {
 
 function setFollowName(value) {
   const trimmed = value.trim();
+  // Keep an existing target across a transient single-board interval so
+  // automatic board selection can resume when the next board appears. New
+  // targets are still disallowed until multiple boards exist.
+  if (trimmed && gameState.boards.length <= 1) return;
   if (!trimmed) {
     clearFollow();
     updateDom();
@@ -98,6 +102,7 @@ function clearFollow() {
 // stepFollow cycles the followed player through all known names ("j"/"k"
 // keys); starts at the first name when nobody is followed yet.
 function stepFollow(delta) {
+  if (gameState.boards.length <= 1) return;
   const names = allBoardNames();
   if (!names.length) return;
   const i = names.findIndex((name) => sameName(name, gameState.followName));
