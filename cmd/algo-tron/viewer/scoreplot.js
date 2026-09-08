@@ -12,7 +12,23 @@ let scorePlotCandidates = new Map();
 let scorePlotRequest = null;
 let scorePlotRequestID = 0;
 let scorePlotSearchTimer = 0;
+let scorePlotRefreshTimer = 0;
 let scorePlotModalHeight = 0;
+
+// Game-end frames can arrive close together when several boards finish. Keep
+// one short refresh timer so a burst of endings produces one history request,
+// while still updating an already-open plot without user interaction.
+function scheduleScorePlotRefresh() {
+  if (scorePlotView !== 'scoreplot'
+      || document.getElementById('scoreboard-modal')?.hidden
+      || scorePlotRefreshTimer) return;
+  scorePlotRefreshTimer = setTimeout(() => {
+    scorePlotRefreshTimer = 0;
+    if (scorePlotView === 'scoreplot' && !document.getElementById('scoreboard-modal')?.hidden) {
+      fetchScorePlot();
+    }
+  }, 250);
+}
 
 function setScoreboardModalView(view) {
   scorePlotView = view === 'scoreplot' ? 'scoreplot' : 'scoreboard';
@@ -47,6 +63,8 @@ function setScoreboardModalView(view) {
     validateScorePlotRange();
     renderScorePlot();
   } else {
+    clearTimeout(scorePlotRefreshTimer);
+    scorePlotRefreshTimer = 0;
     if (scorePlotRequest) scorePlotRequest.abort();
     scorePlotRequest = null;
     scorePlotRequestID++;
@@ -244,7 +262,10 @@ async function fetchScorePlot() {
   scorePlotData = null;
   renderScorePlot();
   try {
-    const response = await fetch('/api/history?' + params.toString(), { signal: controller.signal });
+    const response = await fetch('/api/history?' + params.toString(), {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
     if (!response.ok) throw new Error(await response.text() || 'request failed');
     const data = await response.json();
     if (requestID !== scorePlotRequestID || scorePlotView !== 'scoreplot') return;

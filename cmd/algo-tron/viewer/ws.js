@@ -209,6 +209,9 @@ function connect() {
         && typeof renderScoreboardModalRows === 'function') {
       renderScoreboardModalRows();
     }
+    if (msg.type === 'end' && typeof scheduleScorePlotRefresh === 'function') {
+      scheduleScorePlotRefresh();
+    }
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();
