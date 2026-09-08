@@ -734,10 +734,21 @@ canvas#game { display: block; }
 .admin-lobby-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
 .admin-lobby-name { color: var(--text); }
 
-.scoreplot-chart-section { margin-top: 0; }
-#scoreplot-view { overflow-y: auto; }
+.scoreplot-chart-section {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 0;
+}
+#scoreplot-view {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+#scoreplot-view[hidden] { display: none; }
 .scoreplot-chart-wrap {
-  height: 50%;
+  flex: 1;
   min-height: 180px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -815,11 +826,34 @@ canvas#game { display: block; }
   border: 1px solid var(--border);
   background: var(--bg);
 }
+.scoreplot-selected-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.scoreplot-selected-header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.scoreplot-selected-header button:hover:not(:disabled) { color: var(--text); }
+.scoreplot-selected-header button:disabled { opacity: .45; cursor: default; }
+.scoreplot-selected-hint {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
 .scoreplot-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--scoreplot-user-color);
+  border: 1.5px solid var(--scoreplot-user-color);
   padding: 2px 3px 2px 5px;
   color: var(--text);
   font-size: 11px;

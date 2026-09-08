@@ -14,6 +14,7 @@ let scorePlotRequestID = 0;
 let scorePlotSearchTimer = 0;
 let scorePlotRefreshTimer = 0;
 let scorePlotModalHeight = 0;
+let scorePlotHoveredUser = '';
 const SCORE_PLOT_DASH_GAP_MS = 3 * 60 * 1000;
 const SCORE_PLOT_BREAK_GAP_MS = 20 * 60 * 1000;
 
@@ -131,21 +132,34 @@ function renderScorePlotSelection() {
   if (!root) return;
   root.innerHTML = scorePlotSelected.map((user) => {
     const color = playerColor(user.username);
-    return '<span class="scoreplot-chip" style="--scoreplot-user-color:' + esc(color) + '">'
+    return '<span class="scoreplot-chip" data-scoreplot-selected="' + esc(user.username) + '" style="--scoreplot-user-color:' + esc(color) + '">'
       + '<span>' + esc(user.username) + '</span>'
       + '<button type="button" aria-label="remove ' + esc(user.username) + '" data-scoreplot-remove="' + esc(user.username) + '">×</button>'
       + '</span>';
   }).join('');
+  const clear = document.getElementById('scoreplot-clear');
+  if (clear) clear.disabled = scorePlotSelected.length === 0;
 }
 
 function addScorePlotUser(username) {
-  const candidate = scorePlotCandidates.get(username);
-  if (!candidate || candidate.oldOwner || scorePlotSelected.some((user) => user.username === username)) return;
-  if (scorePlotSelected.length >= 16) {
+  addScorePlotUsers([scorePlotCandidates.get(username)]);
+}
+
+function addScorePlotUsers(entries) {
+  const capacity = 16 - scorePlotSelected.length;
+  if (capacity <= 0) {
     setScorePlotStatus('maximum of 16 users selected', true);
     return;
   }
-  scorePlotSelected.push({ username });
+  const selected = new Set(scorePlotSelected.map((user) => user.username));
+  let added = 0;
+  for (const candidate of entries) {
+    if (!candidate || candidate.oldOwner || !candidate.username || selected.has(candidate.username)) continue;
+    scorePlotSelected.push({ username: candidate.username });
+    selected.add(candidate.username);
+    if (++added >= capacity) break;
+  }
+  if (!added) return;
   renderScorePlotSelection();
   const input = document.getElementById('scoreplot-user-search');
   if (input) input.value = '';
@@ -154,9 +168,33 @@ function addScorePlotUser(username) {
   fetchScorePlot();
 }
 
+function addOnlineScorePlotUsers() {
+  if (scorePlotSelected.length >= 16) {
+    setScorePlotStatus('maximum of 16 users selected', true);
+    return;
+  }
+  fetchScoreboardPage({ period: 'online', sort: 'ts', search: '', offset: 0, limit: 50 })
+    .then((data) => {
+      if (!data) return;
+      const online = (data.entries || []).filter((entry) => entry.online === true);
+      updateScorePlotUsers();
+      addScorePlotUsers(online);
+    });
+}
+
 function removeScorePlotUser(username) {
+  if (scorePlotHoveredUser === username) scorePlotHoveredUser = '';
   scorePlotSelected = scorePlotSelected.filter((user) => user.username !== username);
   renderScorePlotSelection();
+  fetchScorePlot();
+}
+
+function clearScorePlotUsers() {
+  if (!scorePlotSelected.length) return;
+  scorePlotSelected = [];
+  scorePlotHoveredUser = '';
+  renderScorePlotSelection();
+  renderScorePlotUserOptions();
   fetchScorePlot();
 }
 
@@ -338,18 +376,33 @@ function renderScorePlot() {
   ctx.textAlign = 'right';
   ctx.fillText(axisLabel(to), width - right, height - 5);
 
-  for (const series of scorePlotData.series) {
+  // Draw the hovered series last so its halo and line stay above crossings.
+  const seriesToDraw = [...scorePlotData.series].sort((a, b) =>
+    Number(a.username === scorePlotHoveredUser) - Number(b.username === scorePlotHoveredUser));
+  for (const series of seriesToDraw) {
     const points = (series.points || []).filter((point) => Number.isFinite(Number(point.value)));
     if (!points.length) continue;
     ctx.strokeStyle = playerColor(series.username);
     ctx.fillStyle = ctx.strokeStyle;
     ctx.lineWidth = 1.5;
+    const highlighted = scorePlotHoveredUser === series.username;
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       if (i > 0) {
         const gap = Number(point.time) - Number(points[i - 1].time);
         if (gap <= SCORE_PLOT_BREAK_GAP_MS) {
-          ctx.setLineDash(point.gap || gap > SCORE_PLOT_DASH_GAP_MS ? [3, 3] : []);
+          const dash = point.gap || gap > SCORE_PLOT_DASH_GAP_MS ? [3, 3] : [];
+          if (highlighted) {
+            ctx.save();
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = 7;
+            ctx.shadowColor = ctx.strokeStyle;
+            ctx.shadowBlur = 8;
+            ctx.setLineDash(dash);
+            ctx.beginPath(); ctx.moveTo(x(points[i - 1].time), y(points[i - 1].value)); ctx.lineTo(x(point.time), y(point.value)); ctx.stroke();
+            ctx.restore();
+          }
+          ctx.setLineDash(dash);
           ctx.beginPath(); ctx.moveTo(x(points[i - 1].time), y(points[i - 1].value)); ctx.lineTo(x(point.time), y(point.value)); ctx.stroke();
         }
       }
@@ -401,6 +454,11 @@ function initScorePlot() {
     if (event.key !== 'Enter') return;
     const query = input.value.trim();
     if (!query) return;
+    if (query.toLowerCase() === 'online') {
+      event.preventDefault();
+      addOnlineScorePlotUsers();
+      return;
+    }
     const exact = scorePlotCandidates.get(query);
     const button = exact ? null : options?.querySelector('[data-scoreplot-user]');
     const username = exact?.username || button?.dataset.scoreplotUser;
@@ -415,6 +473,22 @@ function initScorePlot() {
   document.getElementById('scoreplot-selected')?.addEventListener('click', (event) => {
     const button = event.target.closest?.('[data-scoreplot-remove]');
     if (button) removeScorePlotUser(button.dataset.scoreplotRemove);
+  });
+  document.getElementById('scoreplot-clear')?.addEventListener('click', clearScorePlotUsers);
+  const selected = document.getElementById('scoreplot-selected');
+  selected?.addEventListener('pointerover', (event) => {
+    const chip = event.target.closest?.('[data-scoreplot-selected]');
+    if (!chip || !selected.contains(chip) || chip.contains(event.relatedTarget)) return;
+    scorePlotHoveredUser = chip.dataset.scoreplotSelected || '';
+    renderScorePlot();
+  });
+  selected?.addEventListener('pointerout', (event) => {
+    const chip = event.target.closest?.('[data-scoreplot-selected]');
+    if (!chip || !selected.contains(chip) || chip.contains(event.relatedTarget)) return;
+    if (scorePlotHoveredUser === chip.dataset.scoreplotSelected) {
+      scorePlotHoveredUser = '';
+      renderScorePlot();
+    }
   });
   document.addEventListener('click', () => hideScorePlotOptions());
   window.addEventListener('resize', resizeScorePlotModal);

@@ -349,13 +349,18 @@
               <label class="scoreplot-field scoreplot-user-field">
                 <span>user</span>
                 <span class="scoreplot-user-picker" id="scoreplot-user-picker">
-                  <input id="scoreplot-user-search" placeholder="search user" autocomplete="off" spellcheck="false">
+                  <input id="scoreplot-user-search" placeholder="select user" autocomplete="off" spellcheck="false">
                   <span class="scoreplot-user-options" id="scoreplot-user-options" hidden></span>
                 </span>
               </label>
             </div>
             <div class="scoreplot-time-error" id="scoreplot-time-error" role="status" aria-live="polite"></div>
+            <div class="scoreplot-selected-header">
+              <span>selected users</span>
+              <button type="button" id="scoreplot-clear">clear</button>
+            </div>
             <div class="scoreplot-selected" id="scoreplot-selected" aria-label="selected users"></div>
+            <div class="scoreplot-selected-hint">hover to highlight</div>
           </section>
         </div>
       </div>

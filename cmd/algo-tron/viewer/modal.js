@@ -221,7 +221,8 @@ function openScoreboardModal() {
   if (!m) return;
   m.hidden = false;
   if (typeof setScoreboardModalView === 'function') {
-    setScoreboardModalView(m.dataset.scoreboardView || 'scoreboard');
+    const window = m.querySelector('.scoreboard-modal-window');
+    setScoreboardModalView(window?.dataset.scoreboardView || 'scoreboard');
   }
   fetchScoreboardPage(scoreModalQuery(0));
   renderScoreboardModalRows();
