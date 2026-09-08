@@ -109,8 +109,8 @@ function updateDom({ scoreboard = true, renderModal = true } = {}) {
   const commitEl = document.getElementById('deployed-commit');
   if (commitEl) {
     const commit = gameState.buildCommit || 'unknown';
-    commitEl.textContent = 'commit ' + commit.slice(0, 12);
-    commitEl.title = commit;
+    commitEl.textContent = commit.slice(0, 12);
+    commitEl.title = 'build commit ' + commit;
   }
   if (modalGame && game) modalGame.textContent = game.host + ':' + game.port;
   if (modalView && view) modalView.textContent = viewURL(view);
