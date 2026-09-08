@@ -118,7 +118,8 @@ function renderScorePlotSelection() {
 }
 
 function addScorePlotUser(username) {
-  if (!username || scorePlotSelected.some((user) => user.username === username)) return;
+  const candidate = scorePlotCandidates.get(username);
+  if (!candidate || candidate.oldOwner || scorePlotSelected.some((user) => user.username === username)) return;
   if (scorePlotSelected.length >= 16) {
     setScorePlotStatus('maximum of 16 users selected', true);
     return;
@@ -360,6 +361,25 @@ function initScorePlot() {
     clearTimeout(scorePlotSearchTimer);
     scorePlotSearchTimer = setTimeout(() => fetchScoreboardPage({ period: 'all', sort: 'ts', search: input.value, offset: 0, limit: 50 })
       .then(() => updateScorePlotUsers()), 150);
+  });
+  input?.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      const button = options?.querySelector('[data-scoreplot-user]');
+      if (!button) return;
+      event.preventDefault();
+      input.value = button.dataset.scoreplotUser;
+      renderScorePlotUserOptions(true);
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    const query = input.value.trim();
+    if (!query) return;
+    const exact = scorePlotCandidates.get(query);
+    const button = exact ? null : options?.querySelector('[data-scoreplot-user]');
+    const username = exact?.username || button?.dataset.scoreplotUser;
+    if (!username) return;
+    event.preventDefault();
+    addScorePlotUser(username);
   });
   options?.addEventListener('click', (event) => {
     const button = event.target.closest?.('[data-scoreplot-user]');
