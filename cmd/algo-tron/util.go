@@ -66,15 +66,7 @@ func validateBio(field, value string) string {
 			return "ERROR_INVALID_BIO"
 		}
 	case "src":
-		if value == "" {
-			return ""
-		}
-		u, err := url.Parse(value)
-		if err != nil || u.Scheme != "https" || (u.Host != "github.com" && u.Host != "www.github.com") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(value) > 48 || !safeBioText(value) {
-			return "ERROR_INVALID_BIO"
-		}
-		path := strings.Trim(u.Path, "/")
-		if len(strings.Split(path, "/")) < 2 {
+		if len(value) > 48 || !printableASCII(value) {
 			return "ERROR_INVALID_BIO"
 		}
 	default:

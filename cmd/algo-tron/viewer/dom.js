@@ -329,8 +329,15 @@ function scoreHoverMarkup(target) {
   const contact = target.dataset.contact || '';
   const src = target.dataset.src || '';
   const versionTag = version ? '<span class="score-hover-version">-' + esc(version) + '</span>' : '';
+  let sourceValue = '<span>' + esc(src) + '</span>';
+  try {
+    const sourceURL = new URL(src);
+    if (sourceURL.protocol === 'http:' || sourceURL.protocol === 'https:') {
+      sourceValue = '<a class="score-hover-src" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">repository ↗</a>';
+    }
+  } catch (e) {}
   const srcRow = src
-    ? '<div class="score-hover-row"><span class="score-hover-label">src</span><a class="score-hover-src" href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">repository ↗</a></div>'
+    ? '<div class="score-hover-row"><span class="score-hover-label">src</span>' + sourceValue + '</div>'
     : '';
   const contactRow = contact
     ? '<div class="score-hover-row"><span class="score-hover-label">contact</span><span>' + esc(contact) + '</span></div>'

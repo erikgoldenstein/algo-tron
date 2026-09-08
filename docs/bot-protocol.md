@@ -109,7 +109,7 @@ bio|contact|dect:8323
 bio|src|https://github.com/erikgoldenstein/tron-bot
 ```
 
-`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 characters and must be an HTTPS GitHub repository URL. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
+`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 printable ASCII characters and may contain any source text, including HTTP(S) URLs, GitHub, GitLab, or self-hosted repository addresses. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
 
 ## Rate limits
 
