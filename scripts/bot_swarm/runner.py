@@ -172,14 +172,14 @@ class Swarm:
 
     def handshake(self, params: BotParams, sock: socket.socket, rng: random.Random) -> None:
         if rng.random() < params.join_failure_chance:
-            send_packet(sock, "join", params.username, params.password, "bad")
+            send_packet(sock, "join", params.username, params.password, "version bad value")
             return
-        join_options = ["version swarm"]
+        send_packet(sock, "join", params.username, params.password, "swarm", params=params, rng=rng)
         if self.args.lobby:
-            join_options.append(f"lobby {self.args.lobby}")
+            lobby_args = [self.args.lobby]
             if self.args.lobby_password:
-                join_options.append(f"lobby-pw {self.args.lobby_password}")
-        send_packet(sock, "join", params.username, params.password, *join_options, params=params, rng=rng)
+                lobby_args.append(self.args.lobby_password)
+            send_packet(sock, "lobby", *lobby_args, params=params, rng=rng)
         if rng.random() < params.unknown_packet_chance:
             send_packet(sock, "unknown_test_packet", "hello", params=params, rng=rng)
         if rng.random() < params.invalid_bio_chance:

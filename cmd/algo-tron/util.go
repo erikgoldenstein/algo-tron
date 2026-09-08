@@ -103,78 +103,29 @@ func safeBioText(value string) bool {
 	return !strings.ContainsAny(value, `<>"'&`)
 }
 
-// parseJoinAttributes parses optional pipe-delimited keyword/value fields.
-// Attributes are deliberately order-independent; unknown attributes are
-// ignored so newer clients can add optional data without breaking this join.
-// The pipe remains the field delimiter, so values themselves cannot contain a
-// pipe. The currently recognized fields are `version <value>`, `lobby <value>`,
-// and `lobby-pw <value>`. A single bare value is retained as a compatibility
-// path for clients using the previously released `|v2` form; new clients
-// should use the keyword form.
-type joinAttributes struct {
-	version       string
-	lobby         string
-	lobbyPW       string
-	lobbyProvided bool
-}
-
-func parseJoinAttributes(fields []string) (string, string) {
-	attrs, errCode := parseJoinOptions(fields)
-	if errCode != "" {
+// parseJoinVersion parses the one optional join field. The canonical form is
+// a bare version (`join|name|password|v2`); the previous keyword form
+// (`version v2`) remains accepted so existing bots can reconnect after the
+// protocol change. Lobby selection is a separate post-join packet.
+func parseJoinVersion(fields []string) (string, string) {
+	if len(fields) == 0 {
+		return defaultBotVersion, ""
+	}
+	if len(fields) != 1 {
+		return "", "ERROR_EXPECTED_JOIN"
+	}
+	version := fields[0]
+	if key, value, ok := strings.Cut(version, " "); ok {
+		if key != "version" || value == "" {
+			return "", "ERROR_EXPECTED_JOIN"
+		}
+		version = value
+	}
+	version = normalizeVersion(version)
+	if errCode := validateVersion(version); errCode != "" {
 		return "", errCode
 	}
-	return attrs.version, errCode
-}
-
-func parseJoinOptions(fields []string) (joinAttributes, string) {
-	attrs := joinAttributes{version: defaultBotVersion}
-	version := defaultBotVersion
-	if len(fields) == 1 && !strings.Contains(fields[0], " ") {
-		version = normalizeVersion(fields[0])
-		if errCode := validateVersion(version); errCode != "" {
-			return attrs, errCode
-		}
-		attrs.version = version
-		return attrs, ""
-	}
-	seenVersion := false
-	seenLobby := false
-	seenLobbyPW := false
-	for _, field := range fields {
-		key, value, ok := strings.Cut(field, " ")
-		if !ok || key == "" || value == "" {
-			return attrs, "ERROR_EXPECTED_JOIN"
-		}
-		switch key {
-		case "version":
-			if seenVersion {
-				return attrs, "ERROR_VERSION_INVALID"
-			}
-			if errCode := validateVersion(value); errCode != "" {
-				return attrs, errCode
-			}
-			version = value
-			seenVersion = true
-		case "lobby":
-			if seenLobby || validateLobbyName(value) != "" {
-				return attrs, "ERROR_LOBBY_INVALID"
-			}
-			attrs.lobby = value
-			attrs.lobbyProvided = true
-			seenLobby = true
-		case "lobby-pw":
-			if seenLobbyPW || validateLobbyPassword(value) != "" {
-				return attrs, "ERROR_LOBBY_INVALID"
-			}
-			attrs.lobbyPW = value
-			seenLobbyPW = true
-		}
-	}
-	attrs.version = version
-	if !attrs.lobbyProvided && seenLobbyPW {
-		return attrs, "ERROR_LOBBY_INVALID"
-	}
-	return attrs, ""
+	return version, ""
 }
 
 func randID() string {

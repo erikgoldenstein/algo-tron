@@ -90,15 +90,7 @@ func TestLobbyMaxRequiresFourOrUnlimited(t *testing.T) {
 	}
 }
 
-func TestLobbyJoinOptionsAndFallback(t *testing.T) {
-	attrs, errCode := parseJoinOptions([]string{"lobby workshop", "lobby-pw begin", "version v2"})
-	if errCode != "" || attrs.version != "v2" || attrs.lobby != "workshop" || attrs.lobbyPW != "begin" {
-		t.Fatalf("parsed attrs = %+v, error = %q", attrs, errCode)
-	}
-	if _, errCode := parseJoinOptions([]string{"lobby workshop", "lobby-pw has space"}); errCode != "ERROR_LOBBY_INVALID" {
-		t.Fatalf("invalid lobby attributes error = %q", errCode)
-	}
-
+func TestLobbyResolution(t *testing.T) {
 	s := testServer(t)
 	s.lobbies["workshop"] = &Lobby{Name: "workshop", MaxPlayersPerBoard: 8}
 	if got, bad := s.resolveLobbyLocked("missing", ""); got != defaultLobbyName || !bad {

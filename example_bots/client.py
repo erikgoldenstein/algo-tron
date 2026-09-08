@@ -9,8 +9,10 @@ The full protocol lives in ../docs/bot-protocol.md, but the short version is:
   * Example outgoing line:    move|left\n         ("I want to move left")
 
 That's it. There is no JSON, no handshake, no length prefixes. The optional
-fourth join field is a bot version; omitting it means `v1`. The client sends
-the optional attribute form `|version <value>`.
+fourth join field is a bot version; omitting it means `v1`. A joined bot can
+select its matchmaking lobby at any time with `lobby|name` or
+`lobby|name|password`; changing lobby during a game takes effect after that
+game when the bot next enters the queue.
 
 This file gives you two things:
 
@@ -118,7 +120,7 @@ class Client:
 
         join = ["join", self.username, self.password]
         if self.version:
-            join.append("version " + self.version)
+            join.append(self.version)
         self._send(*join)
 
     def _reconnect(self) -> None:
@@ -144,6 +146,13 @@ class Client:
         clear a field. The server validates the field and its length.
         """
         self._send("bio", field, value)
+
+    def send_lobby(self, name: str, password: str = "") -> None:
+        """Select the matchmaking lobby used after the current game."""
+        fields = ["lobby", name]
+        if password:
+            fields.append(password)
+        self._send(*fields)
 
     def _read_line(self) -> str:
         """Read exactly one packet from the server.

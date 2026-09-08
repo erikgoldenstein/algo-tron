@@ -205,3 +205,35 @@ func TestHandleBio(t *testing.T) {
 		t.Fatal("empty contact did not clear the field")
 	}
 }
+
+func TestHandleLobbyChangesNextQueueWithoutMovingLiveSeat(t *testing.T) {
+	s := testServer(t)
+	s.lobbies["workshop"] = &Lobby{Name: "workshop", MaxPlayersPerBoard: 8}
+	p, _ := testPlayer("alice")
+	_, p.conn = mustPipe(t)
+	p.Lobby = defaultLobbyName
+	s.players["alice"] = p
+	g := bareGame(s, p)
+	g.lobby = defaultLobbyName
+	seat := p.seat.Load()
+
+	s.handleLobby(p, []string{"lobby", "workshop"})
+
+	if p.Lobby != "workshop" {
+		t.Fatalf("player lobby = %q, want workshop", p.Lobby)
+	}
+	if p.seat.Load() != seat || !seat.alive {
+		t.Fatal("lobby selection moved or changed the live seat")
+	}
+	if g.lobby != defaultLobbyName {
+		t.Fatalf("game lobby = %q, want %q", g.lobby, defaultLobbyName)
+	}
+
+	s.releaseSeatLocked(seat)
+	if p.seat.Load() != nil || p.queuedSince.IsZero() {
+		t.Fatal("player was not queued after the current game released the seat")
+	}
+	if queues := s.queuedPlayersByLobbyLocked()["workshop"]; len(queues) != 1 || queues[0] != p {
+		t.Fatalf("workshop queue = %+v, want player", queues)
+	}
+}

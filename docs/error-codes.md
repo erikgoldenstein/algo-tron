@@ -11,12 +11,11 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 | `ERROR_PROXY_PROTOCOL`     | `-proxy-protocol` enabled and the first line wasn't a valid PROXY v1 header. *algo-tron-specific.*    |
 | `ERROR_MAX_CONNECTIONS`    | Same source IP already has `maxConnections` (=5) live connections. Localhost is exempt.                |
 | `ERROR_JOIN_TIMEOUT`       | No line received within `joinTimeout` (5s) of connect.                                                |
-| `ERROR_EXPECTED_JOIN`      | First line wasn't a `join` packet, had fewer than 3 fields, or had a malformed optional attribute.    |
+| `ERROR_EXPECTED_JOIN`      | First line wasn't a `join` packet, had fewer than 3 fields, or had an invalid version field.          |
 | `ERROR_USERNAME_TOO_SHORT` | Empty username.                                                                                       |
 | `ERROR_USERNAME_TOO_LONG`  | Username > 32 chars.                                                                                  |
 | `ERROR_USERNAME_INVALID_SYMBOLS` | Username doesn't match `^[a-zA-Z0-9 _\-\.!?,:#]+$`.                                              |
 | `ERROR_VERSION_INVALID`     | Explicit version contains characters outside `[a-zA-Z0-9._-]` or is longer than 8 bytes.              |
-| `ERROR_LOBBY_INVALID`       | Lobby join attributes are malformed, contain spaces, exceed their limits, or omit `lobby` when `lobby-pw` is supplied. |
 | `ERROR_PASSWORD_TOO_SHORT` | Empty password.                                                                                       |
 | `ERROR_PASSWORD_TOO_LONG`  | Password > 128 chars.                                                                                 |
 | `ERROR_NO_PERMISSION`      | Username matches `^bot\d*$` (`bot`, `bot1`, …) or is a reserved filler-bot name (`alice`/`bob`) and connection isn't from `127.0.0.1` / `::1`. |
@@ -29,8 +28,9 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 |------------------------------|-----------------------------------------------------------------------------------------------------|
 | `ERROR_ALREADY_CONNECTED`    | New connection joins as an account that already has a live conn. The *old* conn gets this and is closed; the new one takes over. |
 | `ERROR_SERVER_RESTARTING`    | Server is shutting down for a restart or redeploy. The bot receives this after joining and the connection is then closed; clients should reconnect. *algo-tron-specific.* |
-| `LOBBY_NOT_FOUND`            | A post-join lobby selection failed because the lobby is missing or the password did not authorize it. The bot is placed in the default lobby; the same code is used for both cases to avoid revealing lobby existence. |
-| `ERROR_UNKNOWN_PACKET`       | First field of a post-join packet isn't `move`, `chat`, or `bio`.                                   |
+| `LOBBY_NOT_FOUND`            | A post-join lobby selection failed because the lobby is missing or the password did not authorize it. The current lobby selection is preserved; the same code is used for both cases to avoid revealing lobby existence. |
+| `ERROR_LOBBY_INVALID`        | A post-join `lobby` packet is malformed, contains spaces, or exceeds lobby name/password limits.    |
+| `ERROR_UNKNOWN_PACKET`       | First field of a post-join packet isn't `move`, `chat`, `bio`, or `lobby`.                           |
 | `ERROR_NO_MOVE`              | The game tick processed this player without a queued move. For the first two consecutive invalid operations, the server repeats the last valid direction if free, otherwise chooses the first free field in clockwise order (starting at `up` for a player with no previous valid move). |
 | `ERROR_INVALID_MOVE_LIMIT`   | The player reached the third consecutive invalid operation or exceeded the cumulative invalid-operation budget (`max(5, ceil(10% × current tick count))`). The connection is closed. |
 | `WARNING_UNKNOWN_MOVE`       | `move` packet missing direction or with a direction not in `up/right/down/left`.                    |

@@ -111,24 +111,24 @@ func TestValidateBio(t *testing.T) {
 	}
 }
 
-func TestParseJoinAttributes(t *testing.T) {
+func TestParseJoinVersion(t *testing.T) {
 	cases := []struct {
 		fields               []string
 		wantVersion, wantErr string
 	}{
 		{nil, "v1", ""},
 		{[]string{"version abcdefgh"}, "abcdefgh", ""},
-		{[]string{"other value", "version v2"}, "v2", ""},
-		{[]string{"v2"}, "v2", ""}, // legacy bare fourth field remains accepted
+		{[]string{"v2"}, "v2", ""},
 		{[]string{"version abcdefghi"}, "", "ERROR_VERSION_INVALID"},
 		{[]string{"version v 2"}, "", "ERROR_VERSION_INVALID"},
-		{[]string{"version v1", "version v2"}, "", "ERROR_VERSION_INVALID"},
+		{[]string{"lobby workshop"}, "", "ERROR_EXPECTED_JOIN"},
+		{[]string{"version v1", "version v2"}, "", "ERROR_EXPECTED_JOIN"},
 	}
 	for _, c := range cases {
 		t.Run(strings.Join(c.fields, "|"), func(t *testing.T) {
-			gotVersion, gotErr := parseJoinAttributes(c.fields)
+			gotVersion, gotErr := parseJoinVersion(c.fields)
 			if gotVersion != c.wantVersion || gotErr != c.wantErr {
-				t.Errorf("parseJoinAttributes(%q) = (%q, %q), want (%q, %q)", c.fields, gotVersion, gotErr, c.wantVersion, c.wantErr)
+				t.Errorf("parseJoinVersion(%q) = (%q, %q), want (%q, %q)", c.fields, gotVersion, gotErr, c.wantVersion, c.wantErr)
 			}
 		})
 	}

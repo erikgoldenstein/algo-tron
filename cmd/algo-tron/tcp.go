@@ -100,7 +100,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		return
 	}
 	username, password := parts[1], parts[2]
-	attrs, errCode := parseJoinOptions(parts[3:])
+	version, errCode := parseJoinVersion(parts[3:])
 	if errCode != "" {
 		metricTCPRejected.WithLabelValues("invalid_join").Inc()
 		reject("error", errCode)
@@ -115,8 +115,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	now := time.Now()
 	pwHash := hashPassword(s.secret, password)
 	s.mu.Lock()
-	lobby, lobbyError := s.resolveLobbyLocked(attrs.lobby, attrs.lobbyPW)
-	p := s.playerForVersionLocked(username, attrs.version)
+	p := s.playerForVersionLocked(username, version)
 	var accountReset bool
 	if p == nil {
 		account := s.accountPlayerLocked(username)
@@ -127,10 +126,10 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 				reject("error", "ERROR_WRONG_PASSWORD")
 				return
 			}
-			p, accountReset = s.resetAccountLocked(username, attrs.version, pwHash, now)
+			p, accountReset = s.resetAccountLocked(username, version, pwHash, now)
 		} else {
-			p = &Player{UUID: randUUID(), Username: username, Version: attrs.version, Lobby: lobby, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, FirstSeen: now, LastSeen: now}
-			s.players[playerKey(username, attrs.version)] = p
+			p = &Player{UUID: randUUID(), Username: username, Version: version, Lobby: defaultLobbyName, PwHash: pwHash, Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0, FirstSeen: now, LastSeen: now}
+			s.players[playerKey(username, version)] = p
 		}
 	} else if p.PwHash != pwHash {
 		if !s.accountPasswordResetAllowedLocked(username, now) {
@@ -139,13 +138,16 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 			reject("error", "ERROR_WRONG_PASSWORD")
 			return
 		}
-		p, accountReset = s.resetAccountLocked(username, attrs.version, pwHash, now)
+		p, accountReset = s.resetAccountLocked(username, version, pwHash, now)
 	}
 	if accountReset {
 		s.invalidateScoreCachesLocked()
 	}
 	if p.Version == "" {
 		p.Version = defaultBotVersion
+	}
+	if accountReset {
+		p.Lobby = defaultLobbyName
 	}
 	var replacement playerRow
 	if accountReset {
@@ -167,19 +169,14 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	ensureUUID(p)
 	p.LastSeen = now
 	if p.seat.Load() == nil {
-		p.Lobby = lobby
-	} else {
-		// A fast reconnect resumes the existing seat and cannot move a live
-		// game into another matchmaking pool.
-		lobbyError = false
+		if p.Lobby == "" {
+			p.Lobby = defaultLobbyName
+		}
 	}
 	s.markDirtyLocked(p)
 	sink = newBotSink(conn)
 	p.conn = conn
 	p.sink.Store(sink)
-	if lobbyError {
-		p.send("error", lobbyNotFoundError)
-	}
 	// A reconnecting player whose seat is still alive resumes playing (and
 	// gets the board snapshot re-sent so it can reorient); everyone else
 	// enters the matchmaking queue. Per-connection rate-limit state starts

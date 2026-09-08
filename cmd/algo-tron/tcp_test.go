@@ -52,10 +52,13 @@ func joinAsFieldsConn(t *testing.T, s *Server, username, password string, fields
 	return br, client
 }
 
-func TestMissingLobbyFallsBackAndReportsGenericError(t *testing.T) {
+func TestMissingLobbySelectionPreservesCurrentLobby(t *testing.T) {
 	s := testServer(t)
-	clientReader, client := joinAsFieldsConn(t, s, "newbie", "pw", "lobby workshop", "lobby-pw wrong")
+	clientReader, client := joinAsFieldsConn(t, s, "newbie", "pw")
 	defer client.Close()
+	if _, err := client.Write([]byte("lobby|workshop|wrong\n")); err != nil {
+		t.Fatalf("write lobby: %v", err)
+	}
 
 	// The error is queued after the join handshake and is the only lobby
 	// diagnostic exposed to a bot.
@@ -71,6 +74,17 @@ func TestMissingLobbyFallsBackAndReportsGenericError(t *testing.T) {
 		t.Fatalf("player lobby = %+v, want default", p)
 	}
 	s.mu.Unlock()
+}
+
+func TestJoinRejectsLobbyAttributes(t *testing.T) {
+	s := testServer(t)
+	clientReader, client := joinAsFieldsConn(t, s, "newbie", "pw", "lobby workshop")
+	defer client.Close()
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	line, err := clientReader.ReadString('\n')
+	if err != nil || line != "error|ERROR_EXPECTED_JOIN\n" {
+		t.Fatalf("join lobby attribute error = %q, %v", line, err)
+	}
 }
 
 func TestJoinSupportsIndependentVersionsAndLegacyDefaultsToV1(t *testing.T) {

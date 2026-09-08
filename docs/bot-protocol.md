@@ -20,7 +20,7 @@ this page documents how `algo-tron` implements it and the small divergences.
     |◄──── motd|<message>                        | at least once
     |                                            |
     |  (≤ 5s join window — joinTimeout)          |
-    | ──── join|<username>|<password>[|key value]... ►|
+    | ──── join|<username>|<password>[|<version>] ────►|
     |                                            |
     |   (validation: see error codes)            |
     |                                            |
@@ -66,20 +66,39 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 
 | Packet | Args               | Notes                                                                                       |
 |--------|--------------------|---------------------------------------------------------------------------------------------|
-| `join` | `username\|password[\|key value]...` | First packet. Optional attributes are order-independent; the canonical version field is `version v2`, and omitted version defaults to `v1`. Versions use `[a-zA-Z0-9._-]+` and are ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
+| `join` | `username\|password[\|version]` | First packet. The optional version defaults to `v1` and uses `[a-zA-Z0-9._-]+`, ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
 | `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. If a tick resolves without a valid queued direction, the server assists for the first two consecutive invalid operations, then closes the connection on the third or after the cumulative invalid-operation budget is exceeded. See [game mechanics](game-mechanics.md#move-resolution-one-tick). Dead players' `move` packets are accepted but ignored. |
 | `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
 | `bio` | `field\|value` | Optional post-join metadata. Current fields are `contact` and `src`; invalid values receive `ERROR_INVALID_BIO` and do not affect the connection. |
+| `lobby` | `name[\|password]` | Optional post-join matchmaking selection. A missing or unauthorized lobby leaves the current selection unchanged and returns `LOBBY_NOT_FOUND`; malformed fields return `ERROR_LOBBY_INVALID`. |
 
-The optional join fields use `keyword value` syntax and may appear in any order. Supported keys are `version`, `lobby`, and `lobby-pw`; unknown optional attributes are ignored for forward compatibility. A single bare fourth field such as `join|name|password|v2` remains accepted for compatibility with clients using the earlier version extension, but new clients should use `join|name|password|version v2`. Attribute values cannot contain `|`, and version, lobby, and lobby-password values cannot contain spaces. Versions are `[a-zA-Z0-9._-]+` and at most 8 bytes. Lobby names are `[a-zA-Z0-9._-]+` and at most 16 bytes; lobby passwords are at most 32 printable ASCII bytes.
+The join packet contains only credentials and the optional version. The bare
+fourth field is canonical (`join|name|password|v2`); `version v2` remains
+accepted for compatibility. Lobby selection is a separate packet and may be
+sent whenever the connection is active:
 
-`lobby` and `lobby-pw` are entirely additive. A join without them uses the existing `default` lobby and behaves as before. A named lobby must be created by an administrator. The lobby password is optional, but a password must not be supplied for an open lobby. A missing lobby, a wrong password, or any other failed lobby authorization always falls back to `default` and sends `error|LOBBY_NOT_FOUND` after the join; the error intentionally does not reveal whether the name or password was wrong. A valid lobby join is queued only with players from that lobby. Lobby queues and boards are separate, but all players continue to use the same global ELO/TrueSkill ratings and leaderboard.
+```text
+lobby|workshop
+lobby|workshop|spring
+lobby|default
+```
+
+Lobby names are `[a-zA-Z0-9._-]+` and at most 16 bytes; lobby passwords are at
+most 32 printable ASCII bytes. A named lobby must be created by an
+administrator. The lobby password is optional, but a password must not be
+supplied for an open lobby. A missing lobby, a wrong password, or any other
+failed lobby authorization returns `error|LOBBY_NOT_FOUND` and preserves the
+player's current selection. A queued player moves to the newly selected queue
+immediately. A player with a live seat stays in the current game; the new
+lobby is used only when that player next enters matchmaking. Lobby queues and
+boards are separate, but all players continue to use the same global
+ELO/TrueSkill ratings and leaderboard.
 
 Examples:
 
 ```text
-join|mybot|secret|version v8|lobby workshop|lobby-pw spring
-join|mybot|secret|lobby workshop
+join|mybot|secret|v8
+lobby|workshop|spring
 ```
 
 After joining, a bot may publish optional descriptive metadata without changing its game behavior:

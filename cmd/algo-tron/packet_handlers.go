@@ -46,11 +46,52 @@ func (s *Server) handlePacket(p *Player, lim *connLimits, packet string) (bool, 
 		s.handleBio(p, parts)
 		lim.allowed()
 		return true, ""
+	case "lobby":
+		s.handleLobby(p, parts)
+		lim.allowed()
+		return true, ""
 	default:
 		p.send("error", "ERROR_UNKNOWN_PACKET")
 		lim.allowed()
 		return true, ""
 	}
+}
+
+// handleLobby changes only the lobby used when this player next enters the
+// matchmaking queue. A live seat remains on its current board until that
+// game ends; a queued player is moved to the new queue immediately.
+func (s *Server) handleLobby(p *Player, parts []string) {
+	if len(parts) < 2 || len(parts) > 3 {
+		p.send("error", "ERROR_LOBBY_INVALID")
+		return
+	}
+	name, password := parts[1], ""
+	if len(parts) == 3 {
+		password = parts[2]
+	}
+	if validateLobbyName(name) != "" || validateLobbyPassword(password) != "" {
+		p.send("error", "ERROR_LOBBY_INVALID")
+		return
+	}
+
+	s.mu.Lock()
+	lobby, failed := s.resolveLobbyLocked(name, password)
+	if failed {
+		s.mu.Unlock()
+		p.send("error", lobbyNotFoundError)
+		return
+	}
+	if s.lobbyNameLocked(p) == lobby {
+		s.mu.Unlock()
+		return
+	}
+	p.Lobby = lobby
+	if p.seat.Load() == nil {
+		s.enqueueLocked(p)
+	}
+	s.updateScoreboardLocked()
+	s.broadcastScoreboardLocked()
+	s.mu.Unlock()
 }
 
 func (s *Server) handleBio(p *Player, parts []string) {
