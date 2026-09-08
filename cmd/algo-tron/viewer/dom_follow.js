@@ -58,7 +58,6 @@ function updateFollowPlayer() {
   input.onblur = () => setTimeout(() => {
     if (!input.value.trim()) {
       clearFollow();
-      updateDom();
     }
     hideFollowOptions();
   }, 0);
@@ -73,7 +72,6 @@ function setFollowName(value) {
   if (trimmed && gameState.boards.length <= 1) return;
   if (!trimmed) {
     clearFollow();
-    updateDom();
     return;
   }
   // Choosing a player is an explicit viewer preference and overrides a
@@ -86,7 +84,6 @@ function setFollowName(value) {
   updateFollowOptions();
   globalThis.viewerStore?.publish('follow');
   ensureWatched({ preserveFollow: true });
-  updateDom({ scoreboard: false });
 }
 
 function clearFollow() {
@@ -108,7 +105,6 @@ function stepFollow(delta) {
   const i = names.findIndex((name) => sameName(name, gameState.followName));
   const next = i < 0 ? names[0] : names[(i + delta + names.length) % names.length];
   setFollowName(next);
-  updateDom();
 }
 
 function allBoardNames() {
@@ -167,7 +163,6 @@ function bindScoreFollowTargets(root = document) {
       } else {
         setFollowName(el.dataset.followName || '');
       }
-      updateDom();
     };
     el.title = 'follow ' + (el.dataset.followName || 'player');
   });

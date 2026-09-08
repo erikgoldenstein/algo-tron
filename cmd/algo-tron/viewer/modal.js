@@ -340,7 +340,6 @@ document.addEventListener('keydown', (e) => {
         const leaderName = leader ? scoreNameLabel(leader) : '';
         if (leaderName) setFollowName(leaderName);
       }
-      updateDom();
       return;
     }
     case 'j':

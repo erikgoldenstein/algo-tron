@@ -21,8 +21,10 @@
 // redeployed server come into effect.
 //
 // Depends on: dom.js (showShutdownBanner), gameState.js (applyMessage,
-// gameState), and store.js (published through globalThis.viewerStore).
+// gameState), and store.js.
 // Provides: watchBoard, stepBoard, ensureWatched.
+
+import { viewerStore } from './store.js';
 
 let hadActiveSession = false;
 let ws = null;
@@ -38,7 +40,6 @@ function watchBoard(id, { preserveFollow = false, automatic = false } = {}) {
       gameState.autoLobby = '';
       if (gameState.followName) {
         clearFollow();
-        updateDom({ scoreboard: false });
       }
     }
     pendingWatchID = id;
@@ -195,9 +196,27 @@ function connect() {
         preferredLobby: watchedBoardEnded ? watchedLobby : '',
       });
     }
-    globalThis.viewerStore?.publish(msg.type, msg);
+    viewerStore.publish(msg.type, msg);
   };
   ws.onclose = () => setTimeout(connect, 1000);
   ws.onerror = () => ws.close();
 }
-connect();
+
+// Keep the existing classic-script API available to the controls while this
+// entry point is migrated to a module.
+Object.assign(globalThis, {
+  watchBoard,
+  requestScoreboard,
+  requestViewerSubscription,
+  stepBoard,
+  ensureWatched,
+});
+
+// Wait until the classic scripts have initialized their globals. This also
+// makes module startup ordering explicit instead of relying on the global
+// store bridge being ready before the first WebSocket frame arrives.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', connect, { once: true });
+} else {
+  connect();
+}

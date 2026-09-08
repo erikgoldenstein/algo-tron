@@ -26,12 +26,17 @@ function scheduleRender({ board = false, chart = false } = {}) {
   });
 }
 
-viewerStore.subscribe(({ type }) => {
+viewerStore.subscribe(({ type, payload }) => {
   const scoreboardResponse = type === 'scoreboard';
-  globalThis.updateDom?.({
-    scoreboard: !['tick', 'chat', 'misc'].includes(type),
+  const domOptions = {
+    scoreboard: !['tick', 'chat', 'chat_snapshot'].includes(type),
     renderModal: !scoreboardResponse,
-  });
+    shell: !['tick', 'chat', 'chat_snapshot', 'scoreboard'].includes(type),
+    stats: type === 'tick' || type === 'scoreboard',
+    chat: type !== 'scoreboard',
+    ...payload?.dom,
+  };
+  globalThis.updateDom?.(domOptions);
   if (scoreboardResponse && !document.getElementById('scoreboard-modal')?.hidden) {
     globalThis.renderScoreboardModalRows?.();
   }

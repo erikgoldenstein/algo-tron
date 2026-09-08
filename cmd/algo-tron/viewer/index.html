@@ -15,7 +15,8 @@
   <link rel="icon" href="/static/assets/favicon.ico" sizes="any">
   <link rel="stylesheet" href="/static/style.css">
   <!-- Most viewer files remain classic scripts for now; the render scheduler
-       is an ES module and bridges them through the small event store. -->
+       and WebSocket entry point are ES modules. The classic scripts publish
+       invalidations through the small compatibility bridge. -->
   <script defer src="/static/helpers.js"></script>
   <script defer src="/static/schemes.js"></script>
   <script defer src="/static/gameState.js"></script>
@@ -25,7 +26,7 @@
   <script defer src="/static/modal.js"></script>
   <script defer src="/static/admin.js"></script>
   <script defer src="/static/scoreplot.js"></script>
-  <script defer src="/static/ws.js"></script>
+  <script type="module" src="/static/ws.js"></script>
   <script defer src="/static/schedule.js"></script>
 </head>
 <body>

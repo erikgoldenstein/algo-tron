@@ -27,6 +27,9 @@ function normalizedDomRenderOptions(options = {}) {
   return {
     scoreboard: options.scoreboard !== false,
     renderModal: options.renderModal !== false,
+    shell: options.shell !== false,
+    stats: options.stats === true,
+    chat: options.chat !== false,
   };
 }
 
@@ -39,6 +42,9 @@ function deferInteractiveRender(options = {}) {
     // A full render supersedes a partial one while the pointer is held.
     pendingDomRender.scoreboard ||= next.scoreboard;
     pendingDomRender.renderModal ||= next.renderModal;
+    pendingDomRender.shell ||= next.shell;
+    pendingDomRender.stats ||= next.stats;
+    pendingDomRender.chat ||= next.chat;
   }
   return true;
 }
@@ -94,55 +100,64 @@ function initPointerRenderGuard() {
 
 document.addEventListener('DOMContentLoaded', initPointerRenderGuard);
 
-function updateDom({ scoreboard = true, renderModal = true } = {}) {
-  if (deferInteractiveRender({ scoreboard, renderModal })) return;
-  const game = gameState.serverInfo[0];
-  const view = gameState.viewInfo[0];
+function updateDom({ scoreboard = true, renderModal = true, shell = true, stats = false, chat = true } = {}) {
+  if (deferInteractiveRender({ scoreboard, renderModal, shell, stats, chat })) return;
 
-  // Tagline shows the *viewer* host so users land on the right web URL when
-  // they share the line. The TCP game host is shown inside the help modal.
-  const addr = document.getElementById('addr');
-  if (addr && view) addr.textContent = viewURL(view);
+  if (shell) {
+    const game = gameState.serverInfo[0];
+    const view = gameState.viewInfo[0];
 
-  const modalGame = document.getElementById('modal-game');
-  const modalView = document.getElementById('modal-view');
-  const commitEl = document.getElementById('deployed-commit');
-  if (commitEl) {
-    const commit = gameState.buildCommit || 'unknown';
-    commitEl.textContent = commit.slice(0, 12);
-    commitEl.title = 'build commit ' + commit;
+    // Tagline shows the *viewer* host so users land on the right web URL when
+    // they share the line. The TCP game host is shown inside the help modal.
+    const addr = document.getElementById('addr');
+    if (addr && view) addr.textContent = viewURL(view);
+
+    const modalGame = document.getElementById('modal-game');
+    const modalView = document.getElementById('modal-view');
+    const commitEl = document.getElementById('deployed-commit');
+    if (commitEl) {
+      const commit = gameState.buildCommit || 'unknown';
+      commitEl.textContent = commit.slice(0, 12);
+      commitEl.title = 'build commit ' + commit;
+    }
+    if (modalGame && game) modalGame.textContent = game.host + ':' + game.port;
+    if (modalView && view) modalView.textContent = viewURL(view);
   }
-  if (modalGame && game) modalGame.textContent = game.host + ':' + game.port;
-  if (modalView && view) modalView.textContent = viewURL(view);
 
-  const players = gameState.game ? Object.values(gameState.game.players) : [];
-  let playerCount = players.length;
-  let alive = players.filter((p) => p.alive).length;
-  if (gameState.scoreboardScope === 'global') {
-    playerCount = gameState.globalPlayers ?? gameState.boards.reduce((total, board) => total + (Number(board.players) || 0), 0);
-    alive = gameState.globalAlive ?? gameState.boards.reduce((total, board) => total + (Number(board.alive) || 0), 0);
-  } else if (gameState.scoreboardScope === 'lobby') {
-    const stats = gameState.lobbyStats[gameState.scoreboardLobby];
-    playerCount = stats?.players || 0;
-    alive = stats?.alive || 0;
+  if (shell || stats) {
+    const players = gameState.game ? Object.values(gameState.game.players) : [];
+    let playerCount = players.length;
+    let alive = players.filter((p) => p.alive).length;
+    if (gameState.scoreboardScope === 'global') {
+      playerCount = gameState.globalPlayers ?? gameState.boards.reduce((total, board) => total + (Number(board.players) || 0), 0);
+      alive = gameState.globalAlive ?? gameState.boards.reduce((total, board) => total + (Number(board.alive) || 0), 0);
+    } else if (gameState.scoreboardScope === 'lobby') {
+      const stats = gameState.lobbyStats[gameState.scoreboardLobby];
+      playerCount = stats?.players || 0;
+      alive = stats?.alive || 0;
+    }
+    const aliveEl = document.getElementById('alive-count');
+    if (aliveEl) aliveEl.textContent = playerCount ? `(${alive}/${playerCount} alive)` : '';
   }
-  const aliveEl = document.getElementById('alive-count');
-  if (aliveEl) aliveEl.textContent = playerCount ? `(${alive}/${playerCount} alive)` : '';
 
-  updateTabs();
-  updateScoreboardTools();
-  updateChatTools();
+  if (shell) {
+    updateTabs();
+    updateScoreboardTools();
+    updateChatTools();
+  }
 
   if (scoreboard) {
     renderScoreboardDom({ renderModal });
     if (typeof updateScorePlotUsers === 'function') updateScorePlotUsers();
   }
 
-  const chatPanel = visibleChats();
-  const chat = document.getElementById('chat');
-  chat.innerHTML = chatPanel.length
-    ? [...chatPanel].reverse().map(chatRow).join('')
-    : '<div class="chat-empty">no messages yet</div>';
+  if (chat) {
+    const chatPanel = visibleChats();
+    const chatEl = document.getElementById('chat');
+    chatEl.innerHTML = chatPanel.length
+      ? [...chatPanel].reverse().map(chatRow).join('')
+      : '<div class="chat-empty">no messages yet</div>';
+  }
 }
 
 function renderScoreboardDom({ renderModal = true } = {}) {
@@ -507,19 +522,16 @@ function updateScoreboardScope() {
   const el = document.getElementById('scoreboard-scope');
   if (!el) return;
   renderScopeOptions(el, gameState.scoreboardScope);
+  setActiveScopeOption(el, gameState.scoreboardScope);
   el.querySelectorAll('.scope-option').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.scope === gameState.scoreboardScope);
     btn.onclick = () => {
       const lobby = btn.dataset.scope === 'lobby' ? watchedLobby() : '';
       if (gameState.scoreboardScope === btn.dataset.scope && gameState.scoreboardLobby === lobby) return;
       gameState.scoreboardScope = btn.dataset.scope;
       gameState.scoreboardLobby = lobby;
-      globalThis.viewerStore?.publish('scope');
-      el.querySelectorAll('.scope-option').forEach((option) => {
-        option.classList.toggle('active', option.dataset.scope === gameState.scoreboardScope);
-      });
+      setActiveScopeOption(el, gameState.scoreboardScope);
+      globalThis.viewerStore?.publish('scope', { dom: { scoreboard: true } });
       if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
-      updateDom();
     };
   });
 }
@@ -532,20 +544,23 @@ function updateChatTools() {
   const scope = document.getElementById('chat-scope');
   if (!scope) return;
   renderScopeOptions(scope, gameState.chatScope);
+  setActiveScopeOption(scope, gameState.chatScope);
   scope.querySelectorAll('.scope-option').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.scope === gameState.chatScope);
     btn.onclick = () => {
       const lobby = btn.dataset.scope === 'lobby' ? watchedLobby() : '';
       if (gameState.chatScope === btn.dataset.scope && gameState.chatLobby === lobby) return;
       gameState.chatScope = btn.dataset.scope;
       gameState.chatLobby = lobby;
-      globalThis.viewerStore?.publish('scope');
-      scope.querySelectorAll('.scope-option').forEach((option) => {
-        option.classList.toggle('active', option.dataset.scope === gameState.chatScope);
-      });
+      setActiveScopeOption(scope, gameState.chatScope);
+      globalThis.viewerStore?.publish('scope', { dom: { scoreboard: false } });
       if (typeof requestViewerSubscription === 'function') requestViewerSubscription();
-      updateDom({ scoreboard: false });
     };
+  });
+}
+
+function setActiveScopeOption(root, selectedScope) {
+  root.querySelectorAll('.scope-option').forEach((option) => {
+    option.classList.toggle('active', option.dataset.scope === selectedScope);
   });
 }
 

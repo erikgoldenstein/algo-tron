@@ -1,5 +1,6 @@
-// Tiny viewer event store. State still lives in gameState.js; this only
-// gives independent renderers one place to subscribe to invalidations.
+// Tiny viewer invalidation hub. State still lives in gameState.js by design;
+// this keeps render scheduling independent without adding a second state
+// model during the incremental module migration.
 
 const listeners = new Set();
 
