@@ -8,11 +8,15 @@ The full protocol lives in ../docs/bot-protocol.md, but the short version is:
   * Example incoming line:    pos|3|5|7\n        ("player 3 is at (5,7)")
   * Example outgoing line:    move|left\n         ("I want to move left")
 
-That's it. There is no JSON, no handshake, no length prefixes. The optional
-fourth join field is a bot version; omitting it means `v1`. A joined bot can
-select its matchmaking lobby at any time with `lobby|name` or
-`lobby|name|password`; changing lobby during a game takes effect after that
-game when the bot next enters the queue.
+That's it. There is no JSON, no length prefix, and no separate handshake
+packet. The canonical join packet is `join|username|password|version`; the
+version is optional and defaults to `v1`. Different versions let one account
+run multiple independent bots at the same time.
+
+A joined bot can select its matchmaking lobby at any time with `lobby|name`
+or `lobby|name|password`; changing lobby during a game takes effect after that
+game when the bot next enters the queue. It can also publish optional metadata
+with `bio|contact|value` and `bio|src|value`.
 
 This file gives you two things:
 
@@ -153,6 +157,10 @@ class Client:
         if password:
             fields.append(password)
         self._send(*fields)
+
+    def send_chat(self, message: str) -> None:
+        """Send an optional chat message while alive."""
+        self._send("chat", message)
 
     def _read_line(self) -> str:
         """Read exactly one packet from the server.

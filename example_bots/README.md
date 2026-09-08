@@ -1,91 +1,89 @@
-# example_bots
+# Example bots
 
-Minimal Python reference bots for the go-tron protocol. They share a tiny
-TCP client (`client.py`) that handles the line-based wire format described
-in [`../docs/bot-protocol.md`](../docs/bot-protocol.md) and keeps a small
-amount of game state (board size, our id, the heads and trails of every
-alive player).
+Three small Python bots that show the complete basic client:
 
-Each bot only implements a single `decide(client) -> str` function returning
-one of `up`, `right`, `down`, `left`. The client calls it once per `tick`.
+- `bot1_random.py` — chooses a random free direction.
+- `bot2_bfs_depth8.py` — chooses the direction with the most nearby space.
+- `bot3_adaptive_bfs.py` — searches around all players and adapts to the tick rate.
 
-## Running
-
-The server speaks plain TCP. Start it locally (see the top-level README) and
-then point a bot at it:
+They use only Python's standard library. Start the server, then run one:
 
 ```sh
-python3 bot1_random.py tron.erik.gdn 4000 mybot
+python3 bot1_random.py tron.erik.gdn 4000 mybot v1
 ```
 
-Three positional arguments, all optional: `host port username`. Password is
-hard-coded to `secret` — change it inline if you want a stable account.
+The arguments are optional and mean `host port username version`. The password
+is `secret` in the example code; change it in the bot if needed.
 
-No third-party dependencies; standard library only. Tested with CPython 3.11+.
+## The important idea: versions
 
-## The bots
+`username` + `password` is one account. The optional version string identifies
+an independent bot career under that account. This is intended for running
+multiple bots from one account: use the same username and password with a
+different version for each bot.
 
-### `bot1_random.py` — random free neighbour
+```sh
+python3 bot1_random.py 127.0.0.1 4000 myaccount random
+python3 bot2_bfs_depth8.py 127.0.0.1 4000 myaccount bfs8
+python3 bot3_adaptive_bfs.py 127.0.0.1 4000 myaccount adaptive
+```
 
-The simplest possible non-suicidal policy:
+Each version has separate ratings, history, and leaderboard row. Version
+strings may contain letters, numbers, `.`, `_`, and `-`, and may be at most
+8 characters. If omitted, the version is `v1`. Reusing the same version while
+the first bot is connected replaces the first connection. Choose a normal
+username: `online` and `bot...` names are reserved outside localhost.
 
-1. Look at the four neighbours of our current head (with toroidal wrap).
-2. Drop any that are already part of a trail.
-3. Pick one uniformly at random.
+## Protocol in one minute
 
-If every neighbour is blocked we return `up` and accept the inevitable.
-Useful as a sparring partner and as a sanity check that the client and
-protocol are wired up correctly.
+The protocol is plain TCP text: one UTF-8 packet per line, with fields separated
+by `|`.
 
-### `bot2_bfs_depth8.py` — fixed-depth BFS, with wrap
+```text
+join|username|password|version
+move|up
+```
 
-For every legal neighbour of our head we run a breadth-first flood from that
-candidate cell, capped at depth 8, and count how many empty cells it can
-reach. The move with the largest reachable set wins. The flood wraps around
-the board edges (matching the real toroidal topology), but ignores other
-players' future moves — they're treated as static obstacles at their current
-trails.
+After joining, the server sends a `game` snapshot, then repeats `pos` and
+`tick`. Send one `move` after each `tick`. The board wraps at its edges, and
+the `pos` packets plus the `game`/`player` packets are enough to maintain the
+state used by these examples. A game ends with `win` or `lose`; wait for the
+next `game` packet and keep running.
 
-This already beats `bot1` decisively in most games: walking into a
-soon-to-be-dead-end is the most common way a random bot loses, and an
-8-deep flood is enough to see those dead ends coming.
+The client also supports the optional packets:
 
-### `bot3_adaptive_bfs.py` — wrap-aware multi-player BFS with a time budget
+```text
+lobby|workshop
+lobby|workshop|password
+chat|hello
+bio|contact|you@example.com
+bio|src|https://git.example.com/you/my-bot
+```
 
-A more careful version of `bot2` that:
+`lobby` changes the queue used after the current game, so changing it during a
+game does not move the bot immediately. `src` may be any printable source
+address or text, not only GitHub. `chat` is limited to one posted message per
+tick interval. Values cannot contain `|`.
 
-- **Wraps around edges**, matching the actual game's toroidal board.
-- **Considers all alive opponents.** For each candidate move we expand our
-  BFS frontier *and* every enemy's BFS frontier in lock-step. The score is
-  `reach_depth * 10 - crossings`, where `crossings` counts cells where our
-  frontier meets an enemy's at the same layer. That penalises corridors we'd
-  have to contest while rewarding long uncontested escape routes.
-- **Adapts its search depth to the tick budget.** The server's tick rate
-  ramps up over the course of a game (see
-  [`../docs/game-mechanics.md`](../docs/game-mechanics.md)), so a depth that
-  was cheap at 1 tps will blow the budget at 10 tps. The bot measures the
-  wall-clock interval between `tick` packets, takes 85% of it as its budget,
-  times each decision, and grows or shrinks `depth` by 1 each tick to track
-  it. Search also short-circuits if the per-tick deadline is hit mid-loop,
-  so a too-ambitious depth still returns *something*.
+Send at most a few packets per tick and normally only one `move`; sustained
+packet spam is rate-limited and can disconnect the account. If a move is
+missing or invalid, the server chooses a safe fallback for the first two
+consecutive misses, then disconnects the bot. The client reconnects after a
+connection loss; a reconnect can resume a still-live seat, but old trail cells
+are not replayed.
 
-This is intentionally not a state-of-the-art bot — there's no minimax,
-articulation-point analysis, or Voronoi partitioning. It's the smallest
-piece of code that demonstrates the three ideas you'd want in a real entry:
-respect the topology, model your opponents, and stay inside the tick budget.
+For all packet types, limits, errors, reconnect behavior, and exact packet
+formats, see the [full bot protocol](../docs/bot-protocol.md). The shared
+client is in [`client.py`](client.py); `decide(client)` is the only function a
+new strategy needs to implement.
 
-## Where to go from here
+## Running locally
 
-- Track the tick rate from `baseTickrate + floor(elapsed / 10)` directly
-  instead of measuring it, so the very first tick of a game already has
-  the right budget.
-- Replace the score with a Voronoi-style partition: count, for each empty
-  cell, who reaches it first, and maximise your own share.
-- Plug in a minimax search over the next few enemy moves rather than the
-  symmetric BFS frontier above.
+From this directory:
 
-## Hosting
+```sh
+python3 bot1_random.py
+```
 
-Want to keep your bot running after you close your laptop? See
-[`hosting.md`](hosting.md) for self-hosting, free, and low-cost deployment
-options and their tradeoffs.
+The default is `127.0.0.1:4000`. No dependencies beyond CPython 3.11+ are
+required.

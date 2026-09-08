@@ -164,7 +164,8 @@ def main() -> None:
     host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 4000
     name = sys.argv[3] if len(sys.argv) > 3 else "bot3"
-    Client(host, port, name, "secret").run(make_decide())
+    version = sys.argv[4] if len(sys.argv) > 4 else "v1"
+    Client(host, port, name, "secret", version).run(make_decide())
 
 
 if __name__ == "__main__":
