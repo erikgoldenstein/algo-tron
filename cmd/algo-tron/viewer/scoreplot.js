@@ -14,6 +14,8 @@ let scorePlotRequestID = 0;
 let scorePlotSearchTimer = 0;
 let scorePlotRefreshTimer = 0;
 let scorePlotModalHeight = 0;
+const SCORE_PLOT_DASH_GAP_MS = 3 * 60 * 1000;
+const SCORE_PLOT_BREAK_GAP_MS = 20 * 60 * 1000;
 
 // Game-end frames can arrive close together when several boards finish. Keep
 // one short refresh timer so a burst of endings produces one history request,
@@ -344,8 +346,11 @@ function renderScorePlot() {
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       if (i > 0) {
-        ctx.setLineDash(point.gap ? [3, 3] : []);
-        ctx.beginPath(); ctx.moveTo(x(points[i - 1].time), y(points[i - 1].value)); ctx.lineTo(x(point.time), y(point.value)); ctx.stroke();
+        const gap = Number(point.time) - Number(points[i - 1].time);
+        if (gap <= SCORE_PLOT_BREAK_GAP_MS) {
+          ctx.setLineDash(point.gap || gap > SCORE_PLOT_DASH_GAP_MS ? [3, 3] : []);
+          ctx.beginPath(); ctx.moveTo(x(points[i - 1].time), y(points[i - 1].value)); ctx.lineTo(x(point.time), y(point.value)); ctx.stroke();
+        }
       }
       ctx.setLineDash([]);
       ctx.fillRect(x(point.time) - 2, y(point.value) - 2, 4, 4);
