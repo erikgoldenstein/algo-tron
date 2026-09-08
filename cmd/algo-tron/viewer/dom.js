@@ -196,7 +196,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
       });
     }
   } else if (!scoreboardEl.querySelector('tr.empty')) {
-    scoreboardEl.innerHTML = '<tr><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
+    scoreboardEl.innerHTML = '<tr class="empty"><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
   }
   if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(scoreboardEl);
 
