@@ -220,7 +220,9 @@ function openScoreboardModal() {
   const m = document.getElementById('scoreboard-modal');
   if (!m) return;
   m.hidden = false;
-  if (typeof setScoreboardModalView === 'function') setScoreboardModalView('scoreboard');
+  if (typeof setScoreboardModalView === 'function') {
+    setScoreboardModalView(m.dataset.scoreboardView || 'scoreboard');
+  }
   fetchScoreboardPage(scoreModalQuery(0));
   renderScoreboardModalRows();
 }

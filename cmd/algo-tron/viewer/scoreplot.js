@@ -39,6 +39,7 @@ function setScoreboardModalView(view) {
   const modal = document.querySelector('.scoreboard-modal-window');
   const scoreboardTab = document.getElementById('scoreboard-tab');
   const scoreplotTab = document.getElementById('scoreplot-tab');
+  if (modal) modal.dataset.scoreboardView = scorePlotView;
   // Measure before hiding the scoreboard. Its fixed rows viewport is the
   // canonical modal height; the alternate view adopts that exact height.
   if (scorePlotView === 'scoreplot' && scoreboard && !scoreboard.hidden) {
