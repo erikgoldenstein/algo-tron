@@ -490,7 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateScoreboardTools() {
   const tools = document.getElementById('scoreboard-tools');
   if (!tools) return;
-  tools.hidden = gameState.boards.length <= 1 && !(gameState.lobbies && gameState.lobbies.length > 1);
+  tools.hidden = gameState.boards.length <= 1;
   if (tools.hidden) return;
   updateScoreboardScope();
   updateFollowPlayer();
@@ -519,7 +519,7 @@ function updateScoreboardScope() {
 function updateChatTools() {
   const tools = document.getElementById('chat-tools');
   if (!tools) return;
-  tools.hidden = gameState.boards.length <= 1 && !(gameState.lobbies && gameState.lobbies.length > 1);
+  tools.hidden = gameState.boards.length <= 1;
   if (tools.hidden) return;
   const scope = document.getElementById('chat-scope');
   if (!scope) return;

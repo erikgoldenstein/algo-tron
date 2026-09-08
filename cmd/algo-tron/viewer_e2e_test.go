@@ -295,6 +295,29 @@ func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	}
 }
 
+func TestE2EScopeSwitchersHiddenWithSingleBoard(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	a, _ := testPlayer("single-a")
+	b, _ := testPlayer("single-b")
+	s.games = []*Game{newGame(s, []*Player{a, b})}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var scoreboardHidden, chatHidden bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`#tabs .tab.active`),
+		chromedp.Evaluate(`document.getElementById('scoreboard-tools').hidden`, &scoreboardHidden),
+		chromedp.Evaluate(`document.getElementById('chat-tools').hidden`, &chatHidden),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !scoreboardHidden || !chatHidden {
+		t.Errorf("scope switcher visibility = scoreboard hidden %v, chat hidden %v; want both hidden", scoreboardHidden, chatHidden)
+	}
+}
+
 func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	url, s := e2eViewer(t)
 	s.mu.Lock()
