@@ -100,6 +100,10 @@ function cycleScheme() {
   renderSchemes();
 }
 
+function nonSettingsModalOpen() {
+  return !!document.querySelector('.modal:not([hidden]):not(#help-modal)');
+}
+
 function scoreModalQuery(offset) {
   return {
     period: document.getElementById('scoreboard-period')?.dataset.value || 'online',
@@ -281,6 +285,10 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
+  // Board/follow/color shortcuts are available on the page and in settings,
+  // but must not operate underneath another modal such as the scoreboard or
+  // an admin dialog.
+  if (nonSettingsModalOpen()) return;
   // Don't steal shortcuts while the user is typing in a field.
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
