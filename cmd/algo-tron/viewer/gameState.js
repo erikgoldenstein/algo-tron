@@ -33,6 +33,7 @@ const gameState = {
   viewInfo: [],
   scoreboard: [],
   boardScoreboard: [],
+  boardScoreboardVisible: 10,
   boardChartData: [],
   scoreboardScope: screenMode ? 'global' : 'board', // 'board' | 'lobby' | 'global'
   scoreboardLobby: '',
@@ -98,6 +99,7 @@ function applyInit(msg) {
   gameState.scoreboard  = msg.scoreboard  || [];
   gameState.scorePages[scorePageKey('online', 'ts', '', '')] = { entries: gameState.scoreboard.slice(), hasMore: !!msg.scoreboardHasMore, period: 'online', sort: 'ts', search: '', lobby: '', computedAt: msg.computedAt || Date.now() };
   gameState.boardScoreboard = msg.game?.boardScoreboard || [];
+  gameState.boardScoreboardVisible = 10;
   gameState.boardChartData  = msg.game?.boardChartData  || [];
   gameState.chartData   = msg.chartData   || [];
   gameState.lastWinners = msg.lastWinners || [];
@@ -111,6 +113,7 @@ function applyInit(msg) {
 
 function applyGame(msg) {
   gameState.boardScoreboard = msg.boardScoreboard || [];
+  gameState.boardScoreboardVisible = 10;
   gameState.boardChartData = msg.boardChartData || [];
   gameState.game = buildGame(msg);
 }

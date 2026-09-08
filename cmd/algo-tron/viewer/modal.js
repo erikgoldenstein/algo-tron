@@ -238,6 +238,12 @@ function closeScoreboardModal() {
 }
 
 function loadMoreSidebarScores() {
+  if (gameState.scoreboardScope === 'board') {
+    if (gameState.boardScoreboardVisible >= gameState.boardScoreboard.length) return;
+    gameState.boardScoreboardVisible = Math.min(gameState.boardScoreboard.length, gameState.boardScoreboardVisible + 25);
+    updateDom({ renderModal: false });
+    return;
+  }
   if (!matchMedia('(min-width: 801px)').matches) return;
   const lobby = gameState.scoreboardScope === 'lobby' ? gameState.scoreboardLobby : '';
   const key = scorePageKey('online', 'ts', '', lobby);
@@ -271,9 +277,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreModalScores();
   });
-  document.querySelector('.scoreboard-section')?.addEventListener('scroll', (e) => {
+  const scoreboardTableScroll = document.querySelector('.scoreboard-table-scroll');
+  scoreboardTableScroll?.addEventListener('scroll', (e) => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) loadMoreSidebarScores();
+  });
+  scoreboardTableScroll?.addEventListener('wheel', (e) => {
+    if (e.deltaY > 0) loadMoreSidebarScores();
   });
   document.querySelectorAll('[data-close]').forEach((el) => {
     el.addEventListener('click', () => toggleHelp(false));

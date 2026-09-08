@@ -145,7 +145,11 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 	// Scoreboard/chart construction is unrelated to the board's mutable
 	// simulation state. Keep only the required trail/state copy under g.mu;
 	// the potentially larger sorting and history work runs afterward.
-	m.BoardScoreboard = s.buildScoreboardEntriesLocked(players, "ts", 0, defaultScoreboardLimit)
+	limit := len(players)
+	if limit == 0 {
+		limit = defaultScoreboardLimit
+	}
+	m.BoardScoreboard = s.buildScoreboardEntriesLocked(players, "ts", 0, limit)
 	s.annotateVersionTagsLocked(m.BoardScoreboard)
 	m.BoardChartData = buildChartDataLocked(s.players, m.BoardScoreboard)
 	return m

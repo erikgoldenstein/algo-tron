@@ -248,6 +248,7 @@ h2 {
 }
 
 .scoreboard thead th { font-weight: 400; padding-bottom: 2px; }
+.scoreboard thead { background: var(--bg); }
 .scoreboard td.name { color: var(--text); }
 .scoreboard tr.followed { background: var(--bg-elevated); }
 .scoreboard tbody tr { transition: transform 180ms ease; }
@@ -310,14 +311,28 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 
 @media (min-width: 801px) {
   .scoreboard-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     max-height: 260px;
+    overflow: hidden;
+  }
+  .scoreboard-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     scrollbar-width: none;
   }
-  .scoreboard-section:hover,
-  .scoreboard-section:focus-within { scrollbar-width: thin; }
-  .scoreboard-section::-webkit-scrollbar { width: 0; }
-  .scoreboard-section:hover::-webkit-scrollbar { width: 6px; }
+  .scoreboard-table-scroll:hover,
+  .scoreboard-table-scroll:focus-within { scrollbar-width: thin; }
+  .scoreboard-table-scroll::-webkit-scrollbar { width: 0; }
+  .scoreboard-table-scroll:hover::-webkit-scrollbar { width: 6px; }
+  .scoreboard thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
+  }
 }
 
 /* — Chart ——————————————————————————————————————————————————————————— */

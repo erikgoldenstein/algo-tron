@@ -235,7 +235,7 @@ function visibleChats() {
 
 function currentScoreboard() {
   if (gameState.scoreboardScope === 'board') {
-    return gameState.boardScoreboard;
+    return gameState.boardScoreboard.slice(0, gameState.boardScoreboardVisible || 10);
   }
   if (gameState.scoreboardScope === 'lobby') {
     return gameState.lobbyScoreboards[gameState.scoreboardLobby] || [];
