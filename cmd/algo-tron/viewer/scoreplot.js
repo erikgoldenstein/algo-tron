@@ -15,6 +15,7 @@ let scorePlotSearchTimer = 0;
 let scorePlotRefreshTimer = 0;
 let scorePlotModalHeight = 0;
 let scorePlotHoveredUser = '';
+let scorePlotPinnedUser = '';
 const SCORE_PLOT_DASH_GAP_MS = 3 * 60 * 1000;
 const SCORE_PLOT_BREAK_GAP_MS = 20 * 60 * 1000;
 
@@ -139,7 +140,8 @@ function renderScorePlotSelection() {
   if (count) count.textContent = scorePlotSelected.length;
   root.innerHTML = scorePlotSelected.map((user) => {
     const color = playerColor(user.username);
-    return '<span class="scoreplot-chip" data-scoreplot-selected="' + esc(user.username) + '" style="--scoreplot-user-color:' + esc(color) + '">'
+    const highlighted = scorePlotPinnedUser === user.username ? ' touch-highlighted' : '';
+    return '<span class="scoreplot-chip' + highlighted + '" data-scoreplot-selected="' + esc(user.username) + '" style="--scoreplot-user-color:' + esc(color) + '">'
       + '<span>' + esc(user.username) + '</span>'
       + '<button type="button" aria-label="remove ' + esc(user.username) + '" data-scoreplot-remove="' + esc(user.username) + '">×</button>'
       + '</span>';
@@ -195,6 +197,7 @@ function addOnlineScorePlotUsers() {
 
 function removeScorePlotUser(username) {
   if (scorePlotHoveredUser === username) scorePlotHoveredUser = '';
+  if (scorePlotPinnedUser === username) scorePlotPinnedUser = '';
   scorePlotSelected = scorePlotSelected.filter((user) => user.username !== username);
   renderScorePlotSelection();
   fetchScorePlot();
@@ -204,6 +207,7 @@ function clearScorePlotUsers() {
   if (!scorePlotSelected.length) return;
   scorePlotSelected = [];
   scorePlotHoveredUser = '';
+  scorePlotPinnedUser = '';
   renderScorePlotSelection();
   renderScorePlotUserOptions();
   fetchScorePlot();
@@ -387,16 +391,17 @@ function renderScorePlot() {
   ctx.textAlign = 'right';
   ctx.fillText(axisLabel(to), width - right, height - 5);
 
-  // Draw the hovered series last so its halo and line stay above crossings.
+  const highlightedUser = scorePlotHoveredUser || scorePlotPinnedUser;
+  // Draw the highlighted series last so its halo and line stay above crossings.
   const seriesToDraw = [...scorePlotData.series].sort((a, b) =>
-    Number(a.username === scorePlotHoveredUser) - Number(b.username === scorePlotHoveredUser));
+    Number(a.username === highlightedUser) - Number(b.username === highlightedUser));
   for (const series of seriesToDraw) {
     const points = (series.points || []).filter((point) => Number.isFinite(Number(point.value)));
     if (!points.length) continue;
     ctx.strokeStyle = playerColor(series.username);
     ctx.fillStyle = ctx.strokeStyle;
     ctx.lineWidth = 1.5;
-    const highlighted = scorePlotHoveredUser === series.username;
+    const highlighted = highlightedUser === series.username;
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       if (i > 0) {
@@ -488,18 +493,38 @@ function initScorePlot() {
   document.getElementById('scoreplot-clear')?.addEventListener('click', clearScorePlotUsers);
   const selected = document.getElementById('scoreplot-selected');
   selected?.addEventListener('pointerover', (event) => {
+    if (event.pointerType === 'touch') return;
     const chip = event.target.closest?.('[data-scoreplot-selected]');
     if (!chip || !selected.contains(chip) || chip.contains(event.relatedTarget)) return;
     scorePlotHoveredUser = chip.dataset.scoreplotSelected || '';
     renderScorePlot();
   });
   selected?.addEventListener('pointerout', (event) => {
+    if (event.pointerType === 'touch') return;
     const chip = event.target.closest?.('[data-scoreplot-selected]');
     if (!chip || !selected.contains(chip) || chip.contains(event.relatedTarget)) return;
     if (scorePlotHoveredUser === chip.dataset.scoreplotSelected) {
       scorePlotHoveredUser = '';
       renderScorePlot();
     }
+  });
+  selected?.addEventListener('pointerup', (event) => {
+    if (event.pointerType !== 'touch') return;
+    if (event.target.closest?.('[data-scoreplot-remove]')) return;
+    const chip = event.target.closest?.('[data-scoreplot-selected]');
+    if (!chip || !selected.contains(chip)) return;
+    const username = chip.dataset.scoreplotSelected || '';
+    scorePlotHoveredUser = '';
+    scorePlotPinnedUser = scorePlotPinnedUser === username ? '' : username;
+    renderScorePlotSelection();
+    renderScorePlot();
+  });
+  document.getElementById('scoreplot-chart')?.addEventListener('pointerup', (event) => {
+    if (event.pointerType !== 'touch' || !scorePlotPinnedUser) return;
+    scorePlotHoveredUser = '';
+    scorePlotPinnedUser = '';
+    renderScorePlotSelection();
+    renderScorePlot();
   });
   document.addEventListener('click', () => hideScorePlotOptions());
   window.addEventListener('resize', resizeScorePlotModal);

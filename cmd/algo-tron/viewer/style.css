@@ -236,6 +236,7 @@ h2 {
   max-width: 0;
   overflow: hidden;
   text-overflow: clip;
+  position: relative;
 }
 
 .scoreboard th,
@@ -275,6 +276,24 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
   pointer-events: auto;
 }
 .score-hover-card[hidden] { display: none; }
+.score-hover-card.touch-open {
+  padding-right: 30px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .28);
+}
+.score-hover-close {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  border: 0;
+  padding: 2px 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.score-hover-close:hover { color: var(--text); }
 .score-hover-title { margin-bottom: 4px; color: var(--text); font-weight: 500; }
 .score-hover-version { color: var(--text-muted); font-weight: 300; }
 .score-hover-row { display: flex; gap: 10px; white-space: normal; }
@@ -293,6 +312,17 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 }
 .score-hover-reset:hover { border-color: var(--accent); color: var(--accent); }
 .score-hover-reset:disabled { cursor: wait; opacity: 0.7; }
+.score-info-button {
+  display: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.score-info-button:hover { color: var(--accent); }
 .scoreboard th.sep,
 .scoreboard td.sep { color: var(--text-dim); padding: 0; }
 .scoreboard th.wr,
@@ -864,6 +894,7 @@ canvas#game { display: block; }
   color: var(--text-muted);
   font-size: 10px;
 }
+.scoreplot-hint-touch { display: none; }
 .scoreplot-chip {
   display: inline-flex;
   align-items: center;
@@ -872,7 +903,9 @@ canvas#game { display: block; }
   padding: 2px 3px 2px 5px;
   color: var(--text);
   font-size: 11px;
+  touch-action: manipulation;
 }
+.scoreplot-chip.touch-highlighted { background: var(--border); }
 .scoreplot-chip button {
   border: 0;
   padding: 0;
@@ -1019,4 +1052,30 @@ canvas#game { display: block; }
   .schemes { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .scheme { padding: 6px 8px; gap: 6px; font-size: 12px; }
   .scheme .swatch { width: 9px; height: 9px; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .scoreboard td.name { padding-right: 30px; }
+  .score-info-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 50%;
+    right: 2px;
+    width: 26px;
+    height: 26px;
+    transform: translateY(-50%);
+    font-size: 15px;
+  }
+  .score-hover-card.touch-open {
+    left: 8px !important;
+    right: 8px !important;
+    top: auto !important;
+    bottom: 8px !important;
+    min-width: 0;
+    max-width: none;
+  }
+  .scoreplot-hint-desktop { display: none; }
+  .scoreplot-hint-touch { display: inline; }
 }

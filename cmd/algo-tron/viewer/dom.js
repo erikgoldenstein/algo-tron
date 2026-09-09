@@ -305,6 +305,12 @@ let scoreHoverKey = '';
 let scoreHoverTargetHovered = false;
 let scoreHoverCardHovered = false;
 let scoreHoverHideTimer = 0;
+let scoreHoverTouchOpen = false;
+let scoreHoverTouchTrigger = null;
+
+function isScoreHoverPointer(event) {
+  return event.pointerType === 'mouse' || event.pointerType === 'pen';
+}
 let forwardConfirmUrl = '';
 
 function hideForwardConfirm() {
@@ -370,13 +376,16 @@ function ensureScoreHoverCard() {
   if (scoreHoverCard) return scoreHoverCard;
   scoreHoverCard = document.createElement('div');
   scoreHoverCard.className = 'score-hover-card';
+  scoreHoverCard.id = 'score-player-details';
   scoreHoverCard.hidden = true;
   scoreHoverCard.addEventListener('pointerenter', () => {
+    if (scoreHoverTouchOpen) return;
     scoreHoverCardHovered = true;
     clearTimeout(scoreHoverHideTimer);
     scoreHoverHideTimer = 0;
   });
   scoreHoverCard.addEventListener('pointerleave', () => {
+    if (scoreHoverTouchOpen) return;
     scoreHoverCardHovered = false;
     scheduleScoreHoverHide();
   });
@@ -397,14 +406,19 @@ function findScoreHoverTarget() {
   return null;
 }
 
-function hideScoreHover() {
+function hideScoreHover({ restoreFocus = false } = {}) {
   clearTimeout(scoreHoverHideTimer);
   scoreHoverHideTimer = 0;
+  const trigger = scoreHoverTouchTrigger;
+  if (trigger?.isConnected) trigger.setAttribute('aria-expanded', 'false');
   scoreHoverTarget = null;
   scoreHoverKey = '';
   scoreHoverTargetHovered = false;
   scoreHoverCardHovered = false;
+  scoreHoverTouchOpen = false;
+  scoreHoverTouchTrigger = null;
   if (scoreHoverCard) scoreHoverCard.hidden = true;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
 }
 
 function scheduleScoreHoverHide() {
@@ -415,13 +429,32 @@ function scheduleScoreHoverHide() {
   }, 100);
 }
 
-function showScoreHover(target) {
+function showScoreHover(target, { touch = false, trigger = null } = {}) {
   clearTimeout(scoreHoverHideTimer);
   scoreHoverHideTimer = 0;
+  if (scoreHoverTouchTrigger && scoreHoverTouchTrigger !== trigger && scoreHoverTouchTrigger.isConnected) {
+    scoreHoverTouchTrigger.setAttribute('aria-expanded', 'false');
+  }
   const card = ensureScoreHoverCard();
+  scoreHoverTouchOpen = touch;
+  scoreHoverTouchTrigger = touch ? trigger : null;
+  if (touch && trigger) {
+    trigger.setAttribute('aria-expanded', 'true');
+    trigger.setAttribute('aria-controls', 'score-player-details');
+  }
   scoreHoverTarget = target;
   scoreHoverKey = scoreHoverIdentity(target);
-  card.innerHTML = scoreHoverMarkup(target);
+  card.classList.toggle('touch-open', touch);
+  if (touch) {
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-label', 'player details for ' + (target.dataset.username || target.dataset.name || 'player'));
+  } else {
+    card.removeAttribute('role');
+    card.removeAttribute('aria-label');
+  }
+  card.innerHTML = scoreHoverMarkup(target)
+    + (touch ? '<button type="button" class="score-hover-close" aria-label="close player details">×</button>' : '');
+  card.querySelector('.score-hover-close')?.addEventListener('click', () => hideScoreHover({ restoreFocus: true }));
   card.querySelector('.score-hover-reset')?.addEventListener('click', (event) => {
     event.stopPropagation();
     if (typeof resetAdminUserPassword === 'function') resetAdminUserPassword(target.dataset.username || '', card);
@@ -441,24 +474,42 @@ function showScoreHover(target) {
   const rect = anchor.getBoundingClientRect();
   const gap = 6;
   const margin = 8;
-  const cardWidth = card.offsetWidth;
-  const cardHeight = card.offsetHeight;
-  // Keep the bio card beside the username. If the target is near the right
-  // edge, use the space on its left rather than dropping the card below it.
-  let left = rect.right + gap;
-  if (left + cardWidth > window.innerWidth - margin) {
-    left = rect.left - cardWidth - gap;
+  if (touch) {
+    // A persistent touch card is easier to use as a bottom sheet than as a
+    // small hover tooltip positioned beside a narrow table row.
+    card.style.left = margin + 'px';
+    card.style.right = margin + 'px';
+    card.style.top = 'auto';
+    card.style.bottom = margin + 'px';
+  } else {
+    const cardWidth = card.offsetWidth;
+    const cardHeight = card.offsetHeight;
+    // Keep the bio card beside the username. If the target is near the right
+    // edge, use the space on its left rather than dropping the card below it.
+    let left = rect.right + gap;
+    if (left + cardWidth > window.innerWidth - margin) {
+      left = rect.left - cardWidth - gap;
+    }
+    if (left < margin) left = margin;
+    let top = rect.top;
+    if (top + cardHeight > window.innerHeight - margin) top = window.innerHeight - cardHeight - margin;
+    if (top < margin) top = margin;
+    card.style.left = Math.round(left) + 'px';
+    card.style.right = '';
+    card.style.top = Math.round(top) + 'px';
+    card.style.bottom = '';
   }
-  if (left < margin) left = margin;
-  let top = rect.top;
-  if (top + cardHeight > window.innerHeight - margin) top = window.innerHeight - cardHeight - margin;
-  if (top < margin) top = margin;
-  card.style.left = Math.round(left) + 'px';
-  card.style.top = Math.round(top) + 'px';
 }
 
 function restoreScoreHover() {
   if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
+  if (scoreHoverTouchOpen) {
+    const target = findScoreHoverTarget();
+    const trigger = target?.closest('td')?.querySelector('.score-info-button') || null;
+    if (target) showScoreHover(target, { touch: true, trigger });
+    else hideScoreHover();
+    return;
+  }
   // If the pointer has already left both the row and the card, let the
   // existing delayed hide finish instead of reviving the card on refresh.
   if (!scoreHoverTargetHovered && !scoreHoverCardHovered) return;
@@ -473,19 +524,25 @@ function restoreScoreHover() {
 function refreshScoreHoverCard() {
   if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
   const target = findScoreHoverTarget();
-  if (target) showScoreHover(target);
+  const trigger = target?.closest('td')?.querySelector('.score-info-button') || null;
+  if (target) showScoreHover(target, { touch: scoreHoverTouchOpen, trigger });
   else hideScoreHover();
 }
 
 function initScoreHover() {
   document.addEventListener('pointerover', (event) => {
+    if (!isScoreHoverPointer(event)) return;
     const target = event.target.closest?.('.score-hover-target');
     if (!target) return;
+    if (scoreHoverTouchTrigger?.isConnected) scoreHoverTouchTrigger.setAttribute('aria-expanded', 'false');
+    scoreHoverTouchOpen = false;
+    scoreHoverTouchTrigger = null;
     scoreHoverTargetHovered = true;
     if (target === scoreHoverTarget) return;
     showScoreHover(target);
   });
   document.addEventListener('pointerout', (event) => {
+    if (!isScoreHoverPointer(event)) return;
     const target = event.target.closest?.('.score-hover-target');
     if (!target || target !== scoreHoverTarget) return;
     const related = event.relatedTarget;
@@ -493,6 +550,27 @@ function initScoreHover() {
     scoreHoverTargetHovered = false;
     if (related && scoreHoverCard?.contains(related)) return;
     scheduleScoreHoverHide();
+  });
+  document.addEventListener('click', (event) => {
+    const info = event.target.closest?.('.score-info-button');
+    if (info) {
+      const target = info.closest('td')?.querySelector('.score-hover-target');
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (scoreHoverTouchOpen && target === scoreHoverTarget) {
+        hideScoreHover({ restoreFocus: true });
+      } else {
+        showScoreHover(target, { touch: true, trigger: info });
+      }
+      return;
+    }
+    if (!scoreHoverTouchOpen || scoreHoverCard?.hidden) return;
+    if (scoreHoverCard?.contains(event.target)) return;
+    hideScoreHover();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && scoreHoverTouchOpen) hideScoreHover({ restoreFocus: true });
   });
 }
 
@@ -612,7 +690,7 @@ function scoreRow(p, i) {
   const src = p.bio?.src || '';
   return '<tr data-score-key="' + esc(scoreRowKey(p)) + '"' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span><button type="button" class="score-info-button" aria-label="show details for ' + esc(label) + '" aria-expanded="false" aria-controls="score-player-details">ⓘ</button>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'
