@@ -36,7 +36,7 @@ func TestValidateJoin(t *testing.T) {
 		{"empty username", "", "pass", "1.2.3.4", "ERROR_USERNAME_TOO_SHORT"},
 		{"username too long", strings.Repeat("a", 33), "pass", "1.2.3.4", "ERROR_USERNAME_TOO_LONG"},
 		{"username invalid symbols", "alice|bob", "pass", "1.2.3.4", "ERROR_USERNAME_INVALID_SYMBOLS"},
-		{"empty password", "alice", "", "1.2.3.4", "ERROR_PASSWORD_TOO_SHORT"},
+		{"empty password", "charlie", "", "1.2.3.4", ""},
 		{"password too long", "alice", strings.Repeat("x", 129), "1.2.3.4", "ERROR_PASSWORD_TOO_LONG"},
 		{"bot from remote IP", "bot", "pass", "1.2.3.4", "ERROR_NO_PERMISSION"},
 		{"bot from IPv4 localhost", "bot", "pass", "127.0.0.1", ""},

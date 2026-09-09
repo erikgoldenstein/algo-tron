@@ -94,16 +94,28 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	_ = conn.SetReadDeadline(time.Time{})
 
 	parts := strings.Split(scanner.Text(), "|")
-	if len(parts) < 3 || parts[0] != "join" {
+	if len(parts) < 2 || parts[0] != "join" {
 		metricTCPRejected.WithLabelValues("expected_join").Inc()
 		reject("error", "ERROR_EXPECTED_JOIN")
 		return
 	}
-	username, password := parts[1], parts[2]
-	version, errCode := parseJoinVersion(parts[3:])
+	username, password := parts[1], ""
+	if len(parts) >= 3 {
+		password = parts[2]
+	}
+	var versionFields []string
+	if len(parts) > 3 {
+		versionFields = parts[3:]
+	}
+	version, errCode := parseJoinVersion(versionFields)
 	if errCode != "" {
 		metricTCPRejected.WithLabelValues("invalid_join").Inc()
 		reject("error", errCode)
+		return
+	}
+	if password == "" && len(versionFields) > 0 {
+		metricTCPRejected.WithLabelValues("invalid_join").Inc()
+		reject("error", "ERROR_VERSION_INVALID")
 		return
 	}
 	if errCode := validateJoin(username, password, ip); errCode != "" {
@@ -113,7 +125,13 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 
 	now := time.Now()
-	pwHash := hashPassword(s.secret, password)
+	// An empty password is a deliberate passwordless account. Keep its hash
+	// empty so it remains excluded from the password-only leaderboard; hashing
+	// the empty string would make it look like a password-bearing account.
+	pwHash := ""
+	if password != "" {
+		pwHash = hashPassword(s.secret, password)
+	}
 	s.mu.Lock()
 	p := s.playerForVersionLocked(username, version)
 	var accountReset bool

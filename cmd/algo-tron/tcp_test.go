@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -84,6 +85,45 @@ func TestJoinRejectsLobbyAttributes(t *testing.T) {
 	line, err := clientReader.ReadString('\n')
 	if err != nil || line != "error|ERROR_EXPECTED_JOIN\n" {
 		t.Fatalf("join lobby attribute error = %q, %v", line, err)
+	}
+}
+
+func TestJoinWithoutPassword(t *testing.T) {
+	s := testServer(t)
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	clientReader := bufio.NewReader(client)
+	drainMotd(t, clientReader)
+	if _, err := client.Write([]byte("join|anonymous\n")); err != nil {
+		t.Fatalf("write passwordless join: %v", err)
+	}
+	defer client.Close()
+	go func() {
+		_, _ = io.Copy(io.Discard, clientReader)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		p := s.players[playerKey("anonymous", defaultBotVersion)]
+		joined := p != nil && p.sink.Load() != nil && p.PwHash == ""
+		s.mu.Unlock()
+		if joined {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("passwordless join did not complete")
+}
+
+func TestPasswordlessJoinRejectsVersion(t *testing.T) {
+	s := testServer(t)
+	clientReader, client := joinAsFieldsConn(t, s, "anonymous", "", "v2")
+	defer client.Close()
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	line, err := clientReader.ReadString('\n')
+	if err != nil || line != "error|ERROR_VERSION_INVALID\n" {
+		t.Fatalf("passwordless version join = %q, %v", line, err)
 	}
 }
 

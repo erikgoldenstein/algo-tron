@@ -38,9 +38,6 @@ func validateJoin(username, password, ip string) string {
 	if !validString.MatchString(username) {
 		return "ERROR_USERNAME_INVALID_SYMBOLS"
 	}
-	if password == "" {
-		return "ERROR_PASSWORD_TOO_SHORT"
-	}
 	if len(password) > 128 {
 		return "ERROR_PASSWORD_TOO_LONG"
 	}
