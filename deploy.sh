@@ -612,10 +612,9 @@ server {
   if (\$algo_tron_valid_host = 0) { return 444; }
 
   add_header X-Content-Type-Options nosniff always;
-  add_header X-Frame-Options DENY always;
   add_header Referrer-Policy no-referrer always;
   add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-  add_header Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:" always;
+  add_header Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors *; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:" always;
 
   ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;

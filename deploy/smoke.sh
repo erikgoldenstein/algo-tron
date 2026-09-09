@@ -27,7 +27,7 @@ code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$BASE/static/help
 [ "$code" = 200 ] && ok "static assets" || fail "/static/helpers.js returned $code"
 
 curl -fsS -D "$tmp" -o /dev/null --max-time 10 "$BASE/" >/dev/null 2>&1 || true
-for header in X-Content-Type-Options X-Frame-Options Referrer-Policy Content-Security-Policy; do
+for header in X-Content-Type-Options Referrer-Policy Content-Security-Policy; do
   grep -qi "^$header:" "$tmp" && ok "$header header" || fail "missing $header header"
 done
 

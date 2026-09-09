@@ -132,12 +132,12 @@ func basicAuth(realm, credentials string, next http.Handler) http.Handler {
 func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	// The viewer has no inline scripts. Keep inline styles for the existing
 	// palette/color attributes, while preventing injected script, object, or
-	// framing content from turning a missed escaping path into XSS.
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:")
+	// framing content from turning a missed escaping path into XSS. The public
+	// viewer is intentionally embeddable for marketing pages.
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors *; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https:")
 	if err := viewTemplate.Execute(w, struct{ ScheduleURL, PublicViewURL string }{s.scheduleURL, s.publicViewURL}); err != nil {
 		slog.Error("viewer template", "err", err)
 	}
