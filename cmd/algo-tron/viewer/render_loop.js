@@ -71,7 +71,7 @@ scheduleRender({ board: true, chart: true });
 // websocket-driven full re-renders. No-op when the switch is off.
 setInterval(() => {
   if (!getSwitch('scrollNames')) return;
-  document.querySelectorAll('#scoreboard .namestr').forEach((el) => {
+  document.querySelectorAll('#scoreboard .namestr, #scoreboard-modal-rows .namestr').forEach((el) => {
     renderScoreName(el);
   });
 }, 250);

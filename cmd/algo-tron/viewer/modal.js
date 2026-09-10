@@ -208,8 +208,8 @@ function renderScoreboardModalRows() {
   const page = gameState.scorePages[key];
   const rows = page?.entries || [];
   root.innerHTML = rows.length
-    ? rows.map(scoreRow).join('')
-    : '<tr><td colspan="12" class="empty">' + (scoreboardFetchKey === key ? 'loading...' : (scoreboardFetchError || 'nobody found')) + '</td></tr>';
+    ? rows.map((row, i) => scoreRow(row, i, true, 16)).join('')
+    : '<tr><td colspan="13" class="empty">' + (scoreboardFetchKey === key ? 'loading...' : (scoreboardFetchError || 'nobody found')) + '</td></tr>';
   if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(root);
   const asof = document.getElementById('scoreboard-asof');
   if (asof) asof.textContent = page?.computedAt ? 'as of ' + new Date(page.computedAt).toLocaleString() : '';

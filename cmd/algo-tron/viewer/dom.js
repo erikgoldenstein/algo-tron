@@ -295,11 +295,12 @@ function scoreInfoTrigger(target) {
 
 function renderScoreName(el) {
   const showVersion = el.dataset.showVersion === 'true';
+  const nameChars = Number(el.dataset.nameChars) || scoreNameChars;
   el.innerHTML = scoreNameMarkup(
     el.dataset.username || el.dataset.name || '',
     el.dataset.version || '',
     showVersion,
-    scoreNameChars,
+    nameChars,
   );
 }
 
@@ -685,7 +686,7 @@ function updateTabs() {
   });
 }
 
-function scoreRow(p, i) {
+function scoreRow(p, i, includeInfo = true, nameChars = scoreNameChars) {
   const winner = gameState.lastWinners.includes(p.username) ? ' 🎉' : '';
   const old = p.oldOwner ? '<span class="old">(old owner' + p.oldOwner + ')</span>' : '';
   const wr = (p.winRatio * 100).toFixed(0) + '%';
@@ -695,10 +696,14 @@ function scoreRow(p, i) {
   const followedDead = followed && p.online !== false && !followNameIsAlive(label);
   const contact = p.bio?.contact || '';
   const src = p.bio?.src || '';
+  const nameCharsData = nameChars > 0 ? String(nameChars) : '';
+  const info = includeInfo
+    ? '<td class="info"><button type="button" class="score-info-button" aria-label="show details for ' + esc(label) + '" aria-expanded="false" aria-controls="score-player-details">[i]</button></td>'
+    : '';
   return '<tr data-score-key="' + esc(scoreRowKey(p)) + '"' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
-    + '<td class="info"><button type="button" class="score-info-button" aria-label="show details for ' + esc(label) + '" aria-expanded="false" aria-controls="score-player-details">[i]</button></td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-name-chars="' + nameCharsData + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, nameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
+    + info
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

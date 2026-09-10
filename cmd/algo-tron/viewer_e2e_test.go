@@ -209,6 +209,45 @@ func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 	}
 }
 
+func TestE2EMobileScoreboardModalShowsNames(t *testing.T) {
+	url, s := e2eViewer(t)
+	s.mu.Lock()
+	for _, username := range []string{"mobile-alice-with-a-long-name", "mobile-bot-with-a-long-name"} {
+		_, conn := mustPipe(t)
+		p, _ := testPlayer(username)
+		p.conn = conn
+		s.players[playerKey(username, "")] = p
+	}
+	s.mu.Unlock()
+
+	ctx := browser(t)
+	var namesVisible bool
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844, chromedp.EmulateMobile, chromedp.EmulateTouch, chromedp.EmulatePortrait),
+		chromedp.Navigate(url),
+		chromedp.Click(`#scoreboard-title`),
+		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Poll(`(() => {
+			const names = [...document.querySelectorAll('#scoreboard-modal-rows td.name .namestr')];
+			const scroll = document.getElementById('scoreboard-modal-scroll');
+			const info = document.querySelectorAll('#scoreboard-modal-rows .score-info-button');
+			return names.length === 2
+				&& info.length === 2
+				&& getComputedStyle(scroll).overflowX === 'auto'
+				&& scroll.scrollWidth > scroll.clientWidth
+				&& names.every((el) => el.textContent.trim() !== ''
+					&& el.dataset.nameChars === '16'
+					&& el.getBoundingClientRect().width > 0
+					&& el.getBoundingClientRect().height > 0);
+		})()`, &namesVisible),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !namesVisible {
+		t.Error("mobile scoreboard modal names are not visible")
+	}
+}
+
 func TestE2EColdScoreboardRequestRendersFirstResponse(t *testing.T) {
 	url, s := e2eViewer(t)
 	now := time.Now().UnixMilli()
