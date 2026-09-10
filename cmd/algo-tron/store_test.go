@@ -218,7 +218,7 @@ func TestOpenDBMigratesLegacyUsernamePrimaryKey(t *testing.T) {
 		t.Fatalf("migrated alice rows = %d, want 2", count)
 	}
 	var firstSeen int64
-	if err := db.QueryRow(`SELECT first_seen_unix FROM players WHERE username = 'alice' AND version = 'v1'`).Scan(&firstSeen); err != nil {
+	if err := db.QueryRow(`SELECT first_seen_unix FROM players WHERE username = 'alice' AND version = ''`).Scan(&firstSeen); err != nil {
 		t.Fatalf("read migrated first-seen timestamp: %v", err)
 	}
 	if firstSeen == 0 {

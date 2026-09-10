@@ -57,8 +57,8 @@ func TestHistoryAPI(t *testing.T) {
 			if response.Metric != historyMetric(tt.metric) {
 				t.Fatalf("metric = %q, want %q", response.Metric, tt.metric)
 			}
-			if len(response.Series) != 1 || response.Series[0].Username != "alice" || response.Series[0].Version != "v1" {
-				t.Fatalf("series = %+v, want alice/v1", response.Series)
+			if len(response.Series) != 1 || response.Series[0].Username != "alice" || response.Series[0].Version != "" {
+				t.Fatalf("series = %+v, want alice/default", response.Series)
 			}
 			points := response.Series[0].Points
 			if len(points) != len(tt.values) {

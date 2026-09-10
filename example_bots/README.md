@@ -30,7 +30,7 @@ python3 bot3_adaptive_bfs.py 127.0.0.1 4000 myaccount adaptive
 
 Each version has separate ratings, history, and leaderboard row. Version
 strings may contain letters, numbers, `.`, `_`, and `-`, and may be at most
-8 characters. If omitted, the version is `v1`. Reusing the same version while
+8 characters. If omitted, the version is empty and not shown. Reusing the same version while
 the first bot is connected replaces the first connection. Choose a normal
 username: `online` and `bot...` names are reserved outside localhost.
 

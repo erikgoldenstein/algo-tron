@@ -478,6 +478,23 @@ func TestScoreboardSeparatesVersionsAndOnlyTagsWhenMultipleAreOnline(t *testing.
 	}
 }
 
+func TestDisplayNameDoesNotRenderEmptyDefaultVersion(t *testing.T) {
+	s := testServer(t)
+	_, c1 := mustPipe(t)
+	_, c2 := mustPipe(t)
+	defaultPlayer := &Player{Username: "mybot", Version: "", PwHash: "h", conn: c1}
+	versionedPlayer := &Player{Username: "mybot", Version: "v2", PwHash: "h", conn: c2}
+	s.players[playerKey("mybot", "")] = defaultPlayer
+	s.players[playerKey("mybot", "v2")] = versionedPlayer
+
+	if got := s.displayNameLocked(defaultPlayer); got != "mybot" {
+		t.Errorf("default display name = %q, want mybot", got)
+	}
+	if got := s.displayNameLocked(versionedPlayer); got != "mybot-v2" {
+		t.Errorf("versioned display name = %q, want mybot-v2", got)
+	}
+}
+
 // — computePeriodEntries —————————————————————————————————————————————
 
 func TestComputePeriodExcludesBots(t *testing.T) {

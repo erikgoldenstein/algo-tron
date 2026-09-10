@@ -242,7 +242,7 @@ func TestPasswordlessJoinRejectsVersion(t *testing.T) {
 	}
 }
 
-func TestJoinSupportsIndependentVersionsAndLegacyDefaultsToV1(t *testing.T) {
+func TestJoinSupportsIndependentVersionsAndEmptyDefault(t *testing.T) {
 	s := testServer(t)
 	joinAs(t, s, "mybot", "pw")
 	joinAsVersion(t, s, "mybot", "pw", "v2")
@@ -262,8 +262,8 @@ func TestJoinSupportsIndependentVersionsAndLegacyDefaultsToV1(t *testing.T) {
 		}
 		s.mu.Unlock()
 		if ready {
-			if v1.Version != "" && v1.Version != "v1" {
-				t.Fatalf("legacy join version = %q, want v1/default", v1.Version)
+			if v1.Version != "" {
+				t.Fatalf("default join version = %q, want empty", v1.Version)
 			}
 			if v2.Version != "v2" {
 				t.Fatalf("explicit join version = %q, want v2", v2.Version)

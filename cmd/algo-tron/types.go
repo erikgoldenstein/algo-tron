@@ -90,22 +90,26 @@ type Player struct {
 	botRandom bool
 }
 
-const defaultBotVersion = "v1"
+const (
+	defaultBotVersion       = ""
+	legacyDefaultBotVersion = "v1"
+)
 
-// versionOf keeps players constructed by older code/tests compatible with the
-// versioned identity model. A missing or empty version is the legacy v1 bot.
+// versionOf returns the wire/storage representation of a player's version.
+// Legacy v1 careers are the same default career and are intentionally rendered
+// as an omitted version.
 func versionOf(p *Player) string {
-	if p == nil || p.Version == "" {
+	if p == nil {
 		return defaultBotVersion
 	}
-	return p.Version
+	return normalizeVersion(p.Version)
 }
 
-// playerKey is the in-memory key for one bot career. Keep v1 keyed by the
-// username alone so legacy tests/tools and the old database shape continue to
-// address the default version naturally.
+// playerKey is the in-memory key for one bot career. The empty default and
+// legacy v1 both use the username-only key.
 func playerKey(username, version string) string {
-	if version == "" || version == defaultBotVersion {
+	version = normalizeVersion(version)
+	if version == defaultBotVersion {
 		return username
 	}
 	return username + "\x00" + version
@@ -185,7 +189,7 @@ func (s *Server) resetAccountLocked(username, version, pwHash string, now time.T
 }
 
 func normalizeVersion(version string) string {
-	if version == "" {
+	if version == "" || version == legacyDefaultBotVersion {
 		return defaultBotVersion
 	}
 	return version

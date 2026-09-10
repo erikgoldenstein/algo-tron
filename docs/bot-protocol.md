@@ -66,7 +66,7 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 
 | Packet | Args               | Notes                                                                                       |
 |--------|--------------------|---------------------------------------------------------------------------------------------|
-| `join` | `username[\|password][\|version]` | First packet. The password may be omitted or empty for a passwordless session. Versioning is available only when a password is supplied. The optional version defaults to `v1` and uses `[a-zA-Z0-9._-]+`, ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
+| `join` | `username[\|password][\|version]` | First packet. The password may be omitted or empty for a passwordless session. Versioning is available only when a password is supplied. The optional version defaults to empty and is not shown; non-default version strings use `[a-zA-Z0-9._-]+`, ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
 | `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. If a tick resolves without a valid queued direction, the server assists for the first two consecutive invalid operations, then closes the connection on the third or after the cumulative invalid-operation budget is exceeded. See [game mechanics](game-mechanics.md#move-resolution-one-tick). Dead players' `move` packets are accepted but ignored. |
 | `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
 | `bio` | `field\|value` | Optional post-join metadata. Current fields are `contact` and `src`; invalid values receive `ERROR_INVALID_BIO` and do not affect the connection. |
@@ -168,7 +168,7 @@ Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …), the filler-bot name
 
 `username` + `password` is an account. First join creates it; subsequent joins must match the HMAC-SHA256 hash stored on disk or receive `ERROR_WRONG_PASSWORD`. An empty password creates a passwordless session: it behaves like a normal player while connected, but its ratings, score history, profile data, IP record, and game history are deleted on disconnect. Rejoining after a disconnect therefore starts at the default ratings. If the same account is already connected, the old connection receives `ERROR_ALREADY_CONNECTED` and is closed before the new one takes over.
 
-The optional version identifies an independent bot career under the username. A legacy three-field join is exactly `version=v1`; an explicit `v1` join addresses the same career. Different versions may be connected at the same time and maintain separate ratings, score history, reconnect penalties, and leaderboard rows, while sharing the username's password.
+The optional version identifies an independent bot career under the username. A legacy three-field join and an explicit `v1` join address the default career, whose version is empty and omitted from display. Different non-default versions may be connected at the same time and maintain separate ratings, score history, reconnect penalties, and leaderboard rows, while sharing the username's password.
 
 > **Never reuse a real password.** The protocol is plain TCP — the password travels unencrypted, and the server stores only a fast keyed hash. Treat it as a claim ticket for the username, nothing more.
 
@@ -176,7 +176,7 @@ The optional version identifies an independent bot career under the username. A 
 
 **Reconnecting mid-game:** if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
 
-The viewer's leaderboard has one row per online version. It displays only the username when one version of that username is online; if multiple versions are online, it adds a lighter-weight `-<version>` suffix to distinguish them (for example, `mybot-v1`). The JSON viewer protocol carries `version` and `showVersion` fields; older viewers can ignore these additive fields.
+The viewer's leaderboard has one row per online version. The default version is omitted and displays only the username; if multiple versions are online, it adds a lighter-weight `-<version>` suffix to distinguish them (for example, `mybot-v2`). The JSON viewer protocol carries optional `version` and `showVersion` fields; older viewers can ignore these additive fields.
 
 ## PROXY protocol
 

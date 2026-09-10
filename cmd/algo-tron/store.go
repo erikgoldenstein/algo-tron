@@ -58,7 +58,7 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players (
 		username      TEXT NOT NULL,
-		version       TEXT NOT NULL DEFAULT 'v1',
+		version       TEXT NOT NULL DEFAULT '',
 		pw_hash       TEXT NOT NULL,
 		elo           REAL NOT NULL DEFAULT 1000,
 		score_history TEXT NOT NULL DEFAULT '[]',
@@ -107,6 +107,10 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if !canonicalizeDefaultPlayerVersions(db) {
+		db.Close()
+		return nil, fmt.Errorf("canonicalize default player versions")
+	}
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <> ''`); err != nil {
 		db.Close()
 		return nil, err
@@ -125,7 +129,7 @@ func openDB(path string) (*sql.DB, error) {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players_archive (
 		uuid             TEXT NOT NULL DEFAULT '',
 		username         TEXT NOT NULL,
-		version          TEXT NOT NULL DEFAULT 'v1',
+		version          TEXT NOT NULL DEFAULT '',
 		pw_hash          TEXT NOT NULL,
 		elo              REAL NOT NULL,
 		score_history    TEXT NOT NULL,
@@ -144,7 +148,7 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := ensureColumn(db, "players_archive", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+	if err := ensureColumn(db, "players_archive", "version", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -166,7 +170,7 @@ func openDB(path string) (*sql.DB, error) {
 		lobby         TEXT NOT NULL DEFAULT 'default',
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
-		version       TEXT NOT NULL DEFAULT 'v1',
+		version       TEXT NOT NULL DEFAULT '',
 		won           INTEGER NOT NULL,
 		death_reason  TEXT NOT NULL,
 		elo           REAL NOT NULL,
@@ -182,7 +186,7 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := ensureColumn(db, "game_participants", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+	if err := ensureColumn(db, "game_participants", "version", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -209,7 +213,7 @@ func openDB(path string) (*sql.DB, error) {
 		lobby         TEXT NOT NULL DEFAULT 'default',
 		uuid          TEXT NOT NULL,
 		username      TEXT NOT NULL,
-		version       TEXT NOT NULL DEFAULT 'v1',
+		version       TEXT NOT NULL DEFAULT '',
 		won           INTEGER NOT NULL,
 		death_reason  TEXT NOT NULL,
 		elo           REAL NOT NULL,
@@ -225,7 +229,7 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := ensureColumn(db, "game_participants_archive", "version", "TEXT NOT NULL DEFAULT 'v1'"); err != nil {
+	if err := ensureColumn(db, "game_participants_archive", "version", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -379,7 +383,7 @@ func migratePlayersTable(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 	if !hasVersion {
-		if _, err := tx.Exec(`ALTER TABLE players ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`); err != nil {
+		if _, err := tx.Exec(`ALTER TABLE players ADD COLUMN version TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
@@ -388,7 +392,7 @@ func migratePlayersTable(db *sql.DB) error {
 	}
 	if _, err := tx.Exec(`CREATE TABLE players_versioned (
 		username      TEXT NOT NULL,
-		version       TEXT NOT NULL DEFAULT 'v1',
+		version       TEXT NOT NULL DEFAULT '',
 		pw_hash       TEXT NOT NULL,
 		elo           REAL NOT NULL DEFAULT 1000,
 		score_history TEXT NOT NULL DEFAULT '[]',
@@ -404,7 +408,7 @@ func migratePlayersTable(db *sql.DB) error {
 	}
 	if _, err := tx.Exec(`INSERT INTO players_versioned
 		(username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid)
-		SELECT username, COALESCE(NULLIF(version, ''), 'v1'), pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid
+		SELECT username, CASE WHEN version = '' OR version = 'v1' THEN '' ELSE version END, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid
 		FROM players`); err != nil {
 		return err
 	}
@@ -415,6 +419,32 @@ func migratePlayersTable(db *sql.DB) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// canonicalizeDefaultPlayerVersions collapses the old v1 default key into the
+// empty default key. This is necessary because an old v1 row and a newly
+// written empty-version row would otherwise represent the same career under
+// two SQLite primary keys.
+func canonicalizeDefaultPlayerVersions(db *sql.DB) bool {
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM players WHERE version = 'v1' AND EXISTS (SELECT 1 FROM players current WHERE current.username = players.username AND current.version = '')`); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	if _, err := tx.Exec(`UPDATE players SET version = '' WHERE version = 'v1'`); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	return true
 }
 
 // resetAccountRows purges all persistent data for an expired username and

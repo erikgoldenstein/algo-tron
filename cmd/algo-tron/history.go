@@ -49,7 +49,7 @@ type historyPoint struct {
 
 type historySeries struct {
 	Username string         `json:"username"`
-	Version  string         `json:"version"`
+	Version  string         `json:"version,omitempty"`
 	Points   []historyPoint `json:"points"`
 }
 
@@ -250,12 +250,17 @@ func parseHistoryUsers(values []string) ([]historyUser, error) {
 			return nil, errors.New("user cannot be empty")
 		}
 		username, version := value, defaultBotVersion
+		explicitVersion := false
 		if i := strings.LastIndexByte(value, '/'); i >= 0 {
+			explicitVersion = true
 			username, version = value[:i], value[i+1:]
 		}
 		allVersions := version == "*"
-		if username == "" || version == "" || !validString.MatchString(username) || (!allVersions && validateVersion(version) != "") {
+		if username == "" || !validString.MatchString(username) || (!allVersions && ((explicitVersion && version == "") || validateVersion(version) != "")) {
 			return nil, errors.New("invalid user")
+		}
+		if !allVersions {
+			version = normalizeVersion(version)
 		}
 		key := username + "\x00" + version
 		if _, ok := seen[key]; ok {

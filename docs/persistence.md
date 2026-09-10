@@ -25,7 +25,7 @@ SQLite, schema created on first open:
 ```sql
 CREATE TABLE IF NOT EXISTS players (
   username      TEXT NOT NULL,
-  version       TEXT NOT NULL DEFAULT 'v1',
+  version       TEXT NOT NULL DEFAULT '',
   pw_hash       TEXT NOT NULL,        -- hex(HMAC-SHA256(secret, password))
   elo           REAL NOT NULL DEFAULT 1000,
   score_history TEXT NOT NULL DEFAULT '[]', -- JSON: [{type:1|0, time: unix_ms, elo?: float, tsMu?: float, tsSigma?: float}, …]
@@ -42,7 +42,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS players_uuid_idx ON players(uuid) WHERE uuid <
 CREATE TABLE IF NOT EXISTS players_archive (
   uuid             TEXT NOT NULL DEFAULT '',
   username         TEXT NOT NULL,   -- same username can appear once per retirement
-  version          TEXT NOT NULL DEFAULT 'v1',
+  version          TEXT NOT NULL DEFAULT '',
   pw_hash          TEXT NOT NULL,
   elo              REAL NOT NULL,
   score_history    TEXT NOT NULL,
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS game_participants (
   lobby         TEXT NOT NULL DEFAULT 'default',
   uuid          TEXT NOT NULL,
   username      TEXT NOT NULL, -- display name at game end
-  version       TEXT NOT NULL DEFAULT 'v1',
+  version       TEXT NOT NULL DEFAULT '',
   won           INTEGER NOT NULL, -- 1 for winners, 0 otherwise; winners derive from this
   death_reason  TEXT NOT NULL,
   elo           REAL NOT NULL,
@@ -107,7 +107,7 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `score_history` is a JSON array of `Score` records. `type` is `1` for wins, `0` for losses. `elo`, `tsMu`, and `tsSigma` are the player's ratings after that game; all three are `omitempty` for backward compatibility, so records written before a given metric existed lack the field and parse as `0`. The viewer's TrueSkill chart skips slots with `TsMu == 0` (see [game-mechanics.md § Scoreboard](game-mechanics.md#scoreboard)). Normal score-window trimming happens in memory; a separate retention sweep permanently removes records older than 14 months from disk.
 - `ts_mu` / `ts_sigma` are added by idempotent `ALTER TABLE` on open so existing databases pick up the columns. A row with `ts_sigma == 0` is treated as "no rating yet" and gets initialized to `(tsMu0, tsSigma0)` the next time the player plays a game (see [game-mechanics.md](game-mechanics.md)).
 - `uuid` is the stable identity for persistence rows. `first_seen_unix` records when that career/UUID was first created; `last_seen_unix` records the most recent join or disconnect. Usernames remain the login/display lookup; account recovery/re-registration after 14 months of inactivity purges the old career and gives the username/version a new UUID and first-seen timestamp. Existing databases without first-seen data are backfilled from their last-seen timestamp, the earliest timestamp available.
-- `version` distinguishes independent careers under one username; omitted/legacy values are `v1`. The composite `(username, version)` key allows multiple versions to be online concurrently.
+- `version` distinguishes independent careers under one username; the default version is the empty string, while legacy `v1` rows are normalized to that default. The composite `(username, version)` key allows multiple versions to be online concurrently.
 - `lobbies` stores administrator-created lobby names, a keyed password hash, the per-board player limit (`-1` means unlimited for that named lobby), and creation time. The default lobby is implicit and is not stored or removable.
 - `bio` stores the optional post-join `contact` and `src` metadata for that career. It is JSON so absent fields remain absent; validation limits contact to 32 printable ASCII characters and source text to 48 printable ASCII characters.
 - `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `lobby`, `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and transient passwordless sessions are excluded at write time so the period boards and the audit log contain durable accounts only.

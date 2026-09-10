@@ -28,7 +28,7 @@ def main() -> None:
     host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 4000
     name = sys.argv[3] if len(sys.argv) > 3 else "bot1"
-    version = sys.argv[4] if len(sys.argv) > 4 else "v1"
+    version = sys.argv[4] if len(sys.argv) > 4 else ""
     Client(host, port, name, "secret", version).run(decide)
 
 

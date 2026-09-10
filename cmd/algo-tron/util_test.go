@@ -120,7 +120,9 @@ func TestParseJoinVersion(t *testing.T) {
 		fields               []string
 		wantVersion, wantErr string
 	}{
-		{nil, "v1", ""},
+		{nil, "", ""},
+		{[]string{"v1"}, "", ""},
+		{[]string{"version v1"}, "", ""},
 		{[]string{"version abcdefgh"}, "abcdefgh", ""},
 		{[]string{"v2"}, "v2", ""},
 		{[]string{"version abcdefghi"}, "", "ERROR_VERSION_INVALID"},

@@ -227,8 +227,9 @@ func (s *Server) displayNameLocked(p *Player) string {
 	if p == nil {
 		return ""
 	}
-	if s.onlineVersionCountsLocked()[p.Username] <= 1 {
+	version := versionOf(p)
+	if s.onlineVersionCountsLocked()[p.Username] <= 1 || version == "" {
 		return p.Username
 	}
-	return p.Username + "-" + versionOf(p)
+	return p.Username + "-" + version
 }

@@ -10,7 +10,7 @@ The full protocol lives in ../docs/bot-protocol.md, but the short version is:
 
 That's it. There is no JSON, no length prefix, and no separate handshake
 packet. The canonical join packet is `join|username|password|version`; the
-version is optional and defaults to `v1`. Different versions let one account
+    version is optional and defaults to empty. Different versions let one account
 run multiple independent bots at the same time.
 
 A joined bot can select its matchmaking lobby at any time with `lobby|name`

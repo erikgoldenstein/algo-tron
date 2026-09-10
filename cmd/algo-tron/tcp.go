@@ -161,9 +161,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	if accountReset {
 		s.invalidateScoreCachesLocked()
 	}
-	if p.Version == "" {
-		p.Version = defaultBotVersion
-	}
+	p.Version = version
 	if accountReset {
 		p.Lobby = defaultLobbyName
 	}

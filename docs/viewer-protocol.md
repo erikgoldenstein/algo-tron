@@ -42,7 +42,7 @@ This modal statistics scoreboard is separate from the live game-loop
 scoreboard: the live scoreboard remains in the viewer WebSocket stream, while
 this endpoint is queried on demand.
 The request accepts repeated `user` parameters. A user is identified as
-`username` for the default `v1` career or `username/version` for another
+`username` for the default empty-version career or `username/version` for another
 career. Append `/*` to a username to aggregate all of that username's current
 versions and select the better metric value at each point in time. `from` and
 `to` are optional Unix timestamps in milliseconds or
@@ -74,7 +74,6 @@ The response contains one series per selected career:
   "series": [
     {
       "username": "alice",
-      "version": "v1",
       "points": [{"time": 1710000000000, "value": 274, "sigma": 61}, {"time": 1710007200000, "value": 280, "sigma": 58, "gap": true}]
     }
   ]
@@ -136,7 +135,7 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
   "id":     "<hex>",
   "width":  8, "height": 8,
   "players": [
-    {"id": 0, "name": "alice", "version": "v1", "bio":{"contact":"mail@erik.gdn"}, "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
+    {"id": 0, "name": "alice", "bio":{"contact":"mail@erik.gdn"}, "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
   ],
   "boardScoreboard": [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}]
