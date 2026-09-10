@@ -149,7 +149,7 @@ function followedBoardID() {
 
 function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(scheme + '://' + location.host + '/ws');
+  ws = new WebSocket(scheme + '://' + location.host + '/ws' + (screenMode ? '?screen=1' : ''));
   ws.onopen = () => {
     if (hadActiveSession) location.reload();
   };

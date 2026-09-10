@@ -23,9 +23,14 @@ func (s *Server) buildInitLocked(watch *Game, sink *viewerSink) *initMsg {
 		GlobalAlive:       globalAlive,
 	}
 	if sink != nil && sink.scoreboardScope == "global" {
-		m.Scoreboard = s.viewState.Scoreboard
-		m.ScoreboardHasMore = s.viewState.ScoreboardHasMore
-		m.ChartData = s.viewState.ChartData
+		if sink.screenMode {
+			m.Scoreboard = s.screenScoreboardLocked()
+			m.ChartData = buildChartDataLocked(s.players, m.Scoreboard)
+		} else {
+			m.Scoreboard = s.viewState.Scoreboard
+			m.ScoreboardHasMore = s.viewState.ScoreboardHasMore
+			m.ChartData = s.viewState.ChartData
+		}
 	}
 	if watch != nil {
 		m.Game = buildGameMsgLocked(watch)

@@ -79,6 +79,9 @@ Every bot connection gets a `botSink`: a buffered channel (`botSinkBuf = 128` pa
 
 ## Viewer fanout
 
+`/screen` viewers set `viewerSink.screenMode`, which gives their global
+scoreboard an uncapped snapshot of all connected humans.
+
 Each viewer subscribes to one board (`viewerSink.game`), one scoreboard scope, and one chat scope. `broadcastTickLocked` sends a board's tick delta only to viewers subscribed to it. Board-list, lifecycle, and shutdown messages go to every viewer; scoreboard and chat updates are filtered by each sink's subscription. All sends go through `sendToSinkLocked`: if a sink's channel is full (`viewSinkBuf = 16`), the viewer is too slow — the server closes the connection and increments `tron_viewers_kicked_total`. Each `viewWriter` drains its sink as fast as the socket allows. See [viewer-protocol.md](viewer-protocol.md).
 
 ## Viewer SPA layout

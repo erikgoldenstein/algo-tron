@@ -93,6 +93,7 @@ type viewerSink struct {
 	done            chan struct{}
 	once            sync.Once
 	game            *Game
+	screenMode      bool
 	scoreboardScope string
 	scoreboardLobby string
 	chatScope       string

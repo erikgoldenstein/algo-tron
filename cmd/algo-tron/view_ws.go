@@ -18,6 +18,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 
 	sink := &viewerSink{
 		ch: make(chan []byte, viewSinkBuf), done: make(chan struct{}),
+		screenMode:      r.URL.Query().Get("screen") == "1",
 		scoreboardScope: "board", chatScope: "board",
 	}
 	go s.viewWriter(c, sink)
@@ -167,6 +168,8 @@ func (s *Server) sendViewerSubscriptionLocked(c *websocket.Conn, sink *viewerSin
 			q.Lobby = sink.scoreboardLobby
 			entries, hasMore = s.scoreboardPageLocked(q)
 			players, alive = s.viewerLobbyStatsLocked(q.Lobby)
+		} else if sink.screenMode {
+			entries = s.screenScoreboardLocked()
 		} else {
 			entries = s.viewState.Scoreboard
 			hasMore = s.viewState.ScoreboardHasMore

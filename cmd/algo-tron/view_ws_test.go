@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -12,15 +13,85 @@ import (
 
 // dialViewer boots the viewer over httptest and returns a connected ws client.
 func dialViewer(t *testing.T, s *Server) *websocket.Conn {
+	return dialViewerPath(t, s, "/ws")
+}
+
+func dialViewerPath(t *testing.T, s *Server, wsPath string) *websocket.Conn {
 	t.Helper()
 	srv := httptest.NewServer(s.viewerHandler(""))
 	t.Cleanup(srv.Close)
-	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", nil)
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+wsPath, nil)
 	if err != nil {
 		t.Fatalf("ws dial: %v", err)
 	}
 	t.Cleanup(func() { c.Close() })
 	return c
+}
+
+func TestScreenViewerShowsAllOnlinePlayersAndDropsDisconnects(t *testing.T) {
+	s := testServer(t)
+	now := time.Now().UnixMilli()
+	for i := 0; i < defaultScoreboardLimit+3; i++ {
+		_, conn := mustPipe(t)
+		name := fmt.Sprintf("screen-player-%d", i)
+		s.players[playerKey(name, "")] = &Player{
+			UUID: name + "-uuid", Username: name, PwHash: "pw", conn: conn,
+			TsMu: 300 - float64(i), TsSigma: 20,
+			ScoreHistory: []Score{{Type: 1, Time: now}},
+		}
+	}
+	_, passwordlessConn := mustPipe(t)
+	passwordless := &Player{
+		UUID: "screen-passwordless-uuid", Username: "screen-passwordless", conn: passwordlessConn,
+		TsMu: 280, TsSigma: 20, ScoreHistory: []Score{{Type: 1, Time: now}},
+	}
+	s.players[playerKey(passwordless.Username, "")] = passwordless
+
+	c := dialViewerPath(t, s, "/ws?screen=1")
+	if err := c.WriteJSON(map[string]any{"subscribe": map[string]any{
+		"scoreboardScope": "global", "chatScope": "board",
+	}}); err != nil {
+		t.Fatalf("subscribe screen viewer: %v", err)
+	}
+
+	var first scoreboardMsg
+	if err := json.Unmarshal(readMsgOfType(t, c, "scoreboard"), &first); err != nil {
+		t.Fatalf("unmarshal screen scoreboard: %v", err)
+	}
+	wantCount := defaultScoreboardLimit + 4
+	if len(first.Entries) != wantCount || first.HasMore {
+		t.Fatalf("screen scoreboard = %d entries hasMore=%v, want %d entries hasMore=false", len(first.Entries), first.HasMore, wantCount)
+	}
+	seenPasswordless := false
+	for _, entry := range first.Entries {
+		if entry.Username == passwordless.Username {
+			seenPasswordless = true
+			break
+		}
+	}
+	if !seenPasswordless {
+		t.Fatal("screen scoreboard omitted connected passwordless player")
+	}
+
+	s.mu.Lock()
+	passwordless.conn = nil
+	delete(s.players, playerKey(passwordless.Username, ""))
+	s.updateScoreboardLocked()
+	s.broadcastScoreboardLocked()
+	s.mu.Unlock()
+
+	var after scoreboardMsg
+	if err := json.Unmarshal(readMsgOfType(t, c, "scoreboard"), &after); err != nil {
+		t.Fatalf("unmarshal screen scoreboard after disconnect: %v", err)
+	}
+	if len(after.Entries) != wantCount-1 {
+		t.Fatalf("screen scoreboard after disconnect = %d entries, want %d", len(after.Entries), wantCount-1)
+	}
+	for _, entry := range after.Entries {
+		if entry.Username == passwordless.Username {
+			t.Fatal("disconnected passwordless player remained on screen scoreboard")
+		}
+	}
 }
 
 // readMsgOfType reads ws messages until one with the given "type" arrives, or

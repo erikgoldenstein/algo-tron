@@ -158,6 +158,22 @@ func (s *Server) scoreboardPageLocked(q scoreboardQuery) ([]ScoreboardEntry, boo
 	return entries, hasMore
 }
 
+// screenScoreboardLocked returns every currently connected human for the
+// dedicated /screen display. Unlike the normal sidebar, the screen has no
+// paging cap: passwordless sessions are included while connected and vanish
+// on the next disconnect broadcast because they are removed from s.players.
+func (s *Server) screenScoreboardLocked() []ScoreboardEntry {
+	players := make([]*Player, 0, len(s.players))
+	for _, p := range s.players {
+		if p.conn != nil && liveLeaderboardEligible(p) {
+			players = append(players, p)
+		}
+	}
+	entries := s.buildScoreboardEntriesLocked(players, "ts", 0, len(players))
+	s.annotateVersionTagsLocked(entries)
+	return entries
+}
+
 // updateChartDataLocked refreshes the global chart from the global
 // scoreboard entries.
 func (s *Server) updateChartDataLocked(entries []ScoreboardEntry) {

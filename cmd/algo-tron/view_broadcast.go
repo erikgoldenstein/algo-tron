@@ -90,9 +90,14 @@ func (s *Server) broadcastEndLocked(gameID string) {
 		m := endMsg{Type: "end", GameID: gameID, LastWinners: s.viewState.LastWinners, ScoreboardScope: "board"}
 		if sink.scoreboardScope == "global" {
 			m.ScoreboardScope = "global"
-			m.Scoreboard = s.viewState.Scoreboard
-			m.ScoreboardHasMore = s.viewState.ScoreboardHasMore
-			m.ChartData = s.viewState.ChartData
+			if sink.screenMode {
+				m.Scoreboard = s.screenScoreboardLocked()
+				m.ChartData = buildChartDataLocked(s.players, m.Scoreboard)
+			} else {
+				m.Scoreboard = s.viewState.Scoreboard
+				m.ScoreboardHasMore = s.viewState.ScoreboardHasMore
+				m.ChartData = s.viewState.ChartData
+			}
 		} else if sink.scoreboardScope == "lobby" {
 			m.ScoreboardScope = "lobby"
 			q := scoreboardQuery{Period: "online", Sort: "ts", Lobby: sink.scoreboardLobby, Limit: defaultScoreboardLimit}
@@ -121,6 +126,8 @@ func (s *Server) broadcastScoreboardLocked() {
 			q.Lobby = sink.scoreboardLobby
 			entries, hasMore = s.scoreboardPageLocked(q)
 			players, alive = s.viewerLobbyStatsLocked(q.Lobby)
+		} else if sink.screenMode {
+			entries = s.screenScoreboardLocked()
 		} else {
 			entries = s.viewState.Scoreboard
 			hasMore = s.viewState.ScoreboardHasMore

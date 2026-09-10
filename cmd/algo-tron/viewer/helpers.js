@@ -102,11 +102,16 @@ function sameName(a, b) {
 // Settings toggles persisted in localStorage. The modal renders/owns these;
 // other code just reads via getSwitch(key). Defaults live here so a new
 // setting can be enabled without requiring a localStorage entry.
+const screenViewerPath = location.pathname.replace(/\/+$/, '') === '/screen';
 const SWITCH_DEFAULTS = {
+  scrollNames: screenViewerPath,
   confirmForwarding: true,
 };
 
 function getSwitch(key) {
+  // /screen is intended for an unattended display, so long names must keep
+  // moving even if this origin's normal viewer preference was set to off.
+  if (key === 'scrollNames' && screenViewerPath) return true;
   try {
     const stored = localStorage.getItem('algotron.switch.' + key);
     if (stored !== null) return stored === '1';

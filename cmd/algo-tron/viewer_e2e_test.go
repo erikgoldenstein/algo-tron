@@ -329,7 +329,7 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	s.mu.Unlock()
 
 	ctx := browser(t)
-	var globalActive, chatGlobalActive, screenMode bool
+	var globalActive, chatGlobalActive, screenMode, scrollNames bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url+"/screen"),
 		chromedp.WaitVisible(`#scoreboard-scope:not([hidden])`),
@@ -337,6 +337,8 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('[data-scope="global"]').classList.contains('active')`, &globalActive),
 		chromedp.Evaluate(`document.querySelector('#chat-scope [data-scope="global"]').classList.contains('active')`, &chatGlobalActive),
 		chromedp.Evaluate(`gameState.screenMode`, &screenMode),
+		chromedp.Evaluate(`localStorage.setItem('algotron.switch.scrollNames', '0')`, nil),
+		chromedp.Evaluate(`getSwitch('scrollNames')`, &scrollNames),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -348,6 +350,9 @@ func TestE2EScreenModeStartsWithGlobalScoreboard(t *testing.T) {
 	}
 	if !screenMode {
 		t.Error("/screen should enable screen mode")
+	}
+	if !scrollNames {
+		t.Error("/screen should enable scrolling long names")
 	}
 }
 
