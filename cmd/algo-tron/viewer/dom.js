@@ -211,7 +211,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
       });
     }
   } else if (!scoreboardEl.querySelector('tr.empty')) {
-    scoreboardEl.innerHTML = '<tr class="empty"><td colspan="12" class="empty">nobody scored yet :(</td></tr>';
+    scoreboardEl.innerHTML = '<tr class="empty"><td colspan="13" class="empty">nobody scored yet :(</td></tr>';
   }
   if (typeof bindScoreFollowTargets === 'function') bindScoreFollowTargets(scoreboardEl);
 
@@ -287,6 +287,10 @@ function scoreNameMarkup(username, version, showVersion, maxChars) {
   // behavior. The suffix gets its lighter weight whenever the full label fits.
   if (!showVersion || !version || shown !== label) return esc(shown);
   return esc(username) + '<span class="version-tag">-' + esc(version) + '</span>';
+}
+
+function scoreInfoTrigger(target) {
+  return target?.closest('tr')?.querySelector('.score-info-button') || null;
 }
 
 function renderScoreName(el) {
@@ -505,7 +509,7 @@ function restoreScoreHover() {
   if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
   if (scoreHoverTouchOpen) {
     const target = findScoreHoverTarget();
-    const trigger = target?.closest('td')?.querySelector('.score-info-button') || null;
+    const trigger = scoreInfoTrigger(target);
     if (target) showScoreHover(target, { touch: true, trigger });
     else hideScoreHover();
     return;
@@ -524,7 +528,7 @@ function restoreScoreHover() {
 function refreshScoreHoverCard() {
   if (!scoreHoverKey || !scoreHoverCard || scoreHoverCard.hidden) return;
   const target = findScoreHoverTarget();
-  const trigger = target?.closest('td')?.querySelector('.score-info-button') || null;
+  const trigger = scoreInfoTrigger(target);
   if (target) showScoreHover(target, { touch: scoreHoverTouchOpen, trigger });
   else hideScoreHover();
 }
@@ -554,7 +558,7 @@ function initScoreHover() {
   document.addEventListener('click', (event) => {
     const info = event.target.closest?.('.score-info-button');
     if (info) {
-      const target = info.closest('td')?.querySelector('.score-hover-target');
+      const target = info.closest('tr')?.querySelector('.score-hover-target');
       if (!target) return;
       event.preventDefault();
       event.stopPropagation();
@@ -690,7 +694,8 @@ function scoreRow(p, i) {
   const src = p.bio?.src || '';
   return '<tr data-score-key="' + esc(scoreRowKey(p)) + '"' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span><button type="button" class="score-info-button" aria-label="show details for ' + esc(label) + '" aria-expanded="false" aria-controls="score-player-details">ⓘ</button>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, scoreNameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
+    + '<td class="info"><button type="button" class="score-info-button" aria-label="show details for ' + esc(label) + '" aria-expanded="false" aria-controls="score-player-details">[i]</button></td>'
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'
     + '<td class="sep">|</td>'

@@ -239,6 +239,9 @@ h2 {
   position: relative;
 }
 
+.scoreboard th.info,
+.scoreboard td.info { display: none; }
+
 .scoreboard th,
 .scoreboard td {
   padding: 1px 5px;
@@ -1055,18 +1058,33 @@ canvas#game { display: block; }
 }
 
 @media (hover: none) and (pointer: coarse) {
-  .scoreboard td.name { padding-right: 30px; }
+  .scoreboard th.info,
+  .scoreboard td.info {
+    display: table-cell;
+    width: 2.2em;
+    padding: 1px 0 1px 2px;
+    text-align: right;
+  }
   .score-info-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    position: absolute;
-    top: 50%;
-    right: 2px;
-    width: 26px;
-    height: 26px;
-    transform: translateY(-50%);
-    font-size: 15px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0.45;
+  }
+  .score-info-button:focus,
+  .score-info-button:hover { color: var(--text-muted); opacity: 1; }
+  .scoreboard td.name .namestr {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    vertical-align: bottom;
   }
   .score-hover-card.touch-open {
     left: 8px !important;
