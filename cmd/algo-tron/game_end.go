@@ -37,7 +37,7 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	}
 	gameRows := make([]gameParticipantRecord, 0, len(g.seats))
 	for _, st := range g.seats {
-		if st.player.InternalBot {
+		if !persistablePlayer(st.player) {
 			continue
 		}
 		reason := st.deathReason

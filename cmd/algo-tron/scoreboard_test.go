@@ -405,9 +405,9 @@ func TestScoreboardPagePagesWithHasMore(t *testing.T) {
 
 // — updateScoreboardLocked filters & hasMore ———————————————————————————
 
-// The live sidebar must show only online, password-bearing accounts: offline
-// players and passwordless accounts (including bots) are excluded.
-func TestUpdateScoreboardExcludesOfflineAndPasswordless(t *testing.T) {
+// The live sidebar shows all connected human players, including passwordless
+// sessions; offline players and internal bots are excluded.
+func TestUpdateScoreboardExcludesOfflineAndInternalBots(t *testing.T) {
 	s := testServer(t)
 	now := time.Now().UnixMilli()
 	_, c := mustPipe(t)
@@ -419,11 +419,15 @@ func TestUpdateScoreboardExcludesOfflineAndPasswordless(t *testing.T) {
 
 	s.updateScoreboardLocked()
 
-	if len(s.viewState.Scoreboard) != 1 {
-		t.Fatalf("scoreboard = %d entries, want 1 (only online+password)", len(s.viewState.Scoreboard))
+	if len(s.viewState.Scoreboard) != 2 {
+		t.Fatalf("scoreboard = %d entries, want 2 (connected players including passwordless)", len(s.viewState.Scoreboard))
 	}
-	if s.viewState.Scoreboard[0].Username != "online" {
-		t.Errorf("scoreboard entry = %q, want online", s.viewState.Scoreboard[0].Username)
+	seen := map[string]bool{}
+	for _, entry := range s.viewState.Scoreboard {
+		seen[entry.Username] = true
+	}
+	if !seen["online"] || !seen["nopass"] {
+		t.Errorf("scoreboard entries = %v, want online and nopass", seen)
 	}
 	if s.viewState.ScoreboardHasMore {
 		t.Error("ScoreboardHasMore should be false with one eligible player")

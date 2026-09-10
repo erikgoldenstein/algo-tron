@@ -116,6 +116,121 @@ func TestJoinWithoutPassword(t *testing.T) {
 	t.Fatal("passwordless join did not complete")
 }
 
+func TestPasswordlessDisconnectDeletesSessionAndData(t *testing.T) {
+	s := testServer(t)
+	client, server := mustPipe(t)
+	go s.handleConn(server, false)
+	br := bufio.NewReader(client)
+	drainMotd(t, br)
+	if _, err := client.Write([]byte("join|anonymous\n")); err != nil {
+		t.Fatalf("write passwordless join: %v", err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, br) }()
+
+	var p *Player
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		p = s.players[playerKey("anonymous", defaultBotVersion)]
+		joined := p != nil && p.sink.Load() != nil
+		s.mu.Unlock()
+		if joined {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if p == nil {
+		t.Fatal("passwordless join did not complete")
+	}
+
+	// Simulate a session that accumulated real gameplay data and had a
+	// persistence attempt queued while it was online.
+	s.mu.Lock()
+	p.Elo = 1700
+	p.TsMu = 900
+	p.TsSigma = 1
+	p.ScoreHistory = []Score{{Type: 1, Time: time.Now().UnixMilli(), TsMu: p.TsMu, TsSigma: p.TsSigma}}
+	p.Bio = map[string]string{"contact": "temporary"}
+	uid := ensureUUID(p)
+	s.markDirtyLocked(p)
+	s.mu.Unlock()
+	s.store() // must not create or update a passwordless player row
+
+	// Seed every durable table to prove disconnect cleanup removes old data as
+	// well as preventing new writes.
+	if _, err := s.db.Exec(`INSERT INTO players (username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid) VALUES (?, ?, '', ?, '[]', '{}', ?, ?, 1, 1, ?)`, p.Username, versionOf(p), p.Elo, p.TsMu, p.TsSigma, uid); err != nil {
+		t.Fatalf("seed player row: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix) VALUES (?, ?, ?, '', 0, '[]', '{}', 0, 0, 1, 1, 1)`, uid, p.Username, versionOf(p)); err != nil {
+		t.Fatalf("seed archive row: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO player_ips (uuid, ip_hash, family, first_seen_unix, last_seen_unix) VALUES (?, 'ip', 'ipv4', 1, 1)`, uid); err != nil {
+		t.Fatalf("seed ip row: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO game_participants (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES ('g', 1, ?, ?, ?, 1, '', 0, 0, 0, 1)`, uid, p.Username, versionOf(p)); err != nil {
+		t.Fatalf("seed game row: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO game_participants_archive (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES ('g', 1, ?, ?, ?, 1, '', 0, 0, 0, 1)`, uid, p.Username, versionOf(p)); err != nil {
+		t.Fatalf("seed archive game row: %v", err)
+	}
+
+	client.Close()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		gone := s.players[playerKey("anonymous", defaultBotVersion)] == nil
+		s.mu.Unlock()
+		if gone {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	s.mu.Lock()
+	stillThere := s.players[playerKey("anonymous", defaultBotVersion)] != nil
+	s.mu.Unlock()
+	if stillThere {
+		t.Fatal("passwordless player remained in memory after disconnect")
+	}
+	for _, table := range []string{"players", "players_archive", "player_ips", "game_participants", "game_participants_archive"} {
+		var count int
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM "+table+" WHERE uuid = ?", uid).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("%s retained %d rows for passwordless session", table, count)
+		}
+	}
+
+	// Rejoining the same username creates a new session with untouched
+	// defaults, rather than recovering the disconnected rating.
+	client2, server2 := mustPipe(t)
+	go s.handleConn(server2, false)
+	br2 := bufio.NewReader(client2)
+	drainMotd(t, br2)
+	if _, err := client2.Write([]byte("join|anonymous\n")); err != nil {
+		t.Fatalf("write passwordless reconnect: %v", err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, br2) }()
+	deadline = time.Now().Add(2 * time.Second)
+	var fresh *Player
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		fresh = s.players[playerKey("anonymous", defaultBotVersion)]
+		ready := fresh != nil && fresh.sink.Load() != nil
+		s.mu.Unlock()
+		if ready {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if fresh == nil {
+		t.Fatal("passwordless reconnect did not complete")
+	}
+	if fresh.UUID == uid || fresh.Elo != 1000 || fresh.TsMu != tsMu0 || fresh.TsSigma != tsSigma0 || len(fresh.ScoreHistory) != 0 {
+		t.Fatalf("reconnected passwordless player retained data: uuid=%q elo=%v ts=(%v,%v) scores=%d", fresh.UUID, fresh.Elo, fresh.TsMu, fresh.TsSigma, len(fresh.ScoreHistory))
+	}
+}
+
 func TestPasswordlessJoinRejectsVersion(t *testing.T) {
 	s := testServer(t)
 	clientReader, client := joinAsFieldsConn(t, s, "anonymous", "", "v2")

@@ -75,6 +75,46 @@ func TestLoadStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestOpenDBPurgesLegacyPasswordlessRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatalf("openDB: %v", err)
+	}
+	uid := "transient-uuid"
+	if _, err := db.Exec(`INSERT INTO players (username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, uuid) VALUES ('anonymous', 'v1', '', 1600, '[]', '{}', 900, 1, 1, 1, ?)`, uid); err != nil {
+		t.Fatalf("insert player: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO players_archive (uuid, username, version, pw_hash, elo, score_history, bio, ts_mu, ts_sigma, first_seen_unix, last_seen_unix, archived_at_unix) VALUES (?, 'anonymous', 'v1', '', 0, '[]', '{}', 0, 0, 1, 1, 1)`, uid); err != nil {
+		t.Fatalf("insert archive: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO player_ips (uuid, ip_hash, family, first_seen_unix, last_seen_unix) VALUES (?, 'ip', 'ipv4', 1, 1)`, uid); err != nil {
+		t.Fatalf("insert ip: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO game_participants (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES ('g', 1, ?, 'anonymous', 'v1', 1, '', 0, 0, 0, 1)`, uid); err != nil {
+		t.Fatalf("insert game row: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO game_participants_archive (game_id, board_index, uuid, username, version, won, death_reason, elo, ts_mu, ts_sigma, ended_unix_ms) VALUES ('g', 1, ?, 'anonymous', 'v1', 1, '', 0, 0, 0, 1)`, uid); err != nil {
+		t.Fatalf("insert archive game row: %v", err)
+	}
+	db.Close()
+
+	db, err = openDB(path)
+	if err != nil {
+		t.Fatalf("reopenDB: %v", err)
+	}
+	defer db.Close()
+	for _, table := range []string{"players", "players_archive", "player_ips", "game_participants", "game_participants_archive"} {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM "+table+" WHERE uuid = ?", uid).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Errorf("%s retained %d legacy passwordless rows", table, count)
+		}
+	}
+}
+
 func TestLoadStoreTrueSkillRoundTrip(t *testing.T) {
 	s := testDB(t)
 	s.players["alice"] = &Player{

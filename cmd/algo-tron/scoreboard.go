@@ -20,11 +20,17 @@ type scoreboardQuery struct {
 	Limit  int    `json:"limit"`
 }
 
-// leaderboardEligible decides whether a player should appear on any
-// leaderboard. Password-bearing accounts only — filler bots have an empty
-// PwHash and are excluded by the same check, so this one predicate covers
-// both rules (no bots, password required) consistently across boards.
+// leaderboardEligible decides whether a player has a durable account and can
+// appear on persisted/account leaderboards. Password-bearing accounts only —
+// filler bots have an empty PwHash and are excluded by the same check.
 func leaderboardEligible(p *Player) bool { return p.PwHash != "" }
+
+// liveLeaderboardEligible includes connected passwordless sessions. They look
+// like normal players while online, but disconnect cleanup removes them from
+// s.players, so they cannot survive into a later live or persisted snapshot.
+func liveLeaderboardEligible(p *Player) bool {
+	return p != nil && !p.InternalBot && (p.PwHash != "" || p.conn != nil)
+}
 
 // clampPageLimit applies the limit guards shared by every paged scoreboard
 // request: missing/non-positive defaults to the page size; absurd values are
@@ -44,7 +50,7 @@ func clampPageLimit(limit int) int {
 func (s *Server) updateScoreboardLocked() {
 	players := make([]*Player, 0, len(s.players))
 	for _, p := range s.players {
-		if p.conn != nil && leaderboardEligible(p) {
+		if p.conn != nil && liveLeaderboardEligible(p) {
 			players = append(players, p)
 		}
 	}
@@ -132,7 +138,7 @@ func (s *Server) scoreboardPageLocked(q scoreboardQuery) ([]ScoreboardEntry, boo
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 	players := make([]*Player, 0, len(s.players))
 	for _, p := range s.players {
-		if p.conn == nil || !leaderboardEligible(p) {
+		if p.conn == nil || !liveLeaderboardEligible(p) {
 			continue
 		}
 		if q.Lobby != "" && s.lobbyNameLocked(p) != q.Lobby {
@@ -210,7 +216,7 @@ func (s *Server) annotateVersionTagsLocked(entries []ScoreboardEntry) {
 func (s *Server) onlineVersionCountsLocked() map[string]int {
 	counts := map[string]int{}
 	for _, p := range s.players {
-		if p.conn != nil && leaderboardEligible(p) {
+		if p.conn != nil && liveLeaderboardEligible(p) {
 			counts[p.Username]++
 		}
 	}

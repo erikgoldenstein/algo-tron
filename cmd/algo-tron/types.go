@@ -29,11 +29,12 @@ type Score struct {
 	TsSigma float64 `json:"tsSigma,omitempty"`
 }
 
-// Player is a registered bot: identity, ratings, connection. Everything tied
-// to one particular game (position, trail, aliveness) lives in a Seat — a
-// player who dies leaves their Seat behind in the old game and immediately
-// re-enters the matchmaking queue, so they can be seated in a new game while
-// the old one is still running.
+// Player is a bot session/account: identity, ratings, connection. Passwordful
+// players are durable accounts; passwordless players are transient sessions
+// removed at disconnect. Everything tied to one particular game (position,
+// trail, aliveness) lives in a Seat — a player who dies leaves their Seat
+// behind in the old game and immediately re-enters the matchmaking queue, so
+// they can be seated in a new game while the old one is still running.
 //
 // All fields are guarded by Server.mu except seat and sink, which are
 // atomic pointers: they are *written* only while holding Server.mu but read
@@ -77,6 +78,11 @@ type Player struct {
 	disconnectStreak     atomic.Uint64
 	lastDisconnectReason atomic.Value
 	lastDisconnectRemote atomic.Value
+
+	// Set when a passwordless session disconnects. Its seat can outlive the
+	// TCP handler by one tick, but it must not record another score while the
+	// server winds that seat down.
+	transientDisconnected bool
 
 	InternalBot bool
 	// botRandom selects which example-bot tactic a filler bot plays for its

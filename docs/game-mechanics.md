@@ -53,7 +53,7 @@ So a game at second 30 runs at 4 tps; at second 90 it runs at 10 tps. The interv
 
 Before the steps below, two filler-bot phases run first each tick (no-ops when no filler bot is seated — see [§ Filler bots](#filler-bots)): the seated filler bots pick their move (`applyBotMovesLocked`), then any filler bot the matchmaker no longer needs is killed (`killRequestedBotsLocked`, death reason `bot_removed`).
 
-1. **Kill disconnected.** Any player whose TCP connection dropped during the tick is marked dead.
+1. **Kill disconnected.** Any player whose TCP connection dropped during the tick is marked dead. Passwordless sessions are removed from live account state at TCP disconnect and their transient data is discarded; their seat remains only long enough for the board to resolve the disconnect.
 2. **Read moves.** Each alive player's queued direction is consumed (replaced with `MoveNone`). A valid direction resets that seat's consecutive-invalid counter and becomes its remembered direction. If no valid direction is queued, the server counts one invalid operation and sends `ERROR_NO_MOVE` unless the player is being kicked. For the first two consecutive invalid operations, the server assists deterministically: it repeats the last valid direction when that adjacent cell is free; otherwise it scans clockwise from that direction for the first free cell. A seat with no previous valid direction starts at `up`, then scans `right`, `down`, `left`. This fallback is resolved from the pre-movement board before the new tick frame is broadcast. If every adjacent cell is blocked, `up` remains the collision fallback. The third consecutive invalid operation kicks the player with `ERROR_INVALID_MOVE_LIMIT` and does not move them.
 
 Each seat also has a cumulative invalid-operation budget of `max(invalidMoveBaseLimit, ceil(invalidMovePercentOfTicks% × current tick count))` — currently `max(5, ceil(10% × current tick count))` — evaluated before the current tick. Exceeding that budget kicks the player with `ERROR_INVALID_MOVE_LIMIT`; valid moves reset only the consecutive counter, not the cumulative total. The budget applies to ticks resolved without a valid queued direction, which covers missing and malformed input under the current line protocol.
@@ -152,7 +152,7 @@ Three per-connection budgets are enforced inside `handlePacket`. Limits and cons
 
 `updateScoreboardLocked` rebuilds the top 10 online players from in-memory `players` at startup and after every game end:
 
-1. Keep only connected, leaderboard-eligible players (a non-empty `PwHash`; filler bots have none).
+1. Keep only connected human players; passwordless sessions are included while connected and disappear on disconnect. Filler bots are excluded.
 2. Compute each player's wins/losses over the rolling 2-hour window — for display and as a sort tiebreaker, not the primary key.
 3. Sort by **TrueSkill conservative estimate `μ − 3σ` desc** (the default `sort=ts`), then `μ` desc, then win ratio / wins / losses as tiebreakers.
 4. Truncate to `defaultScoreboardLimit` (10).

@@ -75,7 +75,7 @@ func (st *Seat) patchScoreRatingLocked() {
 // no sink to receive the packet, so callers get scoreTime=0 and the later
 // patch becomes a no-op.
 func (p *Player) recordScoreLocked(s *Server, typ int) int64 {
-	if p.InternalBot {
+	if p.InternalBot || p.transientDisconnected {
 		return 0
 	}
 	now := time.Now().UnixMilli()

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -261,7 +262,79 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// Passwordless players are sessions, not accounts. Remove rows written by
+	// older builds before loading them, and keep this invariant true for any
+	// database that is upgraded in place.
+	if !purgePasswordlessRows(db) {
+		db.Close()
+		return nil, fmt.Errorf("purge passwordless rows")
+	}
 	return db, nil
+}
+
+// purgePasswordlessRows removes all persisted data belonging to passwordless
+// players. Passwordless sessions should never have durable identity, rating,
+// score history, IP, or game-ledger data; this startup cleanup also repairs
+// databases created before that rule was enforced.
+func purgePasswordlessRows(db *sql.DB) bool {
+	if db == nil {
+		return true
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	defer tx.Rollback()
+	queries := []string{
+		`DELETE FROM player_ips WHERE uuid IN (SELECT uuid FROM players WHERE pw_hash = '' UNION SELECT uuid FROM players_archive WHERE pw_hash = '')`,
+		`DELETE FROM game_participants WHERE uuid IN (SELECT uuid FROM players WHERE pw_hash = '' UNION SELECT uuid FROM players_archive WHERE pw_hash = '')`,
+		`DELETE FROM game_participants_archive WHERE uuid IN (SELECT uuid FROM players WHERE pw_hash = '' UNION SELECT uuid FROM players_archive WHERE pw_hash = '')`,
+		`DELETE FROM players_archive WHERE pw_hash = ''`,
+		`DELETE FROM players WHERE pw_hash = ''`,
+	}
+	for _, query := range queries {
+		if _, err := tx.Exec(query); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	return true
+}
+
+// purgePasswordlessPlayerData removes all durable data for one transient
+// session. The caller serializes this with persistence using persistMu.
+func purgePasswordlessPlayerData(db *sql.DB, uuid string) bool {
+	if db == nil || uuid == "" {
+		return true
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	defer tx.Rollback()
+	for _, query := range []string{
+		`DELETE FROM player_ips WHERE uuid = ?`,
+		`DELETE FROM game_participants WHERE uuid = ?`,
+		`DELETE FROM game_participants_archive WHERE uuid = ?`,
+		`DELETE FROM players_archive WHERE uuid = ?`,
+		`DELETE FROM players WHERE uuid = ?`,
+	} {
+		if _, err := tx.Exec(query, uuid); err != nil {
+			metricDBErrors.WithLabelValues("purge").Inc()
+			return false
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		metricDBErrors.WithLabelValues("purge").Inc()
+		return false
+	}
+	return true
 }
 
 // migratePlayersTable upgrades the pre-version schema, whose primary key was
@@ -728,7 +801,7 @@ func (s *Server) storeDirtyOnce() {
 	players := make([]*Player, 0, len(s.dirty))
 	rows := make([]playerRow, 0, len(s.dirty))
 	for p := range s.dirty {
-		if p.InternalBot {
+		if !persistablePlayer(p) {
 			continue
 		}
 		players = append(players, p)
@@ -754,12 +827,19 @@ func (s *Server) storeDirtyOnce() {
 func (s *Server) snapshotPlayersLocked() []playerRow {
 	rows := make([]playerRow, 0, len(s.players))
 	for _, p := range s.players {
-		if p.InternalBot {
+		if !persistablePlayer(p) {
 			continue
 		}
 		rows = append(rows, snapshotRow(p))
 	}
 	return rows
+}
+
+// persistablePlayer is deliberately stricter than leaderboardEligible:
+// passwordless players are live gameplay sessions only and must not reach
+// SQLite through either the incremental or shutdown persistence paths.
+func persistablePlayer(p *Player) bool {
+	return p != nil && !p.InternalBot && p.PwHash != ""
 }
 
 // snapshotRow deep-copies one player's persisted fields. Caller holds
@@ -828,6 +908,9 @@ func storeRows(db *sql.DB, rows []playerRow) bool {
 	}
 	defer stmt.Close()
 	for _, r := range rows {
+		if r.pwHash == "" {
+			continue
+		}
 		scores, _ := json.Marshal(r.scores)
 		if _, err := stmt.Exec(r.username, r.version, r.pwHash, r.elo, string(scores), marshalBio(r.bio), r.tsMu, r.tsSigma, r.firstSeenUnix, r.lastSeenUnix, r.uuid); err != nil {
 			metricDBErrors.WithLabelValues("store_row").Inc()

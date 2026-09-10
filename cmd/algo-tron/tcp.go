@@ -81,7 +81,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 	_ = conn.SetWriteDeadline(time.Now().Add(botWriteTimeout))
 	writePacket(w, "motd", "You can find the protocol documentation here: https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md")
-	writePacket(w, "motd", "Only accounts with a password appear on the leaderboard. Keep your password to keep your stats.")
+	writePacket(w, "motd", "Passwordless players appear while online; keep a password to keep your stats after disconnecting.")
 
 	_ = conn.SetReadDeadline(time.Now().Add(joinTimeout))
 	scanner := bufio.NewScanner(r)
@@ -125,9 +125,9 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	}
 
 	now := time.Now()
-	// An empty password is a deliberate passwordless account. Keep its hash
-	// empty so it remains excluded from the password-only leaderboard; hashing
-	// the empty string would make it look like a password-bearing account.
+	// An empty password is a deliberate passwordless session. Keep its hash
+	// empty so it is never mistaken for a durable password-bearing account;
+	// its live scoreboard presence is handled separately.
 	pwHash := ""
 	if password != "" {
 		pwHash = hashPassword(s.secret, password)
@@ -217,7 +217,12 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	if accountReset && !resetAccountRows(s.db, username, replacement) {
 		slog.Error("db account recovery persistence failed", "user", username)
 	}
-	recordPlayerIP(s.db, s.secret, s.geo, ensureUUID(p), ip, now)
+	// Passwordless sessions are not durable identities. Do not even create a
+	// live IP record for them; disconnect cleanup remains defensive for rows
+	// left by older builds.
+	if p.PwHash != "" {
+		recordPlayerIP(s.db, s.secret, s.geo, ensureUUID(p), ip, now)
+	}
 	go sink.run()
 
 	lim := &connLimits{}
@@ -243,18 +248,60 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		}
 	}
 
+	// Serialize disconnect cleanup with persistence so an in-flight store
+	// cannot write a stale passwordless snapshot after the purge below. The
+	// lock order is persistMu -> Server.mu, matching the store loop.
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	s.mu.Lock()
 	current := p.conn == conn
 	if current {
 		p.conn = nil
 		p.sink.Store(nil)
 		p.LastSeen = time.Now()
-		s.markDirtyLocked(p)
+		passwordless := p.PwHash == ""
+		if passwordless {
+			key := playerKey(p.Username, versionOf(p))
+			if s.players[key] == p {
+				delete(s.players, key)
+			}
+			delete(s.dirty, p)
+			p.transientDisconnected = true
+			// A transient player's game may finish after the TCP cleanup. Do
+			// not let a ledger row buffered before disconnect survive it.
+			kept := s.pendingGameRows[:0]
+			for _, row := range s.pendingGameRows {
+				if row.uuid != ensureUUID(p) {
+					kept = append(kept, row)
+				}
+			}
+			s.pendingGameRows = kept
+			p.ScoreHistory = nil
+			p.Bio = nil
+			p.Chat = ""
+			// Chat is in-memory rather than durable, but it is still session
+			// data: remove messages authored by the transient user too.
+			keptChats := s.chatHistory[:0]
+			for _, message := range s.chatHistory {
+				if message.Username != p.Username {
+					keptChats = append(keptChats, message)
+				}
+			}
+			s.chatHistory = keptChats
+			s.invalidateScoreCachesLocked()
+		} else {
+			s.markDirtyLocked(p)
+		}
 		s.updateScoreboardLocked()
 		s.broadcastScoreboardLocked()
 		s.broadcastBoardsLocked()
 	}
 	s.logBotDisconnectLocked(p, current, disconnectReason, ip, conn.RemoteAddr().String(), time.Since(connectedAt), packetCount, lim.strikes, readErr)
 	s.mu.Unlock()
+	if current && p.PwHash == "" {
+		if !purgePasswordlessPlayerData(s.db, ensureUUID(p)) {
+			slog.Error("db passwordless session purge failed", "user", p.Username, "uuid", ensureUUID(p))
+		}
+	}
 	closeMetricReason = disconnectReason
 }

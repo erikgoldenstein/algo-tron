@@ -80,7 +80,7 @@ func (s *Server) computeBoardEntries(period string) []ScoreboardEntry {
 		defer s.mu.Unlock()
 		players := make([]*Player, 0, len(s.players))
 		for _, p := range s.players {
-			if leaderboardEligible(p) {
+			if liveLeaderboardEligible(p) {
 				players = append(players, p)
 			}
 		}

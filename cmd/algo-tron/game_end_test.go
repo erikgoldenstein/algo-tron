@@ -101,6 +101,27 @@ func TestEndGameBuffersHumanLedgerRowsExcludingBots(t *testing.T) {
 	}
 }
 
+func TestEndGameExcludesPasswordlessLedgerRows(t *testing.T) {
+	s := testServer(t)
+	w, _ := testPlayer("w")
+	anonymous := &Player{Username: "anonymous", Elo: 1000, TsMu: tsMu0, TsSigma: tsSigma0}
+	_, c1 := mustPipe(t)
+	_, c2 := mustPipe(t)
+	w.conn, anonymous.conn = c1, c2
+	s.players["w"] = w
+	s.players["anonymous"] = anonymous
+	g := makeGame(s, []*Player{w, anonymous})
+	s.games = []*Game{g}
+
+	g.markDeadLocked(g.seats[1], deathReasonDisconnect)
+	g.removeFromFields(g.seats[1])
+	s.endGameLocked(g, g.aliveLocked())
+
+	if len(s.pendingGameRows) != 1 || s.pendingGameRows[0].username != "w" {
+		t.Fatalf("pendingGameRows = %+v, want only password-bearing player", s.pendingGameRows)
+	}
+}
+
 // A game with only bots produces no ledger rows and no winners list — nothing
 // for bots to farm.
 func TestEndGameBotOnlyWritesNothing(t *testing.T) {
