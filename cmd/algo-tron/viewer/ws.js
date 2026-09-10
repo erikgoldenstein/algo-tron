@@ -15,10 +15,10 @@
 // ending elsewhere only updates the tabs and leaves the current subscription
 // alone.
 //
-// On disconnect we reconnect with a 1s backoff. If a session was previously
-// established (we saw at least one init frame) and the socket later opens
-// again, we hard-reload the page so any new static assets shipped by a
-// redeployed server come into effect.
+// On disconnect we reconnect with a 1s backoff. A normal reconnect after an
+// established session hard-reloads the page so new static assets shipped by a
+// redeployed server come into effect; a background-resume reconnect preserves
+// the page and refreshes its live state in place.
 //
 // Depends on: dom.js (showShutdownBanner), gameState.js (applyMessage,
 // gameState), and store.js.
@@ -28,10 +28,44 @@ import { viewerStore } from './store.js';
 
 let hadActiveSession = false;
 let ws = null;
+let backgroundSince = 0;
+const backgroundReloadDelay = 5000;
+let resumeReconnect = false;
+let resumeWatchID = '';
+let reconnectTimer = 0;
 // Board id we've asked the server for but whose "game" snapshot hasn't
 // arrived yet. ensureWatched leaves an in-flight switch alone so a boards
 // update can't bounce us back to the first board.
 let pendingWatchID = '';
+
+// Browsers may throttle/freeze a background tab while leaving its WebSocket
+// apparently open and its render frame pending. A short background interval
+// is enough to make a resume reconnect the socket and re-establish both.
+function markBackground() {
+  if (!backgroundSince) backgroundSince = Date.now();
+}
+
+function recoverFromBackground() {
+  if (!backgroundSince) return;
+  const elapsed = Date.now() - backgroundSince;
+  backgroundSince = 0;
+  if (elapsed < backgroundReloadDelay) return;
+
+  resumeReconnect = true;
+  resumeWatchID = gameState.game?.id || '';
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    ws.close();
+  } else {
+    scheduleConnect();
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) markBackground();
+  else recoverFromBackground();
+});
+window.addEventListener('blur', markBackground);
+window.addEventListener('focus', recoverFromBackground);
 
 function watchBoard(id, { preserveFollow = false, automatic = false } = {}) {
   if (id && ws && ws.readyState === WebSocket.OPEN) {
@@ -151,7 +185,9 @@ function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(scheme + '://' + location.host + '/ws' + (screenMode ? '?screen=1' : ''));
   ws.onopen = () => {
-    if (hadActiveSession) location.reload();
+    const resumed = resumeReconnect;
+    resumeReconnect = false;
+    if (hadActiveSession && !resumed) location.reload();
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -163,6 +199,13 @@ function connect() {
       ? gameState.boards.find((board) => board.id === watchedID)?.lobby || ''
       : '';
     applyMessage(msg);
+    if (msg.type === 'init' && resumeWatchID) {
+      const desiredBoard = resumeWatchID;
+      resumeWatchID = '';
+      if (gameState.boards.some((board) => board.id === desiredBoard)) {
+        watchBoard(desiredBoard, { automatic: true });
+      }
+    }
     if (msg.type === 'init'
         || (msg.type === 'game' && (gameState.scoreboardScope === 'lobby' || gameState.chatScope === 'lobby'))) {
       requestViewerSubscription();
@@ -198,8 +241,16 @@ function connect() {
     }
     viewerStore.publish(msg.type, msg);
   };
-  ws.onclose = () => setTimeout(connect, 1000);
+  ws.onclose = scheduleConnect;
   ws.onerror = () => ws.close();
+}
+
+function scheduleConnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = 0;
+    connect();
+  }, 1000);
 }
 
 // Keep the existing classic-script API available to the controls while this
