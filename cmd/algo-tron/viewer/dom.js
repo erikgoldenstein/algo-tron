@@ -354,6 +354,9 @@ function scoreHoverMarkup(target) {
   const contact = target.dataset.contact || '';
   const src = target.dataset.src || '';
   const versionTag = version ? '<span class="score-hover-version">-' + esc(version) + '</span>' : '';
+  const versionRow = version
+    ? '<div class="score-hover-row"><span class="score-hover-label">version</span><span>' + esc(version) + '</span></div>'
+    : '';
   let sourceValue = '<span>' + esc(src) + '</span>';
   try {
     const sourceURL = new URL(src);
@@ -371,7 +374,7 @@ function scoreHoverMarkup(target) {
     ? '<div class="score-hover-reset-row"><button type="button" class="score-hover-reset">reset password</button></div>'
     : '';
   return '<div class="score-hover-title">' + esc(username) + versionTag + '</div>'
-    + '<div class="score-hover-row"><span class="score-hover-label">version</span><span>' + esc(version || '—') + '</span></div>'
+    + versionRow
     + '<div class="score-hover-row"><span class="score-hover-label">first seen</span><span>' + formatFirstSeen(target.dataset.firstSeen) + '</span></div>'
     + contactRow + srcRow + resetRow;
 }
