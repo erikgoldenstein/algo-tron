@@ -11,7 +11,10 @@
 - [Deployment](deployment.md) — build, flags, NixOS module, nginx, running your own server.
 - [Testing](testing.md) — validation checklist, unit tests, e2e tests, benchmarks.
 
+another point of reference are the slide from the ['introduction to tron' workshop](https://erik.gdn/slides/build_tron_bot/) held at mrmcd21.
+
 The bot protocol is a near-faithful reimplementation of
-[freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md).
+[freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md),
+a number of packets were added for additional features while staying 100% backwards compatible.
 Divergences are called out in [bot-protocol.md](bot-protocol.md) and
 [error-codes.md](error-codes.md).

@@ -10,6 +10,10 @@ this page documents how `algo-tron` implements it and the small divergences.
 - Format: `<type>|<arg1>|<arg2>|...\n`.
 - The server reads lines with `bufio.Scanner` and a **1024-byte buffer**. A line that exceeds 1024 bytes (including the newline) causes the scanner to fail and the connection to close — there is **no** `ERROR_PACKET_OVERFLOW` packet; the bot just sees an EOF.
 
+## Recommendation
+
+Wrap your app / connection logic in a while-looped `try`...`except` block or comparable construct. tcp connections can drop. all tcp connections get dropped by the server when server updates get deployed. the aforementioned construct allows your bot to keep playing even after small tcp hickups.
+
 ## Connection lifecycle
 
 ```
