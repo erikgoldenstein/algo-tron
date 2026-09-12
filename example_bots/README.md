@@ -15,8 +15,7 @@ python3 bot1_random.py tron.erik.gdn 4000 mybot v1
 The arguments are optional and mean `host port username version`. The password
 is `secret` in the example code; change it in the bot if needed.
 
-## The important idea: versions
-
+## please use VERSIONS ;)
 `username` + `password` is one account. The optional version string identifies
 an independent bot career under that account. This is intended for running
 multiple bots from one account: use the same username and password with a
