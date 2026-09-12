@@ -13,6 +13,10 @@
 
 another point of reference are the slide from the ['introduction to tron' workshop](https://erik.gdn/slides/build_tron_bot/) held at mrmcd21.
 
+please use the newly features: [using versions instead of changing usernames](https://github.com/erikgoldenstein/algo-tron/blob/main/example_bots/README.md#please-use-versions-), optional [sharing sourcecode](https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md#bot--server-packets), optional [sharing contact info](https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md#bot--server-packets)
+
+consider wrapping your bot in a while-looped-try-except (or comparable construct) so it keeps playing even if the tcp connection has hickups.
+
 The bot protocol is a near-faithful reimplementation of
 [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md),
 a number of packets were added for additional features while staying 100% backwards compatible.
