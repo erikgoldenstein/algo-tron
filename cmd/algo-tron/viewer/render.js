@@ -83,7 +83,7 @@ function renderPlayers(ctx, game, room, radius) {
   const followingAllowed = gameState.boards.length > 1;
   for (const player of Object.values(game.players)) {
     if (!player.alive) continue;
-    const c = playerColor(player.name);
+    const c = playerColor(player.username, player.version);
     const x = player.pos.x * room + room / 2;
     const y = player.pos.y * room + room / 2;
     renderTrail(ctx, game, player, room, radius, c);
@@ -94,7 +94,7 @@ function renderPlayers(ctx, game, room, radius) {
   }
   for (const player of Object.values(game.players)) {
     if (!player.alive) continue;
-    const c = playerColor(player.name);
+    const c = playerColor(player.username, player.version);
     const x = player.pos.x * room + room / 2;
     const y = player.pos.y * room + room / 2;
     renderName(ctx, player.name, x, y, c);

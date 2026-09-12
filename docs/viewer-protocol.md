@@ -135,7 +135,7 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
   "id":     "<hex>",
   "width":  8, "height": 8,
   "players": [
-    {"id": 0, "name": "alice", "bio":{"contact":"mail@erik.gdn"}, "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
+    {"id": 0, "username":"alice", "name": "alice", "bio":{"contact":"mail@erik.gdn"}, "pos": {"x":0,"y":0}, "moves": [{"x":0,"y":0}], "alive": true, "chat": ""}
   ],
   "boardScoreboard": [{"username":"…","version":"v2","showVersion":true,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "boardChartData":  [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}]
@@ -219,11 +219,11 @@ The read loop doubles as the `watch` handler — any frame that isn't a valid `{
 
 The live leaderboard contains connected human players, including passwordless sessions; internal filler bots are excluded. Passwordless sessions disappear from it on disconnect and never contribute to historical persisted period boards. `init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages. The `/screen` subscription is the exception: its global leaderboard includes every connected human with no paging cap, and each join or disconnect sends a fresh snapshot so passwordless rows disappear immediately.
 
-`chat` messages are viewer-only chat/system events: `{type:"chat", gameId, lobby, boardIndex, username, message, time, system}`. The server sends them only to viewers whose chat subscription matches. `chat_snapshot` messages use `{type:"chat_snapshot", messages:[…]}`. The old per-tick `chats` map still drives board chat bubbles.
+`chat` messages are viewer-only chat/system events: `{type:"chat", gameId, lobby, boardIndex, username, version, message, time, system}`. The server sends them only to viewers whose chat subscription matches. `chat_snapshot` messages use `{type:"chat_snapshot", messages:[…]}`. The old per-tick `chats` map still drives board chat bubbles.
 
 Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is validated printable ASCII source text. HTTP(S) source values are clickable; other source text is displayed as text. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. Legacy database rows may still produce `oldOwner` entries until the 14-month retention cleanup removes them.
 
-`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
+`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username-version]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer uses that same identity for every player color. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 
 Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [game-mechanics.md § TrueSkill](game-mechanics.md#trueskill) for the update.
 

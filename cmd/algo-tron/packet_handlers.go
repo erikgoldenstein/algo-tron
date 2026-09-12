@@ -187,6 +187,6 @@ func (s *Server) handleChat(p *Player, parts []string) {
 		if lobby == "" {
 			lobby = defaultLobbyName
 		}
-		s.broadcastChatLocked(chatMsg{GameID: g.id, BoardIndex: boardIndex, Lobby: lobby, Username: p.Username, Message: msg, Time: time.Now().UnixMilli()})
+		s.broadcastChatLocked(chatMsg{GameID: g.id, BoardIndex: boardIndex, Lobby: lobby, Username: p.Username, Version: versionOf(p), Message: msg, Time: time.Now().UnixMilli()})
 	}
 }

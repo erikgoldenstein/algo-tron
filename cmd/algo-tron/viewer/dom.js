@@ -690,7 +690,7 @@ function scoreRow(p, i, includeInfo = true, nameChars = scoreNameChars) {
   const winner = gameState.lastWinners.includes(p.username) ? ' 🎉' : '';
   const old = p.oldOwner ? '<span class="old">(old owner' + p.oldOwner + ')</span>' : '';
   const wr = (p.winRatio * 100).toFixed(0) + '%';
-  const c = playerColor(p.username);
+  const c = playerColor(p.username, p.version);
   const label = scoreNameLabel(p);
   const followed = sameName(label, gameState.followName);
   const followedDead = followed && p.online !== false && !followNameIsAlive(label);
@@ -729,7 +729,7 @@ function chatRow(m) {
       + '</div>';
   }
   const from = m.username || m.from || 'system';
-  const c = playerColor(from);
+  const c = playerColor(from, m.version);
   return '<div class="msg">'
     + '<span class="from" style="color:' + c + '">' + esc(from) + '</span>'
     + ' <span class="time">(' + time + ')</span>'

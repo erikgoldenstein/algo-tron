@@ -141,7 +141,7 @@ func buildGameMsgLocked(g *Game) *gameMsg {
 			players = append(players, st.player)
 		}
 		m.Players = append(m.Players, playerMsg{
-			ID: st.id, Name: s.displayNameLocked(st.player), Version: versionOf(st.player), Pos: st.pos,
+			ID: st.id, Username: st.player.Username, Name: s.displayNameLocked(st.player), Version: versionOf(st.player), Pos: st.pos,
 			Moves: append([]Vec2(nil), st.trail...),
 			Alive: st.alive, Chat: st.player.Chat, Bio: cloneBio(st.player.Bio),
 		})

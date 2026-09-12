@@ -17,7 +17,7 @@
 //   {type:"chat_snapshot", messages:[...]} — current chat subscription history.
 //   {type:"misc",   content:"shutdown"} — lifecycle event; "shutdown" → banner.
 //
-// chartData is a 20-point series; each point is { name: i, [username]: elo, ... }.
+// chartData is a 20-point series; each point is { name: i, [username-version]: {mu, sigma}, ... }.
 // Players whose ScoreHistory predates elo tracking will be missing from the
 // earlier points until enough new games have been played.
 
@@ -216,10 +216,18 @@ function scorePageKey(period, sort, search, lobby) {
 function buildGame(m) {
   const players = {};
   for (const p of m.players || []) {
+    const version = p.version || '';
+    let username = p.username || p.name;
+    // Keep compatibility with older servers that only sent the conditional
+    // display name, while avoiding a duplicated suffix in the color key.
+    if (!p.username && version && username.endsWith('-' + version)) {
+      username = username.slice(0, -(version.length + 1));
+    }
     players[p.id] = {
       id: p.id,
+      username,
       name: p.name,
-      version: p.version || '',
+      version,
       bio: p.bio || {},
       pos: p.pos,
       moves: p.moves ? p.moves.slice() : [p.pos],

@@ -398,7 +398,7 @@ function renderScorePlot() {
   for (const series of seriesToDraw) {
     const points = (series.points || []).filter((point) => Number.isFinite(Number(point.value)));
     if (!points.length) continue;
-    ctx.strokeStyle = playerColor(series.username);
+    ctx.strokeStyle = playerColor(series.username, series.version === '*' ? '' : series.version);
     ctx.fillStyle = ctx.strokeStyle;
     ctx.lineWidth = 1.5;
     const highlighted = highlightedUser === series.username;

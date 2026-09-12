@@ -157,9 +157,10 @@ function paletteFor(scheme) {
   return paletteCache[scheme];
 }
 
-// playerColor is deterministic per name. Joining/leaving never reshuffles
-// existing players' colors.
-function playerColor(name) {
+// playerColor is deterministic per username/version identity. Joining/leaving
+// never reshuffles existing players' colors.
+function playerColor(username, version = '') {
+  const name = version ? username + '-' + version : username;
   const palette = paletteFor(currentScheme);
   return palette[crc32(name) % palette.length];
 }
