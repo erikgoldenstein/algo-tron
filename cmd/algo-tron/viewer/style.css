@@ -519,7 +519,9 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 .app-select-list button.selected { background: var(--border); }
 .modal-scoreboard-table {
   width: max-content;
-  min-width: 100%;
+  /* Keep the compact mobile columns readable and let the modal's horizontal
+     scroller do its job instead of shrinking the table to the viewport. */
+  min-width: max(100%, 36em);
   font-size: 12px;
 }
 .modal-scoreboard-table th.name,
