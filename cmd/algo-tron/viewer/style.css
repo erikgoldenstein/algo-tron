@@ -805,6 +805,8 @@ canvas#game { display: block; }
 #scoreplot-view {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  box-sizing: border-box;
   overflow-y: auto;
 }
 #scoreplot-view[hidden] { display: none; }

@@ -188,10 +188,12 @@ func TestE2EScoreboardScoreplotTabs(t *testing.T) {
 
 	var scoreboardHidden, scoreplotHidden bool
 	var scoreboardHeight, scoreplotHeight int
+	var scoreboardLoaded bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.Click(`#scoreboard-title`),
 		chromedp.WaitVisible(`#scoreboard-modal`),
+		chromedp.Poll(`!document.querySelector('#scoreboard-modal-rows')?.textContent.includes('loading...')`, &scoreboardLoaded),
 		chromedp.Evaluate(`document.getElementById('scoreboard-view').offsetHeight`, &scoreboardHeight),
 		chromedp.Click(`#scoreplot-tab`),
 		chromedp.WaitVisible(`#scoreplot-view:not([hidden])`),
