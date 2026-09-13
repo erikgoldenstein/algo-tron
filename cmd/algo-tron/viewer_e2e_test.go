@@ -106,6 +106,7 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 	ctx := browser(t)
 
 	var hidden bool
+	var scrollLocked bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#help-btn`),
@@ -113,11 +114,15 @@ func TestE2ESettingsButtonOpensModal(t *testing.T) {
 		chromedp.WaitVisible(`#help-modal .modal-window`),
 		chromedp.WaitVisible(`#deployed-commit`),
 		chromedp.Evaluate(`document.getElementById('help-modal').hidden`, &hidden),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflowY === 'hidden' && getComputedStyle(document.body).overflowY === 'hidden'`, &scrollLocked),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if hidden {
 		t.Error("help modal still hidden after clicking settings")
+	}
+	if !scrollLocked {
+		t.Error("background scrolling should be locked while the help modal is open")
 	}
 }
 

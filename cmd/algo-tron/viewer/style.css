@@ -594,6 +594,15 @@ canvas#game { display: block; }
 
 .modal[hidden] { display: none; }
 
+/* A modal owns the viewport while it is open. Lock both possible document
+   scroll containers so wheel/touch scrolling cannot move the page underneath
+   it, while the modal window's own overflow remains available. */
+html:has(.modal:not([hidden])),
+body:has(.modal:not([hidden])) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -623,6 +632,7 @@ canvas#game { display: block; }
   padding: 16px 20px 20px 20px;
   font-size: 13px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
 }
 
 .modal-header {
