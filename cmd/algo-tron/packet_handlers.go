@@ -159,13 +159,16 @@ func (s *Server) handleChat(p *Player, parts []string) {
 		msg = strings.Join(parts[1:], "|")
 	}
 	msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\n", ""), "\r", "")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Resolve the seat under Server.mu. A player can be released from one
+	// board and seated on another between a lock-free load and this point;
+	// using that stale seat would broadcast the chat from the wrong board.
 	st := p.seat.Load()
 	if st == nil {
 		p.send("error", "ERROR_DEAD_CANNOT_CHAT")
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	g := st.game
 	boardIndex := s.boardIndexLocked(g)
 	g.mu.Lock()

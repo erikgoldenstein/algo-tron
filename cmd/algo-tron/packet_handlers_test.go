@@ -83,6 +83,30 @@ func TestHandleChatValid(t *testing.T) {
 	}
 }
 
+func TestBoardBroadcastSkipsStaleSeats(t *testing.T) {
+	s := testServer(t)
+	alice, aliceBuf := testPlayer("alice")
+	bob, bobBuf := testPlayer("bob")
+	carol, carolBuf := testPlayer("carol")
+
+	oldGame := makeGame(s, []*Player{alice, bob})
+	newGame := makeGame(s, []*Player{alice, carol})
+	oldGame.id = "old"
+	newGame.id = "new"
+
+	oldGame.broadcastAliveLocked(formatPacket("message", 0, "old board"))
+
+	if aliceBuf.String() != "" {
+		t.Fatalf("bot reseated on new board received old-board message: %q", aliceBuf.String())
+	}
+	if !strings.Contains(bobBuf.String(), "message|0|old board") {
+		t.Fatalf("bot remaining on old board did not receive its board message: %q", bobBuf.String())
+	}
+	if carolBuf.String() != "" {
+		t.Fatalf("bot on new board received old-board message: %q", carolBuf.String())
+	}
+}
+
 func TestHandleChatDead(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")

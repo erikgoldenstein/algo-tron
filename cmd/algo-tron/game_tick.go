@@ -191,7 +191,7 @@ func (s *Server) releaseSeatLocked(st *Seat) {
 // I/O concurrently, so no bot waits on another bot's connection.
 func (g *Game) broadcastAliveLocked(packet []byte) {
 	for _, st := range g.seats {
-		if st.alive {
+		if st.alive && st.player.seat.Load() == st {
 			if sink := st.player.sink.Load(); sink != nil {
 				sink.enqueue(packet)
 			}

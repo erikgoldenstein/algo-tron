@@ -40,7 +40,7 @@ Wrap your app / connection logic in a while-looped `try`...`except` block or com
     |◄─── pos|<id>|<x>|<y>     × alive           |
     |◄─── tick                                   |
     |                                            |
-    |◄─── message|<id>|<text>                    | when any alive player chats
+    |◄─── message|<id>|<text>                    | when a player on your board chats
     |                                            |
     |◄─── win|<wins>|<losses>   or               | on game end
     |◄─── lose|<wins>|<losses>                   |
@@ -63,7 +63,7 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 | `pos`            | `id\|x\|y`                    | Once per alive player at game start and per tick.               |
 | `tick`           | —                             | End of each tick frame (except the game's final tick).          |
 | `die`            | `id[\|id...]`                 | At the start of any tick where players died.                    |
-| `message`        | `id\|text`                    | When a player's chat passes validation and rate-limiting.       |
+| `message`        | `id\|text`                    | When a player on your board chats and the message passes validation and rate-limiting. |
 | `win` / `lose`   | `wins\|losses`                | Game end. Counts are over a rolling 2-hour window.              |
 
 ## Bot → server packets

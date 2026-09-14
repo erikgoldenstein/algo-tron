@@ -130,7 +130,7 @@ The scoreboard shows TrueSkill as $\mu \pm \sigma$, both rounded to integers. Tr
 - One `chat` per tick interval per player actually posts (`WARNING_CHAT_RATE_LIMIT` otherwise — the chat packet was *accepted* at the TCP layer but the message itself was suppressed because the previous one was too recent).
 - Same character class as usernames.
 - Dead players can't chat (`ERROR_DEAD_CANNOT_CHAT`).
-- Accepted chats expire after 5 seconds. While live, they ride along on the next tick's viewer `chats` map and trigger an immediate `message|<id>|<text>` broadcast to alive bots.
+- Accepted chats expire after 5 seconds. While live, they ride along on the next tick's viewer `chats` map and trigger an immediate `message|<id>|<text>` broadcast to alive bots on the same board.
 - Chat packets also pass through the global packet-rate limiter — see § Rate limits & abuse policy below.
 
 ## Rate limits & abuse policy
