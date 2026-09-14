@@ -260,10 +260,16 @@ h2 {
   width: 100%;
   min-width: 0;
 }
-.score-name-content .namestr {
+.score-name-text {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   overflow: hidden;
+}
+.score-name-text .namestr {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: bottom;
 }
 .score-name-content .follow-status,
 .score-name-content .old,
@@ -1123,7 +1129,7 @@ body:has(.modal:not([hidden])) {
     font: inherit;
     font-size: 10px;
     line-height: 1;
-    opacity: 0.45;
+    opacity: 0.65;
   }
   .score-info-button:focus,
   .score-info-button:hover { color: var(--text-muted); opacity: 1; }
