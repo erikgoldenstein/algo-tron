@@ -53,9 +53,9 @@ uppercase `M` means calendar months. The
 metric is `elo`, `trueskill` (also accepted as `ts`), or `winrate` (also
 accepted as `wr`).
 
-The requested range may not exceed seven days. At most 16 careers may be
+The requested range may not exceed ten days. At most 16 careers may be
 selected, each response series contains at most 256 points, and requests that
-would require more than 4096 ledger rows for one selected user are rejected to
+would require more than 32768 ledger rows for one selected user are rejected to
 bound database and CPU work.
 
 Example:

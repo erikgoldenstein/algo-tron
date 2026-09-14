@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS game_participants_ended_idx ON game_participants(ende
 -- game_participants_archive: identical columns to game_participants. Aged-out
 -- ledger rows (older than gameLedgerRetention, ~7 months) are moved here by
 -- archiveOldGameParticipants so the hot table stays bounded; the history API
--- may read it for seven-day windows, and rows older than 14 months are pruned.
+-- may read it for ten-day windows, and rows older than 14 months are pruned.
 
 CREATE TABLE IF NOT EXISTS player_ips (
   uuid            TEXT NOT NULL,
@@ -111,7 +111,7 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `lobbies` stores administrator-created lobby names, a keyed password hash, the per-board player limit (`-1` means unlimited for that named lobby), and creation time. The default lobby is implicit and is not stored or removable.
 - `bio` stores the optional post-join `contact` and `src` metadata for that career. It is JSON so absent fields remain absent; validation limits contact to 32 printable ASCII characters and source text to 48 printable ASCII characters.
 - `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `lobby`, `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and transient passwordless sessions are excluded at write time so the period boards and the audit log contain durable accounts only.
-- `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; the history API reads both tables. Rows older than 14 months are pruned during retention maintenance. The API's seven-day limit is only a per-request workload bound.
+- `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; the history API reads both tables. Rows older than 14 months are pruned during retention maintenance. The API's ten-day limit is only a per-request workload bound.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
 
 Passwordless joins are transient sessions. They are not written to `players`, `player_ips`, `game_participants`, or the archive tables; disconnect cleanup also purges any matching legacy rows by UUID. Password-bearing accounts are the only durable player identities.

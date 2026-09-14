@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,10 +19,10 @@ const (
 	maxHistoryPoints = 256
 	maxHistoryUsers  = 16
 	historyGapAfter  = scoreWindow
-	historyMaxRange  = 7 * 24 * time.Hour
+	historyMaxRange  = 10 * 24 * time.Hour
 	// This bounds database reads and sorting work, rather than only bounding
 	// the number of points returned after downsampling.
-	maxHistoryRowsPerUser = 4096
+	maxHistoryRowsPerUser = 32768
 	historyCacheTTL       = 10 * time.Second
 	maxHistoryCacheItems  = 64
 	historyRateBurst      = 12
@@ -129,8 +130,11 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		writeHistoryResponse(w, response)
 		return
 	}
-	series, err := s.historySeries(users, metric, from, to)
+	series, err := s.historySeries(r.Context(), users, metric, from, to)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(err, errHistoryTooLarge) {
 			status = http.StatusRequestEntityTooLarge
@@ -300,7 +304,7 @@ func parseHistoryRange(values url.Values) (int64, int64, error) {
 		return 0, 0, errors.New("from must not be after to")
 	}
 	if to-from > historyMaxRange.Milliseconds() {
-		return 0, 0, errors.New("history range cannot exceed 7 days")
+		return 0, 0, errors.New("history range cannot exceed 10 days")
 	}
 	return from, to, nil
 }
@@ -478,10 +482,10 @@ func (s *Server) cacheHistory(key string, response historyResponse, now time.Tim
 	s.historyCache[key] = historyCacheEntry{response: response, stored: now}
 }
 
-func (s *Server) historySeries(users []historyUser, metric historyMetric, from, to int64) ([]historySeries, error) {
+func (s *Server) historySeries(ctx context.Context, users []historyUser, metric historyMetric, from, to int64) ([]historySeries, error) {
 	series := make([]historySeries, 0, len(users))
 	for _, user := range users {
-		points, err := s.historyPoints(user, metric, from, to)
+		points, err := s.historyPoints(ctx, user, metric, from, to)
 		if err != nil {
 			return nil, err
 		}
@@ -501,7 +505,7 @@ func historySeriesVersion(user historyUser) string {
 	return user.Version
 }
 
-func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to int64) ([]historyPoint, error) {
+func (s *Server) historyPoints(ctx context.Context, user historyUser, metric historyMetric, from, to int64) ([]historyPoint, error) {
 	// Resolve current careers under the server lock. UUID is intentionally
 	// never accepted from or returned to the public API; it prevents a
 	// recovered username/version from merging two careers.
@@ -527,7 +531,7 @@ func (s *Server) historyPoints(user historyUser, metric historyMetric, from, to 
 
 	records := make([]historyRow, 0)
 	for _, uuid := range uuids {
-		rows, err := s.db.Query(`SELECT game_id, won, elo, ts_mu, ts_sigma, ended_unix_ms
+		rows, err := s.db.QueryContext(ctx, `SELECT game_id, won, elo, ts_mu, ts_sigma, ended_unix_ms
 		FROM game_participants
 		WHERE uuid = ? AND ended_unix_ms >= ? AND ended_unix_ms <= ?
 		UNION ALL

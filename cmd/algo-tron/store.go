@@ -693,7 +693,7 @@ func archiveOldGameParticipants(db *sql.DB, cutoffUnixMs int64) {
 }
 
 // pruneOldGameParticipantArchive removes ledger rows past the data-retention
-// boundary. The history API's seven-day limit is a per-request cost guard; it
+// boundary. The history API's ten-day limit is a per-request cost guard; it
 // does not shorten how long historical observations remain available.
 func pruneOldGameParticipantArchive(db *sql.DB, cutoffUnixMs int64) {
 	if _, err := db.Exec(`DELETE FROM game_participants_archive WHERE ended_unix_ms < ?`, cutoffUnixMs); err != nil {

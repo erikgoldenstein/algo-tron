@@ -125,6 +125,18 @@ func TestHistoryAPIRoute(t *testing.T) {
 	}
 }
 
+func TestHistoryAPIAcceptsTenDayRange(t *testing.T) {
+	s := testServer(t)
+	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/history?metric=elo&user=alice&from=now-10d&to=now", nil)
+	rr := httptest.NewRecorder()
+	s.history(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestHistoryAPIMaxPointsPerUser(t *testing.T) {
 	s := testServer(t)
 	s.players[playerKey("alice", "v1")] = &Player{UUID: "alice-uuid", Username: "alice", Version: "v1", PwHash: "h"}
@@ -258,7 +270,7 @@ func TestHistoryAPIBadRequests(t *testing.T) {
 		"/api/history?metric=unknown&user=alice",
 		"/api/history?user=alice&from=2&to=1",
 		"/api/history?user=alice&from=not-a-time",
-		"/api/history?user=alice&from=now-8d&to=now",
+		"/api/history?user=alice&from=now-11d&to=now",
 	}
 	for _, target := range cases {
 		t.Run(target, func(t *testing.T) {
