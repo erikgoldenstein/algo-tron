@@ -1,24 +1,38 @@
-# algo-tron docs
+# Documentation
 
-- [Architecture](architecture.md) — process layout, goroutines, locking model.
-- [Bot protocol](bot-protocol.md) — TCP wire protocol spoken to bot clients.
-- [Viewer protocol](viewer-protocol.md) — WebSocket JSON protocol spoken to the viewer UI.
-- [Error codes](error-codes.md) — every `ERROR_*` / `WARNING_*` the server emits and when.
-- [Game mechanics](game-mechanics.md) — tick-rate ramp, board sizing, collisions, ELO, TrueSkill.
-- [Matchmaking](matchmaking.md) — queue, multi-board scheduling, skill banding.
-- [Persistence](persistence.md) — `-data-dir` layout, SQLite schema, secret.
-- [Metrics](metrics.md) — Prometheus metric inventory.
-- [Deployment](deployment.md) — build, flags, NixOS module, nginx, running your own server.
-- [Testing](testing.md) — validation checklist, unit tests, e2e tests, benchmarks.
+Each topic has one reference page. Tutorials show how to start and link to the reference for detailed rules.
 
-another point of reference are the slide from the ['introduction to tron' workshop](https://erik.gdn/slides/build_tron_bot/) held at mrmcd21.
+## Build and run a bot
 
-please use the newly features: [using versions instead of changing usernames](https://github.com/erikgoldenstein/algo-tron/blob/main/example_bots/README.md#please-use-versions-), optional [sharing sourcecode](https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md#bot--server-packets), optional [sharing contact info](https://github.com/erikgoldenstein/algo-tron/blob/main/docs/bot-protocol.md#bot--server-packets)
+- [Example bots](../example_bots/README.md) — run a Python bot or implement a strategy.
+- [Hosting a bot](../example_bots/hosting.md) — keep a bot running on your own machine or a hosted service.
+- [Accounts and versions](accounts.md) — identity, independent careers, passwords, and recovery.
+- [Bot protocol](bot-protocol.md) — framing, connection lifecycle, packet fields, chat, metadata, and traffic limits.
+- [Error codes](error-codes.md) — code lookup, triggers, and connection effects.
+- [Game mechanics](game-mechanics.md) — board geometry, timing, moves, collisions, and game end.
+- [Matchmaking](matchmaking.md) — queues, lobbies, board limits, skill banding, and filler bots.
+- [Ratings and leaderboards](ratings.md) — survival ranking, ELO, TrueSkill, live rankings, and period caching.
 
-consider wrapping your bot in a while-looped-try-except (or comparable construct) so it keeps playing even if the tcp connection has hickups.
+## Integrate with the viewer
 
-The bot protocol is a near-faithful reimplementation of
-[freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md),
-a number of packets were added for additional features while staying 100% backwards compatible.
-Divergences are called out in [bot-protocol.md](bot-protocol.md) and
-[error-codes.md](error-codes.md).
+- [Viewer WebSocket protocol](viewer-protocol.md) — modes, subscriptions, live messages, identity fields, and chart data.
+- [HTTP API](http-api.md) — routes, on-demand scoreboard pages, and score history.
+
+## Operate a server
+
+- [Deployment](deployment.md) — building, flags, NixOS, nginx, provisioning, rollback, GeoLite setup, and logs.
+- [Administration](administration.md) — admin login, lobby management, and account password recovery.
+- [Persistence](persistence.md) — state files, schema, migrations, writes, and retention.
+- [Metrics](metrics.md) — Prometheus setup, complete application metric inventory, and alerting.
+
+## Develop and validate changes
+
+- [Architecture](architecture.md) — process layout, locking, tick phases, fanout, boot, and source map.
+- [Testing](testing.md) — local development, test coverage, race checks, browser tests, benchmarks, and release validation.
+- [Local bot swarm](../scripts/bot_swarm/README.md) — reproducible populations and failure profiles.
+
+## Background and documentation maintenance
+
+The [“Introduction to Tron” workshop slides](https://erik.gdn/slides/build_tron_bot/) provide another introduction. The bot protocol derives from [freehuntx/gpn-tron](https://github.com/freehuntx/gpn-tron); compatibility differences are recorded in the [bot protocol](bot-protocol.md#divergences-from-upstream).
+
+When behavior changes, update its reference section and link to it from related pages. Keep field limits in protocol references, algorithms in mechanics/matchmaking/ratings, storage policy in persistence, and operating procedures in deployment or administration. Keep examples small and valid; avoid copying full explanations or constant tables into tutorials and overview pages.

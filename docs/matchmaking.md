@@ -4,7 +4,7 @@
 
 Several boards run in parallel. The matchmaker's job is to decide *when* to
 start boards and *who* plays on which one. It runs once per second under the
-server lock and works from three concepts:
+server lock and evaluates each lobby independently.
 
 ## The queue
 
@@ -21,29 +21,23 @@ Players enter the queue:
   while the old game plays out,
 - at game end (survivors).
 
+## Lobbies
+
 The default lobby is the compatibility path and uses the historical
 `maxBoardSize` limit of 24. Each named lobby has its own queue and an
-administrator-configured `maxPlayersPerBoard`. A positive value caps each
+administrator-configured `maxPlayersPerBoard`. A value of at least 4 caps each
 board; `-1` puts all currently eligible players from that lobby on one board
 and allows only one concurrent board in that lobby, subject to the existing
 global board-count budget. Lobby separation does not
 create separate rating pools: ELO and TrueSkill updates remain global.
 
-Re-queue-on-death is what keeps waits short: a bot that dies in the first
-seconds of a 100-second game doesn't idle until that game ends.
-
-Deleting a named lobby is a soft close. Its queued players are moved to the
-default lobby, and new joins fall back there with `LOBBY_NOT_FOUND`. Boards
+Deleting a named lobby is a soft close. Its queued players receive `LOBBY_NOT_FOUND` and are moved to the
+default lobby, and attempts to select the removed lobby return `LOBBY_NOT_FOUND` without changing the current selection. Boards
 already running in the deleted lobby stay alive and finish normally. Players
 released from those boards fall back to the default lobby when they re-enter
 the queue.
 
-When fewer than `minBoardSize` real bots are connected, `matchmakeLocked`
-first calls `ensureFillerBotsLocked` to pad the queue with the internal
-filler bots (`alice`/`bob`) so a near-empty server still produces a real
-game; surplus fillers are pulled back out as real players arrive. Fillers are
-excluded from ratings and leaderboards — see
-[game-mechanics.md § Filler bots](game-mechanics.md#filler-bots).
+For near-empty populations, the matchmaker manages the [filler bots](#filler-bots).
 
 ## Hard constraints
 
@@ -52,7 +46,7 @@ excluded from ratings and leaderboards — see
 | `maxBoardSize`       | 24    | Legacy default-lobby players-per-board limit.                             |
 | `minBoardSize`       | 4     | Players per board, lower bound — waived while fewer than 4 bots are connected (tiny populations play immediately, even solo, once everyone idle is queued). |
 | `boardBudgetDivisor` | 12    | At most `max(1, connected/12)` boards run at once, so waves of deaths can't fragment into many tiny games. |
-| `matchWaitCap`       | 20s   | Hard bound: once the oldest waiter passes this, boards start regardless of the score below. |
+| `matchWaitCap`       | 20s   | Stop gathering once the oldest waiter passes this; population, global board-budget, and single-board lobby constraints still apply. |
 
 ## Start now or gather? (the "learning" part)
 
@@ -64,6 +58,8 @@ with optimal stopping over an explicit score (lower is better):
 ```
 score(queue) = avgWait/matchWaitCap  +  1/k  −  avgBoardSize/maxBoardSize
 ```
+
+Here `maxBoardSize` is the effective limit for the lobby: its configured cap, or its current population for an unlimited lobby.
 
 - `k = ceil(n / maxBoardSize)` is how many boards would be formed.
 - The `1/k` term stands in for per-board TrueSkill variance: a sorted queue
@@ -100,6 +96,32 @@ the bottom where they'd stomp beginners until their σ shrinks.
 
 Within a band, spawn order is shuffled (`newGame`), so banding doesn't fix
 spawn positions.
+
+## Filler bots
+
+Two server-internal filler bots, `alice` and `bob` (`fillerBotCount = 2`,
+`InternalBot: true`), keep tiny populations playable. They are **always
+enabled** in production (`fillerBots: true` in `main.go`) and live in
+`filler_bot.go`.
+
+- **When they play.** `ensureFillerBotsLocked` runs once per matchmaker tick
+  (1 Hz). When fewer than `minBoardSize` (4) *real* bots are connected it
+  queues up to `fillerBotCount` fillers to top the field up to four; once
+  enough real players are around again, surplus fillers are flagged
+  `removeRequested` and killed on the next tick (`bot_removed`). A filler
+  sitting in the queue that's no longer needed is simply de-queued.
+- **How they play.** Each game a filler picks one of two tactics mirroring
+  the example bots: with probability `botRandomTacticChance` (0.30) the
+  `bot1_random` tactic (uniform random free neighbour), otherwise the
+  `bot2_bfs_depth8` tactic (steer toward the most reachable space within 8
+  steps). Moves are computed server-side in `applyBotMovesLocked`, so fillers
+  never speak the wire protocol.
+- **They never count.** Filler bots have an empty `PwHash`, so they are
+  excluded from every leaderboard, the TrueSkill chart, and — explicitly — the
+  ELO/TrueSkill updates (`updateEloLocked` / `updateTrueSkillLocked` skip them
+  on both sides), so a board padded with fillers can't be farmed for rating.
+  Their reserved names are protected from impersonation — see
+  [bot-protocol.md § Reserved usernames](bot-protocol.md#reserved-usernames).
 
 ## Observability
 

@@ -1,18 +1,14 @@
 # Bot wire protocol
 
-Line-based protocol over raw TCP. The canonical reference is
-[upstream PROTOCOL.md](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md);
-this page documents how `algo-tron` implements it and the small divergences.
+Line-based protocol over raw TCP. This is the reference for `algo-tron`, based on the
+[upstream protocol](https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md).
+Account ownership and version lifecycles are defined in [accounts](accounts.md).
 
 ## Framing
 
 - Packets are pipe-separated UTF-8 fields terminated by `\n`.
 - Format: `<type>|<arg1>|<arg2>|...\n`.
 - The server reads lines with `bufio.Scanner` and a **1024-byte buffer**. A line that exceeds 1024 bytes (including the newline) causes the scanner to fail and the connection to close — there is **no** `ERROR_PACKET_OVERFLOW` packet; the bot just sees an EOF.
-
-## Recommendation
-
-Wrap your app / connection logic in a while-looped `try`...`except` block or comparable construct. tcp connections can drop. all tcp connections get dropped by the server when server updates get deployed. the aforementioned construct allows your bot to keep playing even after small tcp hickups.
 
 ## Connection lifecycle
 
@@ -50,7 +46,13 @@ Wrap your app / connection logic in a while-looped `try`...`except` block or com
 
 The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` packet ends the game frame.
 
-Several boards run in parallel and players are matched by TrueSkill rating (see [matchmaking.md](matchmaking.md)). The legacy default lobby holds at most 24 players per board; named lobbies accept a maximum of at least 4 players or `-1` for one unlimited board. None of this changes the wire protocol — `lose` arrives when you die, and the idle gap until your next `game` packet is simply short (typically seconds, bounded at ~20s) because dead bots re-enter the matchmaking queue immediately instead of waiting for their old game to finish. Ids (`pos`, `die`, `message`, your own id in `game`) are always scoped to your current game.
+A `lose` packet releases you immediately; wait for another `game` without reconnecting. Match timing and lobby policies are defined in [matchmaking](matchmaking.md). IDs in `pos`, `die`, and `message`, and your ID in `game`, belong only to your current board. Alive bots receive chat messages only from that board.
+
+### Reconnecting
+
+Keep the connection logic in a retry loop: TCP connections can drop, including during server deployment. Respect any [reconnect penalty](#rate-limits).
+
+if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
 
 ## Server → bot packets
 
@@ -64,22 +66,27 @@ Several boards run in parallel and players are matched by TrueSkill rating (see 
 | `tick`           | —                             | End of each tick frame (except the game's final tick).          |
 | `die`            | `id[\|id...]`                 | At the start of any tick where players died.                    |
 | `message`        | `id\|text`                    | When a player on your board chats and the message passes validation and rate-limiting. |
-| `win` / `lose`   | `wins\|losses`                | Game end. Counts are over a rolling 2-hour window.              |
+| `win` / `lose`   | `wins\|losses`                | `lose` at death; `win` at game end. Counts follow the [rating window](ratings.md#elo).              |
 
 ## Bot → server packets
 
 | Packet | Args               | Notes                                                                                       |
 |--------|--------------------|---------------------------------------------------------------------------------------------|
 | `join` | `username[\|password][\|version]` | First packet. The password may be omitted or empty for a passwordless session. Versioning is available only when a password is supplied. The optional version defaults to empty and is not shown; non-default version strings use `[a-zA-Z0-9._-]+`, ≤8 bytes. Username must match `^[a-zA-Z0-9 _\-\.!?,:#]+$`, ≤32 chars; password ≤128. |
-| `move` | `up\|right\|down\|left` | One per tick is enough — the server keeps the most recent direction. Up to `movePacketsPerTick` are accepted per tick at the TCP layer; over-budget moves are dropped silently and add a strike. If a tick resolves without a valid queued direction, the server assists for the first two consecutive invalid operations, then closes the connection on the third or after the cumulative invalid-operation budget is exceeded. See [game mechanics](game-mechanics.md#move-resolution-one-tick). Dead players' `move` packets are accepted but ignored. |
-| `chat` | `text`             | Same character class as username, ≤64 chars. Up to `chatPacketsPerTick` accepted per tick at the TCP layer; over-budget chats add a strike. Of the accepted chats, only **one per tick interval** actually posts — extras get `WARNING_CHAT_RATE_LIMIT`. |
+| `move` | `up\|right\|down\|left` | Send one per tick; the most recent direction is kept. Dead players' moves are ignored. Missing or malformed directions use the [move fallback and kick policy](game-mechanics.md#move-resolution-one-tick); packet admission follows [rate limits](#rate-limits). |
+| `chat` | `text`             | Same character class as username, ≤64 chars. See [chat](#chat) for posting and delivery, and [rate limits](#rate-limits) for packet admission. |
 | `bio` | `field\|value` | Optional post-join metadata. Current fields are `contact` and `src`; invalid values receive `ERROR_INVALID_BIO` and do not affect the connection. |
 | `lobby` | `name[\|password]` | Optional post-join matchmaking selection. A missing or unauthorized lobby leaves the current selection unchanged and returns `LOBBY_NOT_FOUND`; malformed fields return `ERROR_LOBBY_INVALID`. |
 
+### Joining
+
 The join packet contains only credentials and the optional version. The bare
 fourth field is canonical (`join|name|password|v2`); `version v2` remains
-accepted for compatibility. Lobby selection is a separate packet and may be
-sent whenever the connection is active:
+accepted for compatibility. For career behavior and choosing versions, see [accounts](accounts.md#independent-versions).
+
+### Lobby selection
+
+Lobby selection is a separate packet and may be sent whenever the connection is active:
 
 ```text
 lobby|workshop
@@ -88,15 +95,13 @@ lobby|default
 ```
 
 Lobby names are `[a-zA-Z0-9._-]+` and at most 16 bytes; lobby passwords are at
-most 32 printable ASCII bytes. A named lobby must be created by an
+most 32 printable ASCII bytes, excluding spaces and `|`. A named lobby must be created by an
 administrator. The lobby password is optional, but a password must not be
 supplied for an open lobby. A missing lobby, a wrong password, or any other
 failed lobby authorization returns `error|LOBBY_NOT_FOUND` and preserves the
 player's current selection. A queued player moves to the newly selected queue
 immediately. A player with a live seat stays in the current game; the new
-lobby is used only when that player next enters matchmaking. Lobby queues and
-boards are separate, but all players continue to use the same global
-ELO/TrueSkill ratings and leaderboard.
+lobby is used only when that player next enters matchmaking. See [matchmaking](matchmaking.md#lobbies) for queue isolation and board limits.
 
 Examples:
 
@@ -104,6 +109,8 @@ Examples:
 join|mybot|secret|v8
 lobby|workshop|spring
 ```
+
+### Profile metadata
 
 After joining, a bot may publish optional descriptive metadata without changing its game behavior:
 
@@ -113,7 +120,11 @@ bio|contact|dect:8323
 bio|src|https://github.com/erikgoldenstein/tron-bot
 ```
 
-`contact` is limited to 32 printable ASCII characters. `src` is limited to 48 printable ASCII characters and may contain any source text, including HTTP(S) URLs, GitHub, GitLab, or self-hosted repository addresses. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
+`contact` is limited to 32 printable ASCII characters, excluding `<`, `>`, `"`, `'`, and `&`. `src` is limited to 48 printable ASCII characters and may contain any source text, including HTTP(S) URLs, GitHub, GitLab, or self-hosted repository addresses. Sending an empty value clears that field. The pipe remains the packet delimiter, so values cannot contain `|`. These packets are additive: old clients never send them, and older servers may answer `ERROR_UNKNOWN_PACKET` while keeping the connection alive; they simply cannot store or display the metadata.
+
+### Chat
+
+Only alive bots can post. Accepted messages expire after five seconds and immediately produce a `message` packet for alive bots on the sender's current board. They also appear in the viewer's [chat stream and board bubbles](viewer-protocol.md#chat-and-chat_snapshot). Posting is limited to one message per board tick interval; additional accepted chat packets receive `WARNING_CHAT_RATE_LIMIT`. Packet admission has a separate budget below.
 
 ## Rate limits
 
@@ -149,38 +160,18 @@ spam → 3 strikes → ERROR_RATE_LIMIT, kick, penalty = 1s
 reconnect after 1s → spam → kick, penalty = 2s
 reconnect after 2s → spam → kick, penalty = 4s
 …
-spam after 6 kicks → kick, penalty = 60s (capped)
+spam after 7 kicks → kick, penalty = 60s (capped)
 ```
 
 The penalty is per-account (keyed by username), in-memory only — it does not survive a server restart.
 
-## What's allowed / what's not
+## Connection limits
 
-| Allowed                                                                                          | Not allowed                                                                                       |
-|--------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| Sending one `move` per tick (or a few — server keeps the latest).                                | Sending more than `movePacketsPerTick` (5) `move`s in a single tick interval.                     |
-| Sending a `chat` once per tick interval while alive.                                             | Sending more than `chatPacketsPerTick` (3) `chat` packets per tick at TCP — silent drop + strike. |
-| Sending an unknown packet type once in a while (you'll get `ERROR_UNKNOWN_PACKET` but stay on).  | Spamming unknown/malformed packets — counts against the global limit, same strike track.          |
-| Reconnecting after a clean disconnect.                                                           | Reconnecting inside the penalty window — rejected with `ERROR_RECONNECT_PENALTY`.                 |
-| Same username + password from a new TCP connection — old one is kicked with `ERROR_ALREADY_CONNECTED`. | Holding > `maxConnections` (5) simultaneous TCP connections from the same IP (localhost exempt). |
+At most `maxConnections` (5) simultaneous TCP connections are allowed from one IP; localhost is exempt. Connection replacement for an existing account/version is defined in [accounts](accounts.md#passwords-and-connection-ownership). Unknown packets receive `ERROR_UNKNOWN_PACKET` without closing the connection, but still consume the total packet budget.
 
 ## Reserved usernames
 
 Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …), the filler-bot names `alice` / `bob`, and the reserved viewer command `online` (all case-insensitive for the latter names) are rejected with `ERROR_NO_PERMISSION` when the connection comes from a non-localhost IP. The `bot*` slots let local benchmark/test clients pick those names without anyone else hijacking them; `alice` and `bob` are owned by the two built-in filler bots, and `online` is reserved for the scoreplot's “all online users” option.
-
-## Account reuse
-
-`username` + `password` is an account. First join creates it; subsequent joins must match the HMAC-SHA256 hash stored on disk or receive `ERROR_WRONG_PASSWORD`. An empty password creates a passwordless session: it behaves like a normal player while connected, but its ratings, score history, profile data, IP record, and game history are deleted on disconnect. Rejoining after a disconnect therefore starts at the default ratings. If the same account is already connected, the old connection receives `ERROR_ALREADY_CONNECTED` and is closed before the new one takes over.
-
-The optional version identifies an independent bot career under the username. A legacy three-field join and an explicit `v1` join address the default career, whose version is empty and omitted from display. Different non-default versions may be connected at the same time and maintain separate ratings, score history, reconnect penalties, and leaderboard rows, while sharing the username's password.
-
-> **Never reuse a real password.** The protocol is plain TCP — the password travels unencrypted, and the server stores only a fast keyed hash. Treat it as a claim ticket for the username, nothing more.
-
-**Inactive accounts can be recovered/re-registered after 14 months.** A username whose account has not connected for 14 months can be joined with a new password. The previous career's stats (ELO, TrueSkill, score history) are purged and the live account starts fresh (see [persistence.md](persistence.md)). This lets annual chaos-event participants miss one event without losing their account while preventing indefinite abandoned account data.
-
-**Reconnecting mid-game:** if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
-
-The viewer's leaderboard has one row per online version. The default version is omitted and displays only the username; if multiple versions are online, it adds a lighter-weight `-<version>` suffix to distinguish them (for example, `mybot-v2`). The JSON viewer protocol carries optional `version` and `showVersion` fields; older viewers can ignore these additive fields.
 
 ## PROXY protocol
 
@@ -194,10 +185,4 @@ PROXY TCP4 <client_ip> <proxy_ip> <client_port> <proxy_port>\n
 
 ## Divergences from upstream
 
-| Upstream                                  | algo-tron                                                                                  |
-|-------------------------------------------|--------------------------------------------------------------------------------------------|
-| `ERROR_SPAM` for too-fast bots            | Strike-based limiter: `WARNING_RATE_LIMIT` then `ERROR_RATE_LIMIT` + kick. No `ERROR_SPAM`. |
-| `ERROR_PACKET_OVERFLOW` at 1024 bytes     | Same 1024-byte cap, but the connection is dropped without an error packet.                 |
-| `ERROR_INVALID_USERNAME` (non-string)     | Not emitted; the protocol is text, so non-string usernames are not representable.          |
-| `ERROR_INVALID_PASSWORD` (non-string)     | Same as above.                                                                              |
-| —                                         | `ERROR_PROXY_PROTOCOL`, `WARNING_CHAT_RATE_LIMIT`, `WARNING_RATE_LIMIT`, `ERROR_RATE_LIMIT`, `ERROR_RECONNECT_PENALTY` added. |
+The original framing and gameplay packets remain supported. Versions, profile metadata, and lobby selection are additive extensions described above. Packet overflow closes the connection without an error frame, and abuse handling uses the strike limiter instead of upstream's spam error. The [error-code compatibility section](error-codes.md#upstream-codes-not-emitted) lists upstream codes that are not emitted; the error tables mark additional server-specific codes.

@@ -6,25 +6,15 @@
 
 <p align="center">Build a bot, send it onto the board over TCP, and outmaneuver other players' bots in a fast-paced Tron battle.</p>
 
-## The game
+## Get started
 
-- The board is a square that wraps at the edges. Its size scales with the number of players, and multiple boards run in parallel.
-- Every tick each alive bot must send a move: `up`, `down`, `left`, or `right`.
-- You leave a trail behind you. Running into any trail (yours or someone else's) kills you. Two bots arriving at the same cell on the same tick both die.
-- Tick rate starts at 1/s and ramps up by +1/s every 10 seconds, so games get faster the longer they last.
-- Last bot alive wins. Results feed into a rolling ELO leaderboard and a TrueSkill rating that the [matchmaker](docs/matchmaking.md) uses to put you on a board with similarly skilled bots. When you die you re-enter the queue right away, no waiting for your old game to end.
+Write a bot that survives on a wrapping board by avoiding trails and outlasting its opponents. Multiple boards run in parallel, and connected bots keep returning to matchmaking between games.
 
-Full ruleset in [docs/game-mechanics.md](docs/game-mechanics.md).
+Start with the [Python example bots](example_bots/README.md). The [bot protocol](docs/bot-protocol.md) defines the TCP interface; [game mechanics](docs/game-mechanics.md) explains how to play. Use [versions](docs/accounts.md#independent-versions) to run different strategies under one account.
 
-## Writing a bot
+## Documentation
 
-Bots talk a small line-based TCP protocol. no HTTP, no JSON, no SDK. Connect, send your name, read messages, send moves. See [docs/bot-protocol.md](docs/bot-protocol.md) for the wire format.
-
-The fastest way to get started is to read or fork one of the [example bots](example_bots/) (Python). They cover a simple connection lifecycle and a couple of basic strategies.
-
-## Docs
-
-[docs/](docs/README.md) has the protocol spec, error codes, game mechanics, architecture notes, and more.
+The [documentation index](docs/README.md) organizes the complete reference by task: building bots, integrating with the viewer, operating a server, and developing the project. To run your own server, start with [deployment](docs/deployment.md).
 
 ## Thanks
 

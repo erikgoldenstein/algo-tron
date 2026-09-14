@@ -12,20 +12,7 @@ make build
 shows its short form; hover it to see the full value. A plain `go build` keeps
 the local `dev` marker.
 
-From the repository root, the Makefile provides the common local commands:
-
-```sh
-make build
-make run
-make dev
-make run-bot BOT_ARGS='--count 64 --prefix workshop --lobby workshop'
-make stop-bots BOT_ARGS='--pid-file scripts/.tron-swarm-workshop.pid'
-```
-
-`make dev` watches `cmd/`, `go.mod`, and `go.sum`, restarting `go run` after a
-change. The viewer reconnects and reloads its page after the restart. The
-swarm is dependency-free Python; use a unique `--prefix` and `--pid-file` for
-each additional lobby.
+For the development watcher and local bot swarm, see [testing](testing.md#local-development).
 
 ## Run locally
 
@@ -45,18 +32,15 @@ Options:
 - `-public-tcp`: public TCP endpoint shown in the viewer UI.
 - `-public-view`: public viewer endpoint shown in the viewer UI.
 - `-public-view-scheme`: `http` or `https`, only affects what the viewer UI displays.
-- `-data-dir`: directory holding the SQLite player database and HMAC secret. Defaults to a temp directory; set this for persistence.
-- `-geo-dir`: directory holding the GeoLite2 `.mmdb` files (default `geo`). Read-only enrichment, kept separate from `-data-dir`. See [persistence.md](persistence.md#geolite-setup).
-- `-setup-geo`: download the GeoLite2 databases into `-geo-dir` and exit (one-off setup; normal startup never downloads). See [persistence.md](persistence.md#geolite-setup).
+- `-data-dir`: directory holding the SQLite player database, HMAC secret, and admin password. Defaults to a temp directory; set this for persistence.
+- `-geo-dir`: directory holding the GeoLite2 `.mmdb` files (default `geo`). Read-only enrichment, kept separate from `-data-dir`. See [GeoLite setup](#geolite-setup).
+- `-setup-geo`: download the GeoLite2 databases into `-geo-dir` and exit (one-off setup; normal startup never downloads). See [GeoLite setup](#geolite-setup).
 - `-schedule-url`: URL for an optional talk schedule JSON shown in the viewer (only used at chaos events). Omit to hide the schedule panel.
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
 - `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.
 - `-view-metrics-auth`: if set (`user:pass`), also expose `/metrics` on the viewer HTTP server protected by HTTP Basic auth (Prometheus-compatible). Useful when you'd rather scrape over the same TLS-terminated host as the viewer.
 
-The viewer is available at `/` and `/screen`. `/screen` selects the global
-scoreboard and board-local chat. Add `?lobby=name` to keep automatic board
-selection in that lobby while it exists. Lobby creation, editing, and removal
-are available to an authenticated administrator in the settings UI.
+See [viewer modes](viewer-protocol.md#connection-and-board-selection) for `/` and `/screen`, and [administration](administration.md) for login, lobbies, and password recovery.
 
 The intended deployment model is to run the Go service on localhost behind nginx on a single hostname:
 
@@ -115,6 +99,7 @@ server {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
   }
 }
 ```
@@ -222,3 +207,19 @@ The service runs as the unprivileged `tron` user with systemd filesystem and
 privilege restrictions. nginx accepts only the configured hostname, applies
 basic security headers and request limits, and keeps the application listeners
 bound to localhost.
+
+## GeoLite setup
+
+Run `algo-tron -setup-geo -geo-dir geo` to ensure `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb` exist in `-geo-dir` (default `geo`). Normal server startup only opens existing files; it does not download over the network. The setup command mirrors the common GeoLite build-script environment:
+
+- `SKIP_BUILD_GEO=1` skips geo setup entirely.
+- `VERCEL=1` skips unless `BUILD_GEO=1` is also set.
+- `GEO_DATABASE_URL` can point to a City `.mmdb` or `.tar.gz`.
+- `GEO_ASN_DATABASE_URL` can point to an ASN `.mmdb` or `.tar.gz`.
+- `MAXMIND_LICENSE_KEY` downloads from MaxMind when custom URLs are absent.
+- Without a license key, it falls back to `GitSquared/node-geolite2-redist` tarballs.
+
+
+## Logs
+
+The server writes slog text-handler output to stderr. Persistence and rotation are the operator's job — under the NixOS module this means journald (`journalctl -u algo-tron`).

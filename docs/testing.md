@@ -2,9 +2,15 @@
 
 Commands and guidance for validating changes. All commands run from the repo root.
 
+## Local development
+
+From the repository root, `make run` starts the server and `make dev` watches `cmd/`, `go.mod`, and `go.sum`, restarting `go run` after changes. The viewer reconnects and reloads after the restart. Build instructions and the embedded commit marker are defined in [deployment](deployment.md#build).
+
+Use the [local bot swarm](../scripts/bot_swarm/README.md) for reproducible populations, lobby-specific swarms, fault profiles, and start/stop commands. To test an individual strategy, use the [example bots](../example_bots/README.md).
+
 ## Quick check
 
-Run for every change:
+For code changes:
 
 ```sh
 go build ./...
@@ -25,27 +31,12 @@ Run when a change touches `s.mu`/`g.mu`, goroutines, channels, the tick phases, 
 go test -race ./cmd/algo-tron
 ```
 
-## Targeted suites
-
-Run when the matching area changes; the full suite above is still the gate.
-
-| Area changed                                           | Command                                                 |
-|--------------------------------------------------------|---------------------------------------------------------|
-| `game.go`, collisions, movement, ELO, TrueSkill        | `go test ./cmd/algo-tron -run 'TestUpdateElo|TestUpdateTrueSkill|TestMovePlayers|TestApplyCollisions|TestRemoveFromFields|TestNewGame|TestShouldEndLocked|TestKillDisconnectedLocked|TestMarkDead|TestProcessDeadLocked|TestAliveLocked|TestClearExpiredChats|TestEndLocked' -v` |
-| `matchmaker.go`, queue, banding, board budget          | `go test ./cmd/algo-tron -run 'TestMatchmake|TestStartBoards' -v` |
-| `tcp.go`, join validation, chat, proxy protocol        | `go test ./cmd/algo-tron -run 'TestReadProxyProtocolIP|TestValidateJoin|TestHandleMoveLocked|TestHandleChatLocked|TestQueuedPlayersLocked' -v` |
-| `player.go`, seats, send, disconnect, score trimming   | `go test ./cmd/algo-tron -run 'TestNewSeat|TestSetPos|TestReadMoveLocked|TestWinsLoses|TestTrimScores|TestSend|TestWinLocked|TestLoseLocked|TestPatchScoreElo|TestBotSink' -v` |
-| `store.go`, SQLite persistence, password hashing       | `go test ./cmd/algo-tron -run 'TestHashPassword|TestLoadOrCreateSecret|TestLoadStore|TestLoadSetsDefaultElo|TestLoadInitializesTrueSkill|TestStoreIsIdempotent' -v` |
-| `view.go`, scoreboard, chart data                      | `go test ./cmd/algo-tron -run 'TestUpdateScoreboard|TestUpdateChartData' -v` |
-| `util.go`, host/port parsing, IDs                      | `go test ./cmd/algo-tron -run 'TestIsLocalhost|TestHostOnly|TestPortOnly|TestRandID' -v` |
-| Viewer UI (HTML/JS/CSS in `cmd/algo-tron/viewer/`)      | `go test ./cmd/algo-tron -run TestE2E -v` (requires Chrome) |
-
 ## Test helpers
 
 | Helper            | What it builds                                                                                       |
 |-------------------|------------------------------------------------------------------------------------------------------|
 | `testServer(t)`   | `*Server` with in-memory SQLite (`:memory:`), zeroed secret.                                         |
-| `testPlayer(n)`   | `*Player` with a `bytes.Buffer`-backed `bufio.Writer` — capture writes inline.                       |
+| `testPlayer(n)`   | `*Player` with a queued sink and recorder — inspect enqueued packets without a writer goroutine.                       |
 | `makeGame(s,…)`   | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic seat ids.                  |
 | `bareGame(s,…)`   | `*Game` with one seat per player but no board/fields — for rating math and other grid-free tests.    |
 | `addSeat(g,…)`    | Fresh player seated at an explicit position on `g` — for movement/collision setups.                  |
@@ -55,25 +46,26 @@ Run when the matching area changes; the full suite above is still the gate.
 
 The shuffle-free `makeGame` is essential: it pins seat ids to the input slice order so tests can assert on specific board positions without flake.
 
-## What's covered
+## Coverage and targeted tests
 
-The suite leans on small, focused tests rather than full integration runs. Roughly:
+Use `go test ./cmd/algo-tron -run '<pattern>' -v` to narrow a debugging run; the full suite remains the code-change gate.
 
-| Area                | Notable tests                                                                              |
-|---------------------|--------------------------------------------------------------------------------------------|
-| Join validation     | `TestValidateJoin` (table of every reject reason), `TestReadProxyProtocolIP`.              |
-| Auth                | `TestHashPassword*` — determinism, secret-sensitivity, hex shape.                          |
-| Move logic          | `TestMovePlayersWrapping`, `TestMovePlayersSkipsDead`, `TestReadMoveLocked`.               |
-| Collisions          | `TestApplyCollisions{ClaimsEmptyCell,HeadOn,SelfTrail,TrailHit}`, `TestRemoveFromFields*`. |
-| Chat                | `TestHandleChatLocked{Valid,Dead,InvalidChars,PipeIsInvalidChar,RateLimit,SetsExpiry}`.    |
-| Game lifecycle      | `TestNewGame`, `TestShouldEndLocked`, `TestKillDisconnectedLocked`, `TestProcessDeadLocked`. |
-| ELO                 | `TestUpdateElo{TwoPlayers,NoWinner,Symmetric}`. The symmetric test guards zero-sum.        |
-| TrueSkill           | `TestUpdateTrueSkill{InitializesNewPlayers,WinnerGainsLoserLoses,RanksLosersByDeathTick}`. FFA pairwise update; new players auto-initialized to `(tsMu0, tsSigma0)`. |
-| Scoreboard / chart  | `TestUpdateScoreboard{Ordering,WinRatio,Top10,ExcludesOldScores,NoPlayers}`, `TestUpdateChartData*`. |
-| Persistence         | `TestLoadStore{RoundTrip,MultiplePlayers,TrueSkillRoundTrip}`, `TestStoreIsIdempotent`, `TestLoadSetsDefaultElo`, `TestLoadOrCreateSecret*`. |
-| TCP send path       | `TestSend`, `TestSendNoSink`, `TestBotSinkDrainsOnShutdown`, `TestBotSinkKicksWhenFull`.   |
+| Area | Test pattern | Important cases |
+| --- | --- | --- |
+| Authentication and identity | `TestValidate|TestParseJoin|TestJoin|TestHashPassword|TestPasswordless|TestReconnect` | Rejections, version defaults, shared credentials, transient cleanup, live-seat resync. |
+| TCP and packet handling | `TestReadProxy|TestHandle|TestRateLimit|TestTokenBucket|TestBoardBroadcast` | PROXY parsing, chat validation/expiry, throttling, board isolation. |
+| Mechanics and lifecycle | `TestMovePlayers|TestApplyCollisions|TestRemoveFromFields|TestNewGame|TestShouldEnd|TestKill|TestMarkDead|TestProcessDead|TestFinishTick|TestRelease|TestAlive` | Wraparound, trail ownership, head-on collisions, disconnects, death and requeue. |
+| Invalid moves | `TestReadMove|TestMaxInvalid|TestReleaseInvalid` | Fallback direction and invalid-operation budgets. |
+| Matchmaking and fillers | `TestMatchmake|TestStartBoards|TestQueued|TestEnsureFiller|TestBotMove|TestBotRandom|TestBotReach` | Banding, board budget, tiny populations, fillers and strategy choices. |
+| Ratings | `TestUpdateElo|TestUpdateTrueSkill|TestRating` | Survival places, same-tick ties, ELO zero-sum, TrueSkill updates, filler exclusion. |
+| Scoreboards and history | `TestUpdateScoreboard|TestUpdateChartData|TestScoreboard|TestHistory|TestWinsLoses|TestTrimScores|TestPatchScore` | Ordering, rolling windows, paging/cache behavior, history ranges and limits. |
+| Storage | `TestLoad|TestStore|TestArchive|TestPrune|TestPurge|TestRetention` | Round trips, migrations, defaults, idempotence, UUID-based retention. |
+| Send queues | `TestSend|TestBotSink` | No sink, drain on shutdown, overflow kicks. |
+| Viewer and admin | `TestView|TestAdmin|TestLobby|TestUUID` | Subscriptions, scope filtering, cookies, recovery, lobby changes, backend-only UUIDs. |
+| Utilities and enrichment | `TestIsLocalhost|TestHostOnly|TestPortOnly|TestRand|TestCanonical|TestIPFamily|TestHashIP|TestGeo|TestClassifyAS|TestDownload` | Parsing, IDs, IP hashing, geo lookup and downloads. |
+| Browser UI | `TestE2E` | See the browser requirements below. |
 
-The collision tests rely on the deterministic spawns from `makeGame` — when adding a case, prefer the shuffle-free helper over `newGame`.
+Find exact cases with `rg '^func Test' cmd/algo-tron/*_test.go`. The deterministic helpers above keep movement and collision setups independent of spawn shuffling.
 
 ## End-to-end viewer tests
 
@@ -85,7 +77,7 @@ go test ./cmd/algo-tron -run TestE2E -v
 
 Each test takes ~10–15s because Chrome startup dominates. They auto-skip if Chrome isn't on the box, so contributors without it aren't blocked.
 
-Starter coverage, representative rather than exhaustive:
+Representative browser cases (the suite also covers administration, lobby controls, and scoreboard/scoreplot tabs):
 
 | Test                                  | What it checks                                                                |
 |---------------------------------------|-------------------------------------------------------------------------------|
@@ -94,7 +86,7 @@ Starter coverage, representative rather than exhaustive:
 | `TestE2ESchemePickerListsAllSchemes`  | The scheme picker renders one button per entry in `SCHEME_KEYS`.              |
 | `TestE2ESchemePersistsAcrossReload`   | `applyScheme('gpn')` survives a `chromedp.Reload()` via `localStorage`.       |
 
-Add a new test by copying any of the four; the pattern is `Navigate → Wait → Click/Evaluate → Assert`. Two helpers cover all setup: `e2eViewer(t)` for the server, `browser(t)` for the Chrome context.
+Use an existing browser test as a template; the pattern is `Navigate → Wait → Click/Evaluate → Assert`. Two helpers cover all setup: `e2eViewer(t)` for the server, `browser(t)` for the Chrome context.
 
 ## Benchmarks
 
@@ -108,7 +100,7 @@ go test -bench=. -benchmem -run=^$ ./cmd/algo-tron
 go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 ```
 
-There are four benchmarks. Three are unit-level micro-benchmarks of the hot path; one is end-to-end over loopback.
+Benchmarks cover frame construction, fanout, scoreboards, filler decisions, and the end-to-end loopback path.
 
 ### What each measures
 
@@ -117,6 +109,9 @@ There are four benchmarks. Three are unit-level micro-benchmarks of the hot path
 | `BenchmarkTickFrame`   | Building the per-tick `pos\|…\ntick\n` byte frame via `appendPos`. Regression signal for tick-frame allocs. | 16, 64, 256, 1024 players | `appendPos`, `appendPlayer`, tick-frame encoding           |
 | `BenchmarkInitMarshal` | `json.Marshal` of the `game` snapshot with full 64-step trails per player. Scales with trail length, not just N. | 16, 64, 256, 1024 | `game` snapshot JSON shape, trail length, init payload     |
 | `BenchmarkPushFanout`  | `broadcastTickLocked` against N draining `viewerSink`s. Dispatch + marshal cost, no real WS I/O.          | 64, 256, 1024 viewers | `broadcastTickLocked`, viewer sink dispatch                |
+| `BenchmarkComputePeriodEntries` | Historical leaderboard calculation. | Fixture-dependent | Period aggregation |
+| `BenchmarkScoreboardCachedPageWarm` | Paging a warm shared leaderboard cache. | Fixture-dependent | Cache, sort, search, paging |
+| `BenchmarkBotMove` | Internal filler-bot decision cost. | Fixture-dependent | Filler strategies |
 | `BenchmarkE2E`         | Real TCP listener + real bots + real WS viewers over loopback. Catches lock contention / scheduling that unit benches miss. | 16, 64, 256 clients | Anything in the real TCP / WS / lock path                  |
 
 ### Reading the output
@@ -135,11 +130,9 @@ There are four benchmarks. Three are unit-level micro-benchmarks of the hot path
 
 ## Production deploy sanity
 
-Run before tagging a release, merging an infra change, or deploying to production. Benchmarks are part of the production gate.
+Run before tagging a release, merging an infra change, or deploying to production. Benchmarks are part of the production gate; run both commands in [Benchmarks](#benchmarks) before the build checks below.
 
 ```sh
-go test -bench=. -benchmem -run=^$ ./cmd/algo-tron
-go test -bench=BenchmarkE2E -benchtime=30s -benchmem -run=^$ ./cmd/algo-tron
 make build BINARY=/tmp/algo-tron            # embeds the local commit
 nix build .#algo-tron                        # matches the flake / NixOS module
 ```

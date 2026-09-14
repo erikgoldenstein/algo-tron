@@ -1,100 +1,18 @@
 # Viewer WebSocket protocol
 
-The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode connects to `/ws?screen=1`, starts with the global leaderboard and the subscribed board's chat selected in the sidebar, and receives every connected human in that global leaderboard; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Messages are JSON, one per WS frame. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The client sends `watch`, `subscribe`, or scoreboard-page requests as needed:
+This page defines live viewer messages and rendering fields. On-demand queries belong to the [HTTP API](http-api.md), and authenticated actions to [administration](administration.md).
+
+## Connection and board selection
+
+The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode connects to `/ws?screen=1`, starts with the global leaderboard and the subscribed board's chat selected in the sidebar, and receives every connected human in that global leaderboard; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The client sends `watch`, `subscribe`, or scoreboard-page requests as needed:
 
 ```json
 { "watch": "<gameId>" }
 ```
 
-The server (`SetReadLimit(512)`) answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Viewers can request leaderboard pages with `{"scoreboard":{"period":"online|all|daily|monthly|halfyear","sort":"ts|elo|wr","search":"","lobby":"","offset":0,"limit":25}}` (`halfyear` = last 6 months). Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to a running board. If `/screen?lobby=name` names a known lobby, the client prefers that lobby for automatic board selection; if it is removed, selection falls back to another live board.
+The server answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to a running board. If `/screen?lobby=name` names a known lobby, the client prefers that lobby for automatic board selection; if it is removed, selection falls back to another live board.
 
-The on-demand scoreboard modal uses the read-only HTTP endpoint
-`GET /api/scoreboard?period=...&sort=...&search=...&offset=...&limit=...`.
-It returns the same scoreboard page shape as the WebSocket response. Live
-players/alive counts are supplied by the WebSocket subscription; HTTP polling
-is otherwise stateless. The WebSocket scoreboard request remains supported for
-existing viewers and for the live/main-page scoreboard.
-
-## Admin account recovery
-
-With a valid short-lived admin cookie, the viewer can reset an account's
-password from its scoreboard hover card:
-`GET /api/admin/users/<username>/reset-password`. The browser sends the
-existing HttpOnly admin cookie automatically, and the backend validates that
-cookie before allowing the reset.
-The response is not cacheable and contains the generated 24-character
-password once:
-
-```json
-{"username":"alice","password":"A1b2C3d4E5f6G7h8J9k0LmNo"}
-```
-
-The reset changes the shared password for all current versions of that
-username. Career UUIDs, ratings, score history, bio, and first-seen timestamps
-are preserved. The endpoint is admin-only; the hover-card button is only a UI
-affordance and is not an authorization boundary.
-
-## History API
-
-The scoreboard history tab uses the separate read-only HTTP endpoint
-`GET /api/history`; it is intentionally not part of the WebSocket protocol.
-This modal statistics scoreboard is separate from the live game-loop
-scoreboard: the live scoreboard remains in the viewer WebSocket stream, while
-this endpoint is queried on demand.
-The request accepts repeated `user` parameters. A user is identified as
-`username` for the default empty-version career or `username/version` for another
-career. Append `/*` to a username to aggregate all of that username's current
-versions and select the better metric value at each point in time. `from` and
-`to` are optional Unix timestamps in milliseconds or
-Grafana-style relative values such as `now`, `now-2d`, `now-2M`, `now-1y`, and
-`now+30m`; when omitted, the endpoint defaults to the preceding two hours
-ending now. `m` means minutes, `y` or `Y` means calendar years, while
-uppercase `M` means calendar months. The
-metric is `elo`, `trueskill` (also accepted as `ts`), or `winrate` (also
-accepted as `wr`).
-
-The requested range may not exceed ten days. At most 16 careers may be
-selected, each response series contains at most 256 points, and requests that
-would require more than 32768 ledger rows for one selected user are rejected to
-bound database and CPU work.
-
-Example:
-
-```text
-/api/history?metric=trueskill&user=alice%2F*&user=bob&from=1710000000000&to=1715000000000
-```
-
-The response contains one series per selected career:
-
-```json
-{
-  "metric": "trueskill",
-  "from": 1710000000000,
-  "to": 1715000000000,
-  "series": [
-    {
-      "username": "alice",
-      "points": [{"time": 1710000000000, "value": 274, "sigma": 61}, {"time": 1710007200000, "value": 280, "sigma": 58, "gap": true}]
-    }
-  ]
-}
-```
-
-At most 16 careers may be selected, and each series contains at most 256
-points. TrueSkill uses `value` for `mu` and includes `sigma`; win rate is
-cumulative over the requested timeframe and is returned between 0 and 1. The
-endpoint resolves careers to their backend UUID before querying the hot and
-archived game ledgers, so reclaimed usernames do not merge separate careers;
-UUIDs are never returned. `gap: true` marks the
-segment leading into a point when more than two hours passed since the prior
-recorded game observation; clients can render that segment as dotted. This is
-a missing-observation marker, not an exact historical TCP online/offline log.
-History requests are rate-limited per client address with a small interactive
-burst and a sustained limit of one request every 10 seconds; excess
-requests receive HTTP `429` and a `Retry-After` header.
-
-The WebSocket upgrader accepts all origins (`CheckOrigin → true`). The
-read-only HTTP endpoints do not apply a separate Origin check.
+Messages are JSON, one per WebSocket frame, with a 512-byte incoming frame limit. The upgrader accepts all origins (`CheckOrigin → true`). Read errors close the connection; invalid requests are ignored.
 
 ## Message types
 
@@ -111,9 +29,9 @@ read-only HTTP endpoints do not apply a separate Origin check.
   "scoreboardHasMore": false,
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
   "lastWinners": ["<winner username>"],
-  "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}],
+  "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2"]}],
   "chat":        [{"type":"chat","gameId":"…","lobby":"workshop","boardIndex":1,"username":"alice","message":"hello","time":1710000000000}],
-  "game":        { "id":"…", "width": 8, "height": 8, "players": [ … ], "boardScoreboard": [ … ], "boardChartData": [ … ] }
+  "game":        { "id":"…", "width": 8, "height": 8, "players": [], "boardScoreboard": [], "boardChartData": [] }
 }
 ```
 
@@ -122,7 +40,7 @@ read-only HTTP endpoints do not apply a separate Origin check.
 ### `boards` — board list changed
 
 ```json
-{ "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2", …]}] }
+{ "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2"]}] }
 ```
 
 Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby`, `label`, and `tick` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `tick`, `players`, `alive`, and `names` are snapshots from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
@@ -161,7 +79,7 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
 - `gameId` names the board; the client drops ticks that don't match its current snapshot (a switch may be in flight).
 - `positions` is a list of `[id, x, y]` tuples, one per **alive** player. Ids are per-board (index into that game's seats).
 - `deaths` is omitted when no one died this tick.
-- `chats` lists currently-non-empty chats only. Anything not listed has expired (5s after last `chat`).
+- `chats` lists currently-non-empty chats only. Anything not listed has expired (see [chat lifetime](bot-protocol.md#chat)).
 
 ### `end` — a board finished
 
@@ -169,9 +87,9 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
 {
   "type": "end",
   "gameId":      "<hex>",
-  "scoreboard":  [ … ],
+  "scoreboard":  [],
   "scoreboardHasMore": false,
-  "chartData":   [ … ],
+  "chartData":   [],
   "lastWinners": ["<winner username>"]
 }
 ```
@@ -209,30 +127,36 @@ bounded history for the selected chat scope.
 
 A free-form lifecycle event; the `content` string identifies the event. The only `content` value emitted today is `"shutdown"`, broadcast when the server receives SIGINT/SIGTERM. The viewer shows a small red banner ("A new version is being deployed and will be available shortly.") and the server then waits ~1s before closing listeners, giving the message time to paint. The viewer's existing reconnect loop (`ws.onclose` → retry after 1s) brings it back automatically once the new process is up; receiving a fresh `init` clears the banner.
 
-## Backpressure
+### `scoreboard`
 
-Each viewer has a 16-frame send buffer (`viewSinkBuf`). If `sendToSinkLocked` finds the buffer full, the viewer is **kicked** — the connection is closed and `tron_viewers_kicked_total` increments. A reconnect gets a fresh `init`. The dedicated `viewWriter` per viewer writes as fast as messages arrive; since a viewer only receives one board's tick stream (plus rare global messages), inflow is bounded by that board's tick rate.
+Request a page with:
 
-The read loop doubles as the `watch` handler — any frame that isn't a valid `{"watch": id}` JSON object is ignored, and any read error tears the viewer down.
+```json
+{"scoreboard":{"period":"online","sort":"ts","search":"","lobby":"","offset":0,"limit":25}}
+```
 
-`scoreboard` messages answer lazy leaderboard requests or subscription refreshes: `{type:"scoreboard", period, sort, search, lobby, offset, entries, hasMore, players, alive, chartData, computedAt}`. The default sidebar uses `period=online&sort=ts`; the daily/monthly/halfyear pages are backed by `game_participants` rows. The `all`/`daily`/`monthly`/`halfyear` boards are expensive and identical for every viewer, so the server caches one shared snapshot per period and recomputes it on a soft/hard TTL (`scoreboard_config.go`); sort/search/paging and lobby filtering are applied per request on the cached snapshot, so they never trigger a recompute. `online` is never cached — it's the live sidebar, recomputed on every game end. `computedAt` (unix ms) is when the shown data was built; the viewer prints it under the modal table as "as of …".
+`period` is `online`, `all`, `daily`, `monthly`, or `halfyear` (last six months); `sort` is `ts`, `elo`, or `wr`. The response is `{type:"scoreboard", period, sort, search, lobby, offset, entries, hasMore, players, alive, chartData, computedAt}`. Subscription refreshes use the same message. `computedAt` is a Unix millisecond timestamp displayed under the modal table as “as of …”. Ranking and cache policy are defined in [ratings](ratings.md#historical-leaderboard-periods).
 
-The live leaderboard contains connected human players, including passwordless sessions; internal filler bots are excluded. Passwordless sessions disappear from it on disconnect and never contribute to historical persisted period boards. `init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages. The `/screen` subscription is the exception: its global leaderboard includes every connected human with no paging cap, and each join or disconnect sends a fresh snapshot so passwordless rows disappear immediately.
+`init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages. The `/screen` subscription is the exception: its global leaderboard includes every connected human with no paging cap, and each join or disconnect sends a fresh snapshot so passwordless rows disappear immediately.
+
+### `chat` and `chat_snapshot`
 
 `chat` messages are viewer-only chat/system events: `{type:"chat", gameId, lobby, boardIndex, username, version, message, time, system}`. The server sends them only to viewers whose chat subscription matches. `chat_snapshot` messages use `{type:"chat_snapshot", messages:[…]}`. The old per-tick `chats` map still drives board chat bubbles.
 
-Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is validated printable ASCII source text. HTTP(S) source values are clickable; other source text is displayed as text. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. Legacy database rows may still produce `oldOwner` entries until the 14-month retention cleanup removes them.
+## Player identity and display
+
+Player UUIDs stay backend-only and never reach the viewer. Entries carry a base `username`, optional `version`, optional `bio` object, and optional `firstSeen` Unix timestamp in milliseconds. Hovering a scoreboard name shows the version, first-seen date, contact, and source link in a small card. `bio.contact` is plain text and `bio.src` is validated printable ASCII source text. HTTP(S) source values are clickable; other source text is displayed as text. `showVersion` is true when multiple versions of that username are online, and the viewer labels those rows `username-version` with a lighter-weight suffix. Legacy database rows may still produce `oldOwner` entries until [retention cleanup](persistence.md#retention) removes them.
+
+Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [TrueSkill](ratings.md#trueskill) for the calculation.
+
+## Chart data
 
 `chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username-version]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer uses that same identity for every player color. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
 
-Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty as floats). The viewer renders them as `round(tsMu) ± round(tsSigma)` in the `ts` column. See [game-mechanics.md § TrueSkill](game-mechanics.md#trueskill) for the update.
+## Backpressure
+
+A slow viewer whose send buffer fills is disconnected. Reconnecting provides a fresh `init`; buffer ownership and size are defined in [architecture](architecture.md#viewer-fanout).
 
 ## Client reference implementation
 
-The in-tree consumer is split by topic across `cmd/algo-tron/viewer/`:
-
-- `gameState.js` — pure state mutation; mirrors `applyInit` / `applyGame` / `applyTick` / `applyEnd` 1:1 against the message shapes above. The cleanest place to look when adding a new field.
-- `ws.js` — the WebSocket loop and the subscription owner (`watchBoard`, `stepBoard`, auto-re-subscribe when the watched board ends). On reconnect after a session has been established, it forces a `location.reload()` so a redeployed server's new static assets come into effect.
-- `dom.js`, `render.js`, `modal.js`, `schedule.js` — pure consumers of `gameState`. They never mutate state.
-
-See [architecture.md § Viewer SPA layout](architecture.md#viewer-spa-layout) for the full file list.
+The embedded frontend's modules and dependency order are documented in the [architecture source map](architecture.md#viewer-spa-layout).
