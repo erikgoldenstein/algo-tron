@@ -1,6 +1,7 @@
 """Packet handling for the example bot client."""
 
 import sys
+import time
 
 
 def handle_packet(client, parts: list[str]) -> bool:
@@ -18,6 +19,8 @@ def handle_packet(client, parts: list[str]) -> bool:
         return False
 
     if kind == "game":
+        client.game_number += 1
+        client.game_started = time.monotonic()
         # A new game is starting. Format: game|width|height|your_id
         client.width = int(parts[1])
         client.height = int(parts[2])
@@ -59,7 +62,7 @@ def handle_packet(client, parts: list[str]) -> bool:
         return True
 
     if kind in ("win", "lose"):
-        # The game just ended. Clear state so the next game starts fresh.
+        # Our participation ended; the old board may still be playing.
         client.heads.clear()
         client.alive.clear()
         client.trails.clear()
@@ -68,7 +71,15 @@ def handle_packet(client, parts: list[str]) -> bool:
     if kind == "error":
         code = parts[1] if len(parts) > 1 else ""
         print("server error:", "|".join(parts[1:]), file=sys.stderr)
-        if code in ("ERROR_RATE_LIMIT", "ERROR_RECONNECT_PENALTY"):
+        if code in (
+            "ERROR_RATE_LIMIT", "ERROR_RECONNECT_PENALTY",
+            "ERROR_ALREADY_CONNECTED", "ERROR_WRONG_PASSWORD",
+            "ERROR_EXPECTED_JOIN", "ERROR_USERNAME_TOO_SHORT",
+            "ERROR_USERNAME_TOO_LONG", "ERROR_USERNAME_INVALID_SYMBOLS",
+            "ERROR_VERSION_INVALID", "ERROR_PASSWORD_TOO_LONG",
+            "ERROR_NO_PERMISSION", "ERROR_PROXY_PROTOCOL",
+            "ERROR_INVALID_MOVE_LIMIT",
+        ):
             client.stop_reconnecting = True
         return False
 

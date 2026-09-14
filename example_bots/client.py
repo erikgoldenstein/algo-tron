@@ -8,9 +8,8 @@ The full protocol lives in ../docs/bot-protocol.md, but the short version is:
   * Example incoming line:    pos|3|5|7\n        ("player 3 is at (5,7)")
   * Example outgoing line:    move|left\n         ("I want to move left")
 
-That's it. There is no JSON, no length prefix, and no separate handshake
-packet. The canonical join packet is `join|username|password|version`; the
-    version is optional and defaults to empty. Different versions let one account
+The join handshake is `join|username|password|version`; the
+version is optional and defaults to empty. Different versions let one account
 run multiple independent bots at the same time.
 
 A joined bot can select its matchmaking lobby at any time with `lobby|name`
@@ -30,6 +29,9 @@ You should not need to modify this file to write a bot. Just import from it.
 See bot1_random.py for the smallest possible example.
 """
 
+import argparse
+import os
+import select
 import socket
 import sys
 import time
@@ -38,7 +40,7 @@ from client_helpers import DIRECTIONS, occupied, step
 from client_protocol import handle_packet
 
 
-__all__ = ["Client", "DIRECTIONS", "occupied", "step"]
+__all__ = ["Client", "DIRECTIONS", "occupied", "step", "client_from_args"]
 
 
 class Client:
@@ -51,7 +53,7 @@ class Client:
 
         Client("127.0.0.1", 4000, "myname", "mypassword").run(my_decide)
 
-    The `run` method loops forever. Every time the server finishes a tick
+    The `run` method connects and retries network failures. Every time the server finishes a tick
     it calls your `decide` function with `self` as the argument, and sends
     whatever direction you return back to the server.
     """
@@ -66,6 +68,11 @@ class Client:
         self.sock: socket.socket | None = None
         self.buf = b""
         self.stop_reconnecting = False
+        self.lobby = None
+        self.bio = {}
+        self.game_number = 0
+        self.game_started = 0.0
+        self.tick_received = 0.0
 
         # --- Game state. All of this is filled in by `_handle_packet`. ---
 
@@ -90,7 +97,7 @@ class Client:
         # (x, y) tuples.
         self.trails: dict[int, set[tuple[int, int]]] = {}
 
-        self._connect()
+        # Connect in run(), so startup failures use the same retry loop.
 
     # ------------------------------------------------------------------
     # Low-level: sending and receiving lines from the socket.
@@ -101,7 +108,8 @@ class Client:
         if self.sock is not None:
             self.sock.close()
 
-        self.sock = socket.create_connection((self.host, self.port))
+        self.sock = socket.create_connection((self.host, self.port), timeout=5)
+        self.sock.settimeout(None)  # Queuing can legitimately take a long time.
 
         # Disable Nagle's algorithm. Move packets are tiny; without this
         # the OS may hold them back waiting for more data, which (combined
@@ -126,37 +134,38 @@ class Client:
         if self.version:
             join.append(self.version)
         self._send(*join)
-
-    def _reconnect(self) -> None:
-        while True:
-            try:
-                self._connect()
-                return
-            except OSError as err:
-                print(f"reconnect failed: {err}; retrying in 1 second", file=sys.stderr)
-                time.sleep(1)
+        if self.lobby is not None:
+            self.send_lobby(*self.lobby)
+        for field, value in self.bio.items():
+            self._send("bio", field, value)
 
     def _send(self, *fields: str) -> None:
         """Send one packet. We join the fields with '|' and add '\n'."""
         if self.sock is None:
             raise ConnectionError("not connected")
+        if any(any(c in field for c in "|\r\n") for field in fields):
+            raise ValueError("packet fields cannot contain pipes or newlines")
         line = "|".join(fields) + "\n"
         self.sock.sendall(line.encode())
 
     def send_bio(self, field: str, value: str) -> None:
-        """Publish or clear optional bot metadata after joining.
+        """Configure optional metadata and send it if already connected.
 
         Supported fields are ``contact`` and ``src``. Pass an empty value to
         clear a field. The server validates the field and its length.
         """
-        self._send("bio", field, value)
+        self.bio[field] = value
+        if self.sock is not None:
+            self._send("bio", field, value)
 
     def send_lobby(self, name: str, password: str = "") -> None:
-        """Select the matchmaking lobby used after the current game."""
+        """Remember the desired lobby and select it if already connected."""
+        self.lobby = (name, password)
         fields = ["lobby", name]
         if password:
             fields.append(password)
-        self._send(*fields)
+        if self.sock is not None:
+            self._send(*fields)
 
     def send_chat(self, message: str) -> None:
         """Send an optional chat message while alive."""
@@ -183,31 +192,67 @@ class Client:
         return line.decode(errors="replace")
 
     def run(self, decide) -> None:
-        """Log in and then loop forever, calling `decide` once per tick.
+        """Log in and play until interrupted or a terminal error arrives.
 
         `decide` is a function that takes this Client and returns a
         direction string ("up" / "right" / "down" / "left").
         """
-        # Read packets forever. If the TCP connection drops (for example,
-        # during a server restart), reconnect and join again. Do not reconnect
-        # after rate-limit errors: those are bugs in the bot that should be
-        # fixed instead of hidden by a reconnect loop.
-        while True:
-            try:
-                line = self._read_line()
+        delay = 1
+        try:
+            while not self.stop_reconnecting:
+                try:
+                    if self.sock is None:
+                        self._connect()
+                    pending_tick = False
+                    while True:
+                        parts = self._read_line().split("|")
+                        if parts[0] in ("game", "win", "lose", "pos", "die"):
+                            pending_tick = False
+                        if handle_packet(self, parts):
+                            pending_tick = True
+                            self.tick_received = time.monotonic()
+                            delay = 1
+                        if self.stop_reconnecting:
+                            return
+                        # Catch up with already-arrived frames before deciding.
+                        # A chat after a tick must not discard that pending move.
+                        if b"\n" not in self.buf and not select.select([self.sock], [], [], 0)[0]:
+                            break
+                    if pending_tick and self.my_id in self.alive:
+                        direction = decide(self)
+                        if direction not in DIRECTIONS:
+                            raise ValueError("decide() must return a valid direction")
+                        self._send("move", direction)
+                except OSError as err:
+                    if self.sock is not None:
+                        self.sock.close()
+                        self.sock = None
+                    print(f"connection lost: {err}; retrying in {delay}s", file=sys.stderr)
+                    time.sleep(delay)
+                    delay = min(30, delay * 2)
+        finally:
+            if self.sock is not None:
+                self.sock.close()
+                self.sock = None
 
-                parts = line.split("|")
-                is_tick = handle_packet(self, parts)
 
-                # If a tick just ended AND we're still alive, choose a move
-                # and send it. If we're dead we just wait for the next game.
-                if is_tick and self.my_id in self.alive:
-                    direction = decide(self)
-                    self._send("move", direction)
-            except OSError:
-                if self.stop_reconnecting:
-                    print("server closed the connection", file=sys.stderr)
-                    return
-                print("connection lost; reconnecting in 1 second", file=sys.stderr)
-                time.sleep(1)
-                self._reconnect()
+def client_from_args(default_name: str) -> Client:
+    """Common example CLI. Credentials stay outside the strategy source."""
+    parser = argparse.ArgumentParser(description="Run an example ALGO-TRON bot")
+    parser.add_argument("host", nargs="?", default="127.0.0.1")
+    parser.add_argument("port", nargs="?", type=int, default=4000)
+    parser.add_argument("username", nargs="?", default=default_name)
+    parser.add_argument("version", nargs="?", default="")
+    parser.add_argument("--lobby", default=os.getenv("TRON_LOBBY"))
+    args = parser.parse_args()
+    password = os.getenv("TRON_PASSWORD", "")
+    if args.version and not password:
+        parser.error("set TRON_PASSWORD to use a version; otherwise omit the version")
+    client = Client(args.host, args.port, args.username, password, args.version)
+    if args.lobby:
+        client.send_lobby(args.lobby, os.getenv("TRON_LOBBY_PASSWORD", ""))
+    for field in ("contact", "src"):
+        value = os.getenv("TRON_" + field.upper())
+        if value is not None:
+            client.send_bio(field, value)
+    return client

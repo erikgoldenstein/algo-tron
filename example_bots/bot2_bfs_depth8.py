@@ -7,12 +7,11 @@ the real game's toroidal topology), but does not model future opponent moves
 — other players are treated as static obstacles at their current trails.
 """
 
-import sys
 from collections import deque
 
-from client import Client, occupied, step
+from client import Client, DIRECTIONS, client_from_args, occupied, step
 
-DIRS = ["up", "right", "down", "left"]
+DIRS = DIRECTIONS
 DEPTH = 8
 
 
@@ -52,11 +51,7 @@ def decide(c: Client) -> str:
 
 
 def main() -> None:
-    host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 4000
-    name = sys.argv[3] if len(sys.argv) > 3 else "bot2"
-    version = sys.argv[4] if len(sys.argv) > 4 else ""
-    Client(host, port, name, "secret", version).run(decide)
+    client_from_args("bot2").run(decide)
 
 
 if __name__ == "__main__":
