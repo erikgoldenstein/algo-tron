@@ -1,6 +1,6 @@
 # Persistence
 
-The server keeps state in a single directory configured with `-data-dir`. Default is `${TMPDIR}/algo-tron` — fine for local dev, **not for production**: set `-data-dir` to a persistent path or use the NixOS module (which defaults to `/var/lib/algo-tron`).
+The server keeps state in a single directory configured with `-data-dir`. The default is `${TMPDIR}/algo-tron`. For production, set `-data-dir` to a persistent path or use the NixOS module (which defaults to `/var/lib/algo-tron`).
 
 ## Layout
 
@@ -15,7 +15,7 @@ The GeoLite2 `.mmdb` files live in a separate directory configured with `-geo-di
 
 ## `secret`
 
-32 bytes from `crypto/rand`, created on first boot. Used as the HMAC-SHA256 key for password hashing. **Rotating it invalidates every account password** — every existing bot will hit `ERROR_WRONG_PASSWORD` and need to re-register under a new name. Don't rotate unless you mean to.
+32 bytes from `crypto/rand`, created on first boot. Used as the HMAC-SHA256 key for password hashing. Rotating it invalidates the stored password hashes, so existing passwords receive `ERROR_WRONG_PASSWORD`.
 
 Read at boot; if the file is missing or not 32 bytes a new one is generated and written.
 
@@ -115,7 +115,7 @@ The DB runs in WAL mode with a 5s busy timeout (set best-effort on every open).
 - `version` distinguishes independent careers under one username; the default version is the empty string, while legacy `v1` rows are normalized to that default. The composite `(username, version)` key allows multiple versions to be online concurrently.
 - `lobbies` stores administrator-created lobby names, a keyed password hash, the per-board player limit (`-1` means unlimited for that named lobby), and creation time. The default lobby is implicit and is not stored or removable.
 - `bio` stores the optional post-join `contact` and `src` metadata for that career. It is JSON so absent fields remain absent; validation is defined in the [bot protocol](bot-protocol.md#profile-metadata).
-- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `lobby`, `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set — a legacy `game_winners` table is dropped on open if present). Internal filler bots and transient passwordless sessions are excluded at write time so the period boards and the audit log contain durable accounts only.
+- `game_participants` is the single ledger of played games: one row per human participant per game, with `game_id` (timestamped game), `lobby`, `ended_unix_ms`, `uuid`, `username` and `version` at the time, `tick_count` (how long the game lasted), and `won=1` for the survivors. To reconstruct "who won game X" run `SELECT uuid FROM game_participants WHERE game_id = ? AND won = 1`; a separate winners table is intentionally not kept (it would duplicate this row set; a legacy `game_winners` table is dropped on open if present). Internal filler bots and transient passwordless sessions are excluded at write time so the period boards and the audit log contain durable accounts only.
 - `game_participants_archive` holds ledger rows aged out past `gameLedgerRetention` (~7 months, `scoreboard_config.go`), moved there by `archiveOldGameParticipants` so the hot table and its indexes stay bounded by the longest live board window. Same columns as `game_participants`; the history API reads both tables. Rows older than 14 months are pruned during retention maintenance. The [history API limits](http-api.md#history-api) bound individual requests independently of retention.
 - `player_ips` never stores raw IPs. It stores a secret-keyed hash plus optional GeoLite2 City/ASN enrichment. `as_type` is a simple local classification from AS organization names (`datacenter`, `university`, `residential`, `business`, or empty).
 
@@ -123,8 +123,8 @@ Passwordless joins are transient sessions. They are not written to `players`, `p
 
 ## Read/write cadence
 
-- Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the **dirty players** (those whose ratings/history/account changed since the last store — see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows without holding `Server.mu` or `Game.mu`; `persistMu` serializes persistence. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
-- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit — it writes **all** current players, not just dirty ones, so a missed dirty mark costs freshness, never data.
+- Writes are asynchronous: every game end signals the persister goroutine (`storeLoop`), which snapshots the dirty players (those whose ratings/history/account changed since the last store; see `Server.dirty`) under the lock, then opens a transaction and `INSERT OR REPLACE`s those rows without holding `Server.mu` or `Game.mu`; `persistMu` serializes persistence. The signal channel has capacity 1; back-to-back game ends coalesce into one write covering all accumulated dirty players. If the transaction fails, the players are re-marked dirty so the next store retries them.
+- On shutdown, `main` runs one final synchronous `s.store()` after the listeners exit. It writes all current players, including any missed by dirty tracking.
 - The regular `trimScores` operation rewrites in-memory `ScoreHistory` during scoreboard rebuilds without marking players dirty; the hourly retention sweep handles the separate 14-month disk-retention boundary and marks changed players dirty.
 
 DB errors are logged and counted as `tron_db_errors_total{op="…"}`; startup now fails when a schema upgrade or required index cannot be applied. Schema additions are idempotent; the pre-version `players` table is rebuilt once to change its primary key to `(username, version)`. Existing first-seen values are preserved, while legacy rows without them use their last-seen timestamp as a fallback.

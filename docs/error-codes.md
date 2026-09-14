@@ -1,6 +1,6 @@
 # Error codes
 
-Bot error and warning codes, with their trigger and connection effect. Codes are sent inside `error|<CODE>\n` packets — see [bot-protocol.md](bot-protocol.md).
+Bot error and warning codes, with their trigger and connection effect. Codes are sent inside `error|<CODE>\n` packets; see [bot-protocol.md](bot-protocol.md).
 
 Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-join validation errors such as `ERROR_INVALID_BIO` are informational and the connection stays open. `WARNING_*` is also informational and the connection stays open.
 
@@ -37,7 +37,7 @@ Connection-fatal `ERROR_*` codes are sent then the connection is closed. Post-jo
 | `WARNING_CHAT_RATE_LIMIT`    | `chat` arrived less than one tick interval after the last accepted chat. *algo-tron-specific.*      |
 | `ERROR_INVALID_CHAT_MESSAGE` | Chat fails the same character-class regex used for usernames, or is longer than 64 chars.           |
 | `ERROR_INVALID_BIO`          | `bio` is malformed, uses an unsupported field, or exceeds the field's validation rules. The connection stays open. |
-| `WARNING_RATE_LIMIT`         | A run of packets was dropped for exceeding a per-connection budget — one strike per contiguous run. Connection stays open. *algo-tron-specific.* |
+| `WARNING_RATE_LIMIT`         | A run of packets was dropped for exceeding a per-connection budget; one strike per contiguous run. Connection stays open. *algo-tron-specific.* |
 | `ERROR_RATE_LIMIT`           | Strike count reached `rateLimitErrorStrikes` (3). Connection is closed and the account's reconnect penalty doubles. *algo-tron-specific.* |
 
 See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits) for the full strike → warn → kick → penalty flow.
@@ -46,8 +46,8 @@ See [bot-protocol.md § Rate limits](bot-protocol.md#rate-limits) for the full s
 
 The following appear in upstream `ERRORCODES.md` but are never sent by this server:
 
-- `ERROR_SPAM` — replaced by the strike-based limiter (`WARNING_RATE_LIMIT` → `ERROR_RATE_LIMIT` + kick + reconnect penalty).
-- `ERROR_PACKET_OVERFLOW` — line > 1024 bytes drops the connection without an error packet.
-- `ERROR_INVALID_USERNAME` / `ERROR_INVALID_PASSWORD` — not representable in a text protocol.
+- `ERROR_SPAM`: replaced by the strike-based limiter (`WARNING_RATE_LIMIT` → `ERROR_RATE_LIMIT` + kick + reconnect penalty).
+- `ERROR_PACKET_OVERFLOW`: line > 1024 bytes drops the connection without an error packet.
+- `ERROR_INVALID_USERNAME` / `ERROR_INVALID_PASSWORD`: not representable in a text protocol.
 
 `ERROR_PASSWORD_TOO_SHORT` is also not emitted: empty passwords are supported for [transient sessions](accounts.md#passwords-and-connection-ownership).

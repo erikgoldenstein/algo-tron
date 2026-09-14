@@ -18,7 +18,7 @@ func TestQueuedPlayersLocked(t *testing.T) {
 	seated, _ := testPlayer("seated")
 	charlie.conn, charlie.queuedSince = sideA, now.Add(-2*time.Second)
 	alice.conn, alice.queuedSince = sideB, now.Add(-5*time.Second)
-	bob.conn = nil // disconnected — not in queue
+	bob.conn = nil // disconnected; not in queue
 	seated.conn = sideC
 	seated.seat.Store(&Seat{player: seated, alive: true})
 

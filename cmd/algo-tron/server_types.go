@@ -12,7 +12,7 @@ import (
 // Server holds global state. Server.mu guards everything reachable from it
 // except per-board game state, which lives behind each Game's own mutex.
 // Lock order: persistence operations acquire persistMu before Server.mu;
-// Server.mu may then be held while acquiring a Game.mu, never the reverse — a
+// Server.mu may then be held while acquiring a Game.mu, never the reverse; a
 // goroutine holding a Game.mu must release it before touching server state.
 type Server struct {
 	mu           sync.Mutex
@@ -53,7 +53,7 @@ type Server struct {
 	mmRate     float64
 
 	// storeSignal wakes the persister goroutine (storeLoop) to snapshot
-	// and write all players to SQLite. Capacity 1; senders never block —
+	// and write all players to SQLite. Capacity 1; senders never block;
 	// a pending signal already covers any newer state. nil in tests that
 	// don't exercise persistence (send via queueStoreLocked is a no-op).
 	storeSignal chan struct{}
@@ -141,7 +141,7 @@ type Game struct {
 
 // tickResult carries one tick's outcome from phase 1 (game mechanics under
 // Game.mu) to phase 2 (server-side effects under Server.mu). The slices
-// alias the game's scratch buffers — consume them before the next tick.
+// alias the game's scratch buffers; consume them before the next tick.
 type tickResult struct {
 	done      bool
 	dead      []*Seat  // seats that died this tick

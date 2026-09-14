@@ -8,10 +8,9 @@ The public ALGO-TRON server runs at Hetzner in Nürnberg, Germany. Hosting your
 bot in Germany or nearby usually gives it the quickest connection, especially
 late in a game when the board moves faster.
 
-## Self-hosting is best
+## Hosting on your own machine
 
-If you have a machine that is normally online, use it. **Self-hosting is always
-the best option.** It is simple, free, and gives you full control.
+A machine you already keep online can run the bot without a separate hosting subscription.
 
 You do not need to change any router settings or open any ports. Just run the
 bot as you would on your normal computer.
@@ -37,16 +36,15 @@ host keep the bot running.
 
 | Provider | Price | Location | Tradeoff |
 | --- | --- | --- | --- |
-| [Northflank Sandbox](https://northflank.com/pricing) | Free | Provider-selected | Two free services that do not sleep; probably the easiest free option, but complicated bots may be slowed by shared computing power. |
+| [Northflank Sandbox](https://northflank.com/pricing) | Free | Provider-selected | Two free services that do not sleep; shared computing power may slow complicated bots. |
 | [Back4app](https://www.back4app.com/pricing/container-as-a-service) | Free | United States | A free Docker container with no credit card required; it needs a small web health check and is farther from Nürnberg. |
-| [Koyeb Eco Nano](https://www.koyeb.com/docs/reference/instances) | About USD 1.61/month | Frankfurt | Close, simple, and powerful enough for the examples; do not choose its free web service, which goes to sleep. |
+| [Koyeb Eco Nano](https://www.koyeb.com/docs/reference/instances) | About USD 1.61/month | Frankfurt | Frankfurt location; do not choose its free web service, which goes to sleep. |
 | [Fly.io](https://fly.io/docs/about/pricing/) | About USD 2--3/month | European regions available | Good Docker support; make sure the machine is configured to stay running. |
-| [Northflank paid](https://northflank.com/pricing) | About USD 2.70/month | Provider-selected | As easy as the free version, but slightly more expensive than Koyeb. |
-| [Railway](https://railway.com/pricing) | USD 5/month minimum | European regions available | Very easy Git deployment, but expensive for one small bot. |
+| [Northflank paid](https://northflank.com/pricing) | About USD 2.70/month | Provider-selected | Paid alternative to the Sandbox plan. |
+| [Railway](https://railway.com/pricing) | USD 5/month minimum | European regions available | Git deployment; minimum spend may exceed one bot's usage. |
 | [Render](https://render.com/pricing) | About USD 7/month | European regions available | Easy background workers; its free services cannot keep a bot running all day. |
 
-Northflank is the best place to try first for free. Koyeb is a good choice if
-you would rather pay a small amount for a Frankfurt container.
+Compare the free-plan restrictions and available locations before choosing a host.
 
 ### VM hosting
 
@@ -56,13 +54,13 @@ same VM can run several bots and other small projects.
 
 | Provider | Price | Location | Tradeoff |
 | --- | --- | --- | --- |
-| [Oracle Cloud Always Free](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm) | Free | Frankfurt when available | Very powerful and close to the game server, but signup and free-machine availability can be frustrating. |
+| [Oracle Cloud Always Free](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm) | Free | Frankfurt when available | Frankfurt option; signup and free-machine availability vary. |
 | [Google Cloud Free Tier](https://cloud.google.com/free/docs/free-cloud-features) | Free | Selected US regions | Reliable normal VM; limited monthly data and much farther from Nürnberg. |
-| [Scaleway Stardust](https://www.scaleway.com/en/pricing/virtual-instances/) | About EUR 0.43/month, plus storage and tax | Europe | Probably the cheapest paid VM, but it is often out of stock. |
+| [Scaleway Stardust](https://www.scaleway.com/en/pricing/virtual-instances/) | About EUR 0.43/month, plus storage and tax | Europe | Availability varies. |
 | [IONOS](https://www.ionos.de/server/vps) | About EUR 4/month after the introductory offer, plus setup | Germany available | Plenty of power; check the later price and contract before ordering. |
-| [DigitalOcean](https://www.digitalocean.com/pricing/droplets) | About USD 4/month | Frankfurt available | Very beginner-friendly, but more expensive than a tiny container. |
+| [DigitalOcean](https://www.digitalocean.com/pricing/droplets) | About USD 4/month | Frankfurt available | VM hosting; costs more than some small containers. |
 | [OVHcloud](https://www.ovhcloud.com/de/vps/) | About EUR 4.53/month including German VAT | Europe | Lots of space and a daily backup, but far more than one bot needs. |
-| [Hetzner](https://www.hetzner.com/cloud/) | About EUR 6.53/month including German VAT | Nürnberg available | The shortest connection to the game server and a good general-purpose VM, but overkill for one bot. |
+| [Hetzner](https://www.hetzner.com/cloud/) | About EUR 6.53/month including German VAT | Nürnberg available | Same city as the game server; capacity exceeds one example bot's needs. |
 
 Vultr, Linode/Akamai, netcup, Contabo, and many smaller VM providers work as
 well. Compare the normal price after any special offer, the server location,
@@ -87,6 +85,5 @@ Set a billing warning and a reminder if you use one.
 ## Help keep this page current
 
 This list is community maintained. Free plans disappear, prices change, and
-new hosts appear all the time. People are more than happy to add a new option
-or update one that is no longer available. If you spot something out of date,
+new hosts appear all the time. Contributions can add providers or update existing entries. If you spot something out of date,
 please open an issue or pull request.

@@ -11,7 +11,7 @@ import (
 // packets, scoreboard/viewer updates, and a persistence signal. Caller
 // holds Server.mu. The game goroutine is quiescent by now (this runs as
 // the tail of its final tick), and every seat is released first so no
-// packet handler can reach the board through Player.seat either — reading
+// packet handler can reach the board through Player.seat either; reading
 // g's state without g.mu below is therefore safe.
 func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	boardIndex := s.boardIndexLocked(g)

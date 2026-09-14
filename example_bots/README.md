@@ -2,11 +2,13 @@
 
 Three small Python bots that show the complete basic client:
 
-- `bot1_random.py` — chooses a random free direction.
-- `bot2_bfs_depth8.py` — chooses the direction with the most nearby space.
-- `bot3_adaptive_bfs.py` — compares reachable space against opponents within a tick-time budget.
+- `bot1_random.py`: chooses a random free direction.
+- `bot2_bfs_depth8.py`: chooses the direction with the most nearby space.
+- `bot3_adaptive_bfs.py`: compares reachable space against opponents within a tick-time budget.
 
-They use only Python's standard library. Start the server, then run one:
+## Run your first bot
+
+You need Python 3.11 or newer, with no additional packages. From this directory, connect an example to the public server:
 
 ```sh
 export TRON_PASSWORD='choose-a-password-only-for-this-game'
@@ -22,25 +24,25 @@ the bot uses a temporary session; omit the version in that case. See
 The default names (`bot1`, `bot2`, `bot3`) are for localhost testing. Supply
 your own username when connecting to a remote server.
 
+## Writing a strategy
+
+The shared [`client.py`](client.py) handles the connection and tracks board state. Implement `decide(client)` to add a strategy; use the existing bots as templates. Construction does not open a socket; `run(decide)` connects. For the wire lifecycle and state reconstruction, see the [bot protocol](../docs/bot-protocol.md#connection-lifecycle), and for movement and collisions see [game mechanics](../docs/game-mechanics.md).
+
+Keep decisions short. Bot3 uses half the estimated tick interval, checks its
+deadline during frontier expansion, and accepts only fully evaluated search
+rounds. This is a cooperative time budget, not a hard real-time guarantee;
+its opponent model compares reachable cells rather than predicting exact moves.
+
 ## Running multiple strategies
 
 Use one account with a different version for each strategy; [accounts and versions](../docs/accounts.md#independent-versions) explains career ownership and connection replacement.
 
 ```sh
 export TRON_PASSWORD='choose-a-password-only-for-this-game'
-python3 bot1_random.py 127.0.0.1 4000 myaccount random
-python3 bot2_bfs_depth8.py 127.0.0.1 4000 myaccount bfs8
-python3 bot3_adaptive_bfs.py 127.0.0.1 4000 myaccount adaptive
+python3 bot1_random.py tron.erik.gdn 4000 myaccount random
+python3 bot2_bfs_depth8.py tron.erik.gdn 4000 myaccount bfs8
+python3 bot3_adaptive_bfs.py tron.erik.gdn 4000 myaccount adaptive
 ```
-
-## Writing a strategy
-
-The shared [`client.py`](client.py) handles joining, game frames, moves, and reconnects. Implement `decide(client)` to add a strategy; use the existing bots as templates. Construction does not open a socket; `run(decide)` connects. For the wire lifecycle and state reconstruction, see the [bot protocol](../docs/bot-protocol.md#connection-lifecycle), and for movement and collisions see [game mechanics](../docs/game-mechanics.md).
-
-Keep decisions short. Bot3 uses half the estimated tick interval, checks its
-deadline during frontier expansion, and accepts only fully evaluated search
-rounds. This is a cooperative time budget, not a hard real-time guarantee;
-its opponent model compares reachable cells rather than predicting exact moves.
 
 ## Recovery behavior
 
@@ -71,7 +73,7 @@ Use `--lobby workshop` or `TRON_LOBBY` to choose a lobby. Set
 and `TRON_SRC` to publish profile information. For example:
 
 ```sh
-python3 bot2_bfs_depth8.py 127.0.0.1 4000 myaccount bfs8 --lobby workshop
+python3 bot2_bfs_depth8.py tron.erik.gdn 4000 myaccount bfs8 --lobby workshop
 ```
 
 Custom strategies can also call `send_lobby()` and `send_bio()` on the client
@@ -95,7 +97,7 @@ See the protocol sections for [lobby selection](../docs/bot-protocol.md#lobby-se
 
 ## Running locally
 
-From this directory:
+If you already have a local game server, run from this directory:
 
 ```sh
 python3 bot1_random.py
@@ -104,4 +106,6 @@ python3 bot1_random.py
 The default is `127.0.0.1:4000`. No dependencies beyond CPython 3.11+ are
 required.
 
-For an always-on bot, see [hosting](hosting.md). For a reproducible test population with fault profiles, use the [local swarm](../scripts/bot_swarm/README.md).
+## Keep your bot online
+
+Once your strategy runs reliably, see [hosting a bot](hosting.md) for running it on an always-on machine or a hosted service.

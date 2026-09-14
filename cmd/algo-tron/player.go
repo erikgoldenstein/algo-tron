@@ -54,9 +54,9 @@ func (st *Seat) loseLocked() { st.scoreTime = st.player.recordScoreLocked(st.gam
 // entry this seat recorded at win/lose time. Matched by timestamp rather
 // than index because the player may have died here, joined another board,
 // and recorded further entries before this game ended. Two entries in the
-// same millisecond would patch the later one — harmless, the values are
+// same millisecond would patch the later one; harmless, the values are
 // near-identical. A bot's scoreTime is 0 (see recordScoreLocked) so the
-// scan finds nothing — no-op for bots.
+// scan finds nothing; no-op for bots.
 func (st *Seat) patchScoreRatingLocked() {
 	h := st.player.ScoreHistory
 	for i := len(h) - 1; i >= 0; i-- {

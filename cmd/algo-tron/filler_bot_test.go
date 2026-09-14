@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// — nextPos (toroidal wrap) ————————————————————————————————————————————
+// nextPos (toroidal wrap)
 
 func TestNextPosWraps(t *testing.T) {
 	g := &Game{width: 4, height: 4}
@@ -28,7 +28,7 @@ func TestNextPosWraps(t *testing.T) {
 	}
 }
 
-// — bot pathfinding ————————————————————————————————————————————————————
+// bot pathfinding
 
 // botMoveLocked must never steer into an occupied cell: with three of four
 // neighbours blocked it must take the one open direction.
@@ -88,7 +88,7 @@ func TestBotReachBlockedStartIsZero(t *testing.T) {
 	}
 }
 
-// — ensureFillerBotsLocked scaling —————————————————————————————————————
+// ensureFillerBotsLocked scaling
 
 // With no real players online (below minBoardSize) the fillers are created and
 // enqueued so a board can still form.
@@ -126,7 +126,7 @@ func TestEnsureFillerBotsIdleWhenEnoughHumans(t *testing.T) {
 	}
 }
 
-// — killRequestedBotsLocked ———————————————————————————————————————————
+// killRequestedBotsLocked
 
 func TestKillRequestedBotsRemovesOnlyFlaggedBots(t *testing.T) {
 	s := testServer(t)
@@ -153,7 +153,7 @@ func TestKillRequestedBotsRemovesOnlyFlaggedBots(t *testing.T) {
 	}
 }
 
-// — releaseSeatLocked re-queues fillers ————————————————————————————————
+// releaseSeatLocked re-queues fillers
 
 func TestReleaseSeatRequeuesInternalBot(t *testing.T) {
 	s := testServer(t)
@@ -183,7 +183,7 @@ func TestReleaseSeatDropsRemovedBot(t *testing.T) {
 	}
 }
 
-// — queue accounting includes active fillers ——————————————————————————
+// queue accounting includes active fillers
 
 func TestQueueIncludesActiveFillers(t *testing.T) {
 	s := testServer(t)

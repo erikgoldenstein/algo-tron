@@ -19,7 +19,7 @@ go test ./cmd/algo-tron
 go test ./cmd/algo-tron -run TestE2E -v
 ```
 
-`go test ./cmd/algo-tron` runs every `Test*` in the package, including the headless-Chrome `TestE2E*` group. Run `go test ./cmd/algo-tron -run TestE2E -v` explicitly as part of validation so the viewer path is called out in the test log. The E2E tests auto-skip if Chrome isn't installed — install it, or run on a box that has it, before claiming the suite passed.
+`go test ./cmd/algo-tron` runs every `Test*` in the package, including the headless-Chrome `TestE2E*` group. Run `go test ./cmd/algo-tron -run TestE2E -v` explicitly as part of validation so the viewer path is called out in the test log. The E2E tests auto-skip if Chrome isn't installed. Check the test output for skips; browser coverage requires Chrome.
 
 `TestMain` in `helpers_test.go` silences `slog` and stdlib `log` so production lifecycle and stats lines don't pollute test output.
 
@@ -36,10 +36,10 @@ go test -race ./cmd/algo-tron
 | Helper            | What it builds                                                                                       |
 |-------------------|------------------------------------------------------------------------------------------------------|
 | `testServer(t)`   | `*Server` with in-memory SQLite (`:memory:`), zeroed secret.                                         |
-| `testPlayer(n)`   | `*Player` with a queued sink and recorder — inspect enqueued packets without a writer goroutine.                       |
-| `makeGame(s,…)`   | `*Game` like `newGame` but **without** the `rand.Shuffle` — deterministic seat ids.                  |
-| `bareGame(s,…)`   | `*Game` with one seat per player but no board/fields — for rating math and other grid-free tests.    |
-| `addSeat(g,…)`    | Fresh player seated at an explicit position on `g` — for movement/collision setups.                  |
+| `testPlayer(n)`   | `*Player` with a queued sink and recorder; inspect enqueued packets without a writer goroutine.                       |
+| `makeGame(s,…)`   | `*Game` like `newGame` but without the `rand.Shuffle`, giving deterministic seat ids.                  |
+| `bareGame(s,…)`   | `*Game` with one seat per player but no board/fields, for rating math and other grid-free tests.    |
+| `addSeat(g,…)`    | Fresh player seated at an explicit position on `g`, for movement/collision setups.                  |
 | `mustPipe(t)`     | Two ends of `net.Pipe`, both closed by `t.Cleanup`.                                                  |
 | `e2eViewer(t)`    | Boots the real `Server` and serves the viewer over `httptest`. Returns the URL the browser hits.     |
 | `browser(t)`      | Headless Chrome via `chromedp`. Skips the test with `t.Skip` if Chrome isn't installed.              |
@@ -69,7 +69,7 @@ Find exact cases with `rg '^func Test' cmd/algo-tron/*_test.go`. The determinist
 
 ## End-to-end viewer tests
 
-`viewer_e2e_test.go` drives a real headless Chrome via `chromedp` against the real viewer, using the in-process `httptest` server returned by `e2eViewer`. The tests assert on observable DOM state — text content, the `hidden` attribute, classes, or a single named global from the viewer scripts (`currentScheme`, `SCHEME_KEYS`, …) — never on private internals.
+`viewer_e2e_test.go` drives a real headless Chrome via `chromedp` against the real viewer, using the in-process `httptest` server returned by `e2eViewer`. The tests inspect text content, the `hidden` attribute, CSS classes, and selected viewer globals (`currentScheme`, `SCHEME_KEYS`, …).
 
 ```sh
 go test ./cmd/algo-tron -run TestE2E -v
@@ -116,11 +116,11 @@ Benchmarks cover frame construction, fanout, scoreboards, filler decisions, and 
 
 ### Reading the output
 
-- **`allocs/op` and `B/op`** — host-invariant; the primary CI regression signal. If these jump after a change to `protocol.go` or `view.go`, you've reintroduced an alloc in the hot path.
-- **`ns/op` and the `max_tps` custom metric** — host-dependent. Useful for A/B on the same machine, **not** for comparing across CI runners.
-- **`game_tps` on `BenchmarkE2E`** — a *lower-bound* estimate. Bots die mid-bench (signals/tick drop as they die), so the reported number undercounts the steady-state.
+- `allocs/op` and `B/op`: host-invariant; the primary CI regression signal. If these jump after a change to `protocol.go` or `view.go`, you've reintroduced an alloc in the hot path.
+- `ns/op` and the `max_tps` custom metric: host-dependent. Useful for A/B on the same machine, not for comparing across CI runners.
+- `game_tps` on `BenchmarkE2E`: a *lower-bound* estimate. Bots die mid-bench (signals/tick drop as they die), so the reported number undercounts the steady-state.
 
-`max_tps = 1e9 / ns_per_op` — "if all the server did was this op, the upper bound on ticks/sec it could sustain." A loose ceiling, but the right shape for the question *"will the server miss ticks at N players?"*
+`max_tps = 1e9 / ns_per_op` estimates throughput if the measured operation were the server's only work. It excludes other tick costs.
 
 ### What to do when a benchmark regresses
 

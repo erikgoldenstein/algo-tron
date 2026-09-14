@@ -87,7 +87,7 @@ function contrastText(rgbStr) {
   return lum > 0.58 ? '#000' : '#fff';
 }
 
-// HTML escape — use whenever we put user-controlled strings into innerHTML.
+// HTML escape; use whenever we put user-controlled strings into innerHTML.
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -119,8 +119,8 @@ function getSwitch(key) {
   return !!SWITCH_DEFAULTS[key];
 }
 
-// Names get truncated to fit their container — the scoreboard cell or the
-// canvas name pill — instead of a fixed character count. NAME_MAX is the
+// Names get truncated to fit their container; the scoreboard cell or the
+// canvas name pill; instead of a fixed character count. NAME_MAX is the
 // fallback used when no measured width is available (canvas pills, or
 // before the scoreboard has laid out). With the "scrollNames" switch on,
 // the visible window scrolls so the full name eventually comes around.

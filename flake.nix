@@ -146,7 +146,7 @@
               description = ''
                 If non-empty (`user:pass`), also expose Prometheus `/metrics` on the viewer HTTP listener,
                 protected by HTTP Basic auth (Prometheus-compatible).
-                The literal value ends up in the world-readable Nix store and in `systemctl show` —
+                The literal value ends up in the world-readable Nix store and in `systemctl show`;
                 use `lib.fileContents` with sops-nix / agenix if that matters for your threat model.
               '';
             };
@@ -155,7 +155,7 @@
               type = lib.types.str;
               default = "";
               example = "127.0.0.1:9090";
-              description = "Prometheus /metrics listen address. Leave empty to disable. Bind to localhost — the endpoint is unauthenticated.";
+              description = "Prometheus /metrics listen address. Leave empty to disable. Bind to localhost; the endpoint is unauthenticated.";
             };
 
             openFirewall = lib.mkOption {

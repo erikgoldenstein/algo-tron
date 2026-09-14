@@ -33,7 +33,7 @@ func TestClassifyAS(t *testing.T) {
 }
 
 // Datacenter keywords are checked before residential ones, so an org matching
-// both ("Mobile Cloud") classifies as datacenter — guard that precedence.
+// both ("Mobile Cloud") classifies as datacenter; guard that precedence.
 func TestClassifyASDatacenterBeatsResidential(t *testing.T) {
 	if got := classifyAS("Mobile Cloud Hosting"); got != "datacenter" {
 		t.Errorf("classifyAS = %q, want datacenter (precedence over residential)", got)
@@ -56,10 +56,10 @@ func TestGeoLookupInvalidIP(t *testing.T) {
 	}
 }
 
-// — download / extraction ——————————————————————————————————————————————
+// download / extraction
 //
 // These exercise the real HTTP + gzip/tar code paths against a local httptest
-// server, so they're fast and reproducible — no MaxMind credentials or network
+// server, so they're fast and reproducible; no MaxMind credentials or network
 // needed.
 
 // serveBytes starts a throwaway HTTP server that returns the given status and

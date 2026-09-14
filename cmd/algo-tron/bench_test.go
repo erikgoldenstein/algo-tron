@@ -71,7 +71,7 @@ func BenchmarkTickFrame(b *testing.B) {
 // BenchmarkInitMarshal measures JSON marshalling of the init/game snapshot
 // (the largest message, sent on viewer connect and at every new game) with
 // N players each carrying a 64-step trail. Per-tick deltas don't hit this
-// path — they're a tiny tickMsg. Scales nonlinearly with player count
+// path; they're a tiny tickMsg. Scales nonlinearly with player count
 // (each trail is N moves).
 func BenchmarkInitMarshal(b *testing.B) {
 	for _, n := range []int{16, 64, 256, 1024} {
@@ -99,7 +99,7 @@ func BenchmarkInitMarshal(b *testing.B) {
 
 // BenchmarkPushFanout drives broadcastTickLocked (per-tick delta fanout)
 // against N viewer sinks, each drained by a goroutine. No real websocket
-// I/O — measures dispatch + marshal cost, not network. Closest analog to
+// I/O; measures dispatch + marshal cost, not network. Closest analog to
 // 'how does the server handle 1k connected viewers per tick?'
 func BenchmarkPushFanout(b *testing.B) {
 	for _, n := range []int{64, 256, 1024} {
@@ -196,7 +196,7 @@ func benchLedgerServer(b *testing.B, rows int) *Server {
 // BenchmarkComputePeriodEntries measures a period-board cache MISS: the SQL
 // window-aggregate over game_participants that scoreboard_cache.go exists to
 // amortize. Scaling rows 1k→100k shows whether the table's indexes keep the
-// halfyear scan bounded — flat-ish is healthy; linear means an index/query
+// halfyear scan bounded; flat-ish is healthy; linear means an index/query
 // regression. allocs/op is the host-invariant signal.
 func BenchmarkComputePeriodEntries(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 100_000} {
@@ -213,7 +213,7 @@ func BenchmarkComputePeriodEntries(b *testing.B) {
 
 // BenchmarkScoreboardCachedPageWarm measures a cache HIT: the per-request
 // search/sort/old-owner/paging work over an already-computed snapshot. This is
-// what every viewer request pays once the cache is warm — the complement to the
+// what every viewer request pays once the cache is warm; the complement to the
 // miss benchmark above.
 func BenchmarkScoreboardCachedPageWarm(b *testing.B) {
 	s := benchLedgerServer(b, 50_000)

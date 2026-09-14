@@ -8,14 +8,14 @@
 // running boards, used for the tab bar. ws.js owns the subscription
 // (sending {"watch": id}); the server answers with a "game" snapshot.
 //
-// Wire protocol — see view.go for the canonical definition.
+// Wire protocol; see view.go for the canonical definition.
 //   {type:"init",   buildCommit, serverInfo, viewInfo, scoreboard, chartData, lastWinners, boards, lobbies, chat, game?}
-//   {type:"boards", boards:[{id,tick,players,alive,names}...], lobbies:[...]} — board/lobby state
+//   {type:"boards", boards:[{id,tick,players,alive,names}...], lobbies:[...]}; board/lobby state
 //   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
 //   {type:"end",    gameId, scoreboard, chartData, lastWinners}
-//   {type:"chat_snapshot", messages:[...]} — current chat subscription history.
-//   {type:"misc",   content:"shutdown"} — lifecycle event; "shutdown" → banner.
+//   {type:"chat_snapshot", messages:[...]}; current chat subscription history.
+//   {type:"misc",   content:"shutdown"}; lifecycle event; "shutdown" → banner.
 //
 // chartData is a 20-point series; each point is { name: i, [username-version]: {mu, sigma}, ... }.
 // Players whose ScoreHistory predates elo tracking will be missing from the
@@ -53,7 +53,7 @@ const gameState = {
   lobbyStats: {},
   lobbyChartData: {},
   scorePages: {},
-  boards: [], // [{ id, tick, players, alive }] — all running boards from the server
+  boards: [], // [{ id, tick, players, alive }]; all running boards from the server
   game: null, // subscribed board: { id, width, height, players: { [id]: { id, name, pos, moves, alive, chat } } }
 };
 

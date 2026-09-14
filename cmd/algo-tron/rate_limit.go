@@ -6,7 +6,7 @@ import "time"
 // interval and holds at most rateLimitBurstTicks ticks' worth of tokens, so
 // a couple of ticks' budget can arrive in one burst without drops (e.g. a
 // client that stalled for a tick and answers two at once). State is owned
-// by the connection's reader goroutine — no locking.
+// by the connection's reader goroutine; no locking.
 type tokenBucket struct {
 	tokens float64
 	last   time.Time
@@ -57,7 +57,7 @@ func (lim *connLimits) allowed() {
 // when the connection should be closed; on disconnect it also bumps the
 // per-player reconnect penalty (doubling, capped at reconnectPenaltyMax)
 // which is enforced on the next join attempt. Saved-up penalty decays with
-// good behavior — see the redemption block below and
+// good behavior; see the redemption block below and
 // reconnectPenaltyRedemption in tcp_config.go.
 func (s *Server) handleRateLimit(p *Player, lim *connLimits) (bool, string) {
 	if lim.inDenialRun {

@@ -1,6 +1,6 @@
 package main
 
-// — Viewer WebSocket protocol ————————————————————————————————————————————
+// Viewer WebSocket protocol
 //
 // JSON messages over /ws. The server builds them in view_state.go and
 // view_broadcast.go fans them out; viewer/gameState.js consumes them.
@@ -11,14 +11,14 @@ package main
 // sending {"watch":"<gameId>"} and the server answers with a "game"
 // snapshot followed by that board's ticks.
 //
-//	init   — full snapshot, sent once on connect; auto-subscribes the preferred
+//	init  ; full snapshot, sent once on connect; auto-subscribes the preferred
 //	           lobby board when requested, otherwise the first board.
-//	boards — broadcast to all viewers when board/player state changes; includes
+//	boards; broadcast to all viewers when board/player state changes; includes
 //	           the live global connected/alive counters and active lobbies.
-//	game   — full snapshot of one board, sent on subscribe; includes that board's scoreboard.
-//	tick   — per-tick delta for the subscribed board: positions, deaths, chats.
-//	end    — a board finished: refreshed scoreboard + chart, broadcast to all.
-//	misc   — lifecycle event identified by `content`; currently only "shutdown".
+//	game  ; full snapshot of one board, sent on subscribe; includes that board's scoreboard.
+//	tick  ; per-tick delta for the subscribed board: positions, deaths, chats.
+//	end   ; a board finished: refreshed scoreboard + chart, broadcast to all.
+//	misc  ; lifecycle event identified by `content`; currently only "shutdown".
 
 type initMsg struct {
 	Type              string            `json:"type"` // "init"
@@ -111,7 +111,7 @@ type scoreboardMsg struct {
 	Players   int               `json:"players"`
 	Alive     int               `json:"alive"`
 	ChartData []map[string]any  `json:"chartData,omitempty"`
-	// ComputedAt is the unix-ms time the shown data was computed — for cached
+	// ComputedAt is the unix-ms time the shown data was computed; for cached
 	// period boards the snapshot time, for the live online board ~now. The
 	// viewer renders it as the board's "as of" timestamp.
 	ComputedAt int64 `json:"computedAt,omitempty"`

@@ -77,7 +77,7 @@ setInterval(() => {
 }, 250);
 
 // When the layout changes (window resize, modal opening, etc.) the name
-// column's width changes too — re-measure and reflow the names. Skipping
+// column's width changes too; re-measure and reflow the names. Skipping
 // this would leave names truncated to their pre-resize length.
 window.addEventListener('resize', () => {
   viewerStore.publish('resize');

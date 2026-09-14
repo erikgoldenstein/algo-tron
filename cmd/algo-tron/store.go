@@ -42,7 +42,7 @@ func ensureColumn(db *sql.DB, table, column, definition string) error {
 
 func openDB(path string) (*sql.DB, error) {
 	// modernc.org/sqlite applies _pragma= query params on every pooled
-	// connection — important for busy_timeout, which is per-connection
+	// connection; important for busy_timeout, which is per-connection
 	// and would otherwise only take effect on the first one. WAL is a
 	// file-level mode so it'd persist, but riding along here is harmless
 	// and keeps both pragmas in one place. ":memory:" stays bare: WAL
@@ -780,7 +780,7 @@ func (s *Server) load() {
 
 // playerRow is one player's persistent state, deep-copied under Server.mu
 // so the SQLite write (JSON marshal + transaction) can run with no lock
-// held — a game ending must not stall other boards' ticks on disk I/O.
+// held; a game ending must not stall other boards' ticks on disk I/O.
 type playerRow struct {
 	uuid             string
 	username, pwHash string

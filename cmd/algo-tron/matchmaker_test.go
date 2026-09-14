@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// — matchmakeLocked ———————————————————————————————————————————————————
+// matchmakeLocked
 
 func TestMatchmakeTinyPopulationWaitsForEveryone(t *testing.T) {
 	s := testServer(t)
 	queuePlayer(t, s, "a", 250, time.Second)
 	b := queuePlayer(t, s, "b", 250, time.Second)
-	// b is still playing — not everyone idle is queued yet.
+	// b is still playing; not everyone idle is queued yet.
 	b.seat.Store(&Seat{player: b, alive: true})
 
 	s.matchmakeLocked(time.Now())
@@ -20,7 +20,7 @@ func TestMatchmakeTinyPopulationWaitsForEveryone(t *testing.T) {
 		t.Fatal("must not start while a tiny population is partly mid-game")
 	}
 
-	// b's game finished — now both are queued and a 2-player board starts.
+	// b's game finished; now both are queued and a 2-player board starts.
 	b.seat.Store(nil)
 	s.matchmakeLocked(time.Now())
 	if len(s.games) != 1 || len(s.games[0].seats) != 2 {
@@ -69,7 +69,7 @@ func TestMatchmakeRespectsBoardBudget(t *testing.T) {
 func TestMatchmakeStartsAtWaitCap(t *testing.T) {
 	s := testServer(t)
 	// High arrival rate would normally make gathering attractive, and there
-	// are seated players who could still arrive — but the oldest waiter is
+	// are seated players who could still arrive; but the oldest waiter is
 	// past the cap, so the board must start.
 	s.mmRate = 10
 	for i := 0; i < 4; i++ {
@@ -121,7 +121,7 @@ func TestMatchmakeGathersWhileArrivalsHelp(t *testing.T) {
 
 func TestMatchmakeNoPhantomArrivals(t *testing.T) {
 	s := testServer(t)
-	// Stale high rate EMA, but every connected player is already queued —
+	// Stale high rate EMA, but every connected player is already queued;
 	// nobody can arrive, so the matchmaker must start immediately instead
 	// of waiting for phantom players.
 	s.mmRate = 10
@@ -136,7 +136,7 @@ func TestMatchmakeNoPhantomArrivals(t *testing.T) {
 	}
 }
 
-// — arrival rate EMA ——————————————————————————————————————————————————
+// arrival rate EMA
 
 func TestMatchmakeUpdatesArrivalRate(t *testing.T) {
 	s := testServer(t)

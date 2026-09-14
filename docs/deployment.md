@@ -37,7 +37,7 @@ Options:
 - `-setup-geo`: download the GeoLite2 databases into `-geo-dir` and exit (one-off setup; normal startup never downloads). See [GeoLite setup](#geolite-setup).
 - `-schedule-url`: URL for an optional talk schedule JSON shown in the viewer (only used at chaos events). Omit to hide the schedule panel.
 - `-proxy-protocol`: expect HAProxy PROXY protocol v1 headers on incoming TCP connections (use behind a TCP proxy that preserves client IPs).
-- `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated — bind to localhost.
+- `-metrics`: separate Prometheus `/metrics` listener address (e.g. `127.0.0.1:9090`). Empty disables it. Unauthenticated; bind to localhost.
 - `-view-metrics-auth`: if set (`user:pass`), also expose `/metrics` on the viewer HTTP server protected by HTTP Basic auth (Prometheus-compatible). Useful when you'd rather scrape over the same TLS-terminated host as the viewer.
 
 See [viewer modes](viewer-protocol.md#connection-and-board-selection) for `/` and `/screen`, and [administration](administration.md) for login, lobbies, and password recovery.
@@ -222,4 +222,4 @@ Run `algo-tron -setup-geo -geo-dir geo` to ensure `GeoLite2-City.mmdb` and `GeoL
 
 ## Logs
 
-The server writes slog text-handler output to stderr. Persistence and rotation are the operator's job — under the NixOS module this means journald (`journalctl -u algo-tron`).
+The server writes slog text-handler output to stderr. Persistence and rotation are the operator's job. Under the NixOS module the service uses journald (`journalctl -u algo-tron`).

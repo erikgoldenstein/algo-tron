@@ -14,7 +14,7 @@ Start with the [Python example bots](example_bots/README.md). The [bot protocol]
 
 ## Documentation
 
-The [documentation index](docs/README.md) organizes the complete reference by task: building bots, integrating with the viewer, operating a server, and developing the project. To run your own server, start with [deployment](docs/deployment.md).
+Follow the [bot guides](docs/README.md) from learning the rules to writing a strategy, debugging it, and keeping it online.
 
 ## Thanks
 

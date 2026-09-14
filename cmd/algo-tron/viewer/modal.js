@@ -4,7 +4,7 @@
 // switch boards).
 //
 // Depends on: schemes.js (SCHEMES, SCHEME_KEYS, applyScheme, currentScheme),
-// ws.js (watchBoard, stepBoard — resolved at event time), dom_follow.js
+// ws.js (watchBoard, stepBoard; resolved at event time), dom_follow.js
 // (setFollowName, stepFollow), gameState.js.
 // Provides: toggleHelp, cycleScheme.
 

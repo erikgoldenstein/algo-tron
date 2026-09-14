@@ -304,7 +304,7 @@ func TestE2ESchemePickerListsAllSchemes(t *testing.T) {
 func TestE2EBoardTabsAndSwitching(t *testing.T) {
 	url, s := e2eViewer(t)
 
-	// Two boards, no tick loops — the init snapshot alone must render tabs,
+	// Two boards, no tick loops; the init snapshot alone must render tabs,
 	// and clicking a tab must subscribe to that board ("game" snapshot →
 	// active tab moves).
 	s.mu.Lock()

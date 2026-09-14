@@ -32,7 +32,7 @@ type Score struct {
 // Player is a bot session/account: identity, ratings, connection. Passwordful
 // players are durable accounts; passwordless players are transient sessions
 // removed at disconnect. Everything tied to one particular game (position,
-// trail, aliveness) lives in a Seat — a player who dies leaves their Seat
+// trail, aliveness) lives in a Seat; a player who dies leaves their Seat
 // behind in the old game and immediately re-enters the matchmaking queue, so
 // they can be seated in a new game while the old one is still running.
 //
@@ -244,7 +244,7 @@ type Seat struct {
 	invalidMoveTotal  int
 
 	// UnixMilli of the ScoreHistory entry written when this seat won/lost,
-	// so endLocked can patch the post-game elo onto exactly that entry —
+	// so endLocked can patch the post-game elo onto exactly that entry;
 	// the player may have entries from other games by then.
 	scoreTime       int64
 	removeRequested bool
@@ -259,7 +259,7 @@ type ServerInfo struct {
 }
 
 type ScoreboardEntry struct {
-	// UUID is backend-only (kept off the wire) — it identifies a career for
+	// UUID is backend-only (kept off the wire); it identifies a career for
 	// old-owner detection but must not leak to viewers. See OldOwner.
 	UUID        string            `json:"-"`
 	Username    string            `json:"username"`

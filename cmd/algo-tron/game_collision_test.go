@@ -20,7 +20,7 @@ func TestApplyCollisionsClaimsEmptyCell(t *testing.T) {
 func TestApplyCollisionsTrailHit(t *testing.T) {
 	s := testServer(t)
 	// a moves into (2,0) which is occupied by b's OLD trail.
-	// b has moved to (2,2) this tick — applyCollisions runs before that cell
+	// b has moved to (2,2) this tick; applyCollisions runs before that cell
 	// is claimed, so g.fields[2][2] is still -1.
 	g := &Game{server: s, width: 4, height: 4, fields: makeFields(4, 4), deathTick: map[*Seat]int{}}
 	a := addSeat(g, "a", 2, 0)
@@ -55,7 +55,7 @@ func TestApplyCollisionsHeadOn(t *testing.T) {
 }
 
 // A head-on collision must tag BOTH seats with the head_on death reason, not
-// just one — the ledger and death metrics distinguish head_on from a plain
+// just one; the ledger and death metrics distinguish head_on from a plain
 // trail collision.
 func TestApplyCollisionsHeadOnReason(t *testing.T) {
 	s := testServer(t)

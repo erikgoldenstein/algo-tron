@@ -20,7 +20,7 @@ import (
 // address is set with -metrics. Empty disables the listener.
 //
 // Counters and histograms are observed inline at the relevant call sites
-// (one line each — search for "metric" to find them). Gauges that depend on
+// (one line each; search for "metric" to find them). Gauges that depend on
 // live server state are lazy GaugeFuncs registered in registerGauges so they
 // only do work when Prometheus actually scrapes; they take s.mu briefly to
 // read the current count.
@@ -41,7 +41,7 @@ var budgetBuckets = []float64{0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 1.5, 2.0}
 // interval ((actual - expected) / expected). 0 = on time, +0.05 = 5% late,
 // -0.05 = 5% early. The expected interval ramps with elapsed game time
 // (rate climbs), so absolute jitter would conflate samples taken under
-// different deadlines — the ratio normalizes that out.
+// different deadlines; the ratio normalizes that out.
 var tickOffsetBuckets = []float64{-0.1, -0.05, -0.01, 0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0}
 
 var (
@@ -49,7 +49,7 @@ var (
 	metricTicks                  = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_ticks_total", Help: "Total ticks processed across all games."})
 	metricTickDeadlineMisses     = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tick_deadline_misses_total", Help: "Ticks whose scheduler wake-up happened after the planned deadline."})
 	metricTickOverruns           = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_tick_processing_overruns_total", Help: "Ticks whose processing and fanout took at least one full tick interval."})
-	metricViewersKicked          = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewers_kicked_total", Help: "Viewer connections dropped because their send buffer was full — overload signal."})
+	metricViewersKicked          = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewers_kicked_total", Help: "Viewer connections dropped because their send buffer was full."})
 	metricViewerMessagesReceived = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewer_messages_received_total", Help: "Messages received from viewer websocket clients."})
 	metricViewerMessagesQueued   = promauto.NewCounter(prometheus.CounterOpts{Name: "tron_viewer_messages_queued_total", Help: "Viewer messages successfully queued for websocket delivery."})
 	metricHTTPRequests           = promauto.NewCounterVec(prometheus.CounterOpts{Name: "tron_http_requests_total", Help: "HTTP requests handled by the viewer, by method, route, and status."}, []string{"method", "route", "status"})
@@ -120,7 +120,7 @@ var (
 	})
 	metricBotsKicked = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "tron_bots_kicked_total",
-		Help: "Bot connections dropped because their send buffer was full — the bot stopped reading or its link stalled.",
+		Help: "Bot connections dropped after a stalled reader or link filled their send buffer.",
 	})
 	metricLockWait = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "tron_lock_wait_seconds",

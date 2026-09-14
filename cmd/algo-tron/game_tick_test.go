@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// — releaseSeatLocked —————————————————————————————————————————————————
+// releaseSeatLocked
 
 func TestMarkDeadThenReleaseQueuesPlayer(t *testing.T) {
 	s := testServer(t)
@@ -71,7 +71,7 @@ func TestReleaseInvalidMoveKickDoesNotQueuePlayer(t *testing.T) {
 	}
 }
 
-// — finishTickLocked ——————————————————————————————————————————————————
+// finishTickLocked
 
 func TestFinishTickSettlesDeaths(t *testing.T) {
 	s := testServer(t)

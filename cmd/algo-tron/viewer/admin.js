@@ -297,7 +297,7 @@ function copyAdminResetPassword() {
 function setResetPasswordCopyStatus(ok) {
   const status = document.getElementById('reset-password-copy-status');
   if (!status) return;
-  status.textContent = ok ? 'copied' : 'could not copy — select and copy manually';
+  status.textContent = ok ? 'copied' : 'could not copy; select and copy manually';
   status.classList.toggle('error', !ok);
 }
 

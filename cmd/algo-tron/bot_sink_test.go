@@ -6,7 +6,7 @@ import (
 )
 
 // The writer must deliver queued packets and close the connection after
-// shutdown — a kicked or disconnecting bot still gets its final error
+// shutdown; a kicked or disconnecting bot still gets its final error
 // packet (best-effort, bounded by botWriteTimeout).
 func TestBotSinkDrainsOnShutdown(t *testing.T) {
 	clientConn, serverConn := mustPipe(t)
@@ -54,7 +54,7 @@ func TestBotSinkPrioritizesShutdownPacket(t *testing.T) {
 // A full sink must kick (shutdown) instead of blocking the sender.
 func TestBotSinkKicksWhenFull(t *testing.T) {
 	_, serverConn := mustPipe(t)
-	sink := newBotSink(serverConn) // no writer goroutine — nothing drains
+	sink := newBotSink(serverConn) // no writer goroutine; nothing drains
 	for i := 0; i < botSinkBuf; i++ {
 		sink.enqueue([]byte("pos|0|0|0\n"))
 	}

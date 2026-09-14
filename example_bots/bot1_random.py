@@ -1,4 +1,4 @@
-"""bot1_random — pick a random direction whose next cell is free.
+"""bot1_random: pick a random direction whose next cell is free.
 
 Strategy: enumerate the four neighbours of our head; keep only the ones whose
 cell is not currently occupied by any trail; pick one uniformly. Falls back to

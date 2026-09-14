@@ -9,15 +9,15 @@ import (
 
 // botSink is the per-bot outbound queue, mirroring viewerSink on the TCP
 // side. All packets to a bot are enqueued (never written inline), so no
-// goroutine ever blocks on a bot's socket while holding a lock — a stalled
+// goroutine ever blocks on a bot's socket while holding a lock; a stalled
 // client can no longer delay a tick. A dedicated writer goroutine (run)
 // drains ch and writes with a deadline; if the buffer fills, the bot is too
 // slow and gets kicked, exactly like a slow viewer.
 //
 // ch is never closed (closing would race with concurrent enqueues). done is
 // closed exactly once via shutdown() or shutdownWithPacket(); the writer then
-// flushes the final packet or whatever is still queued — bounded by one
-// botWriteTimeout overall — and closes the connection. The connection reader
+// flushes the final packet or whatever is still queued; bounded by one
+// botWriteTimeout overall; and closes the connection. The connection reader
 // noticing the close performs the player-state cleanup in handleConn.
 type botSink struct {
 	conn   net.Conn
@@ -63,7 +63,7 @@ func (b *botSink) closeReason() string {
 	return ""
 }
 
-// enqueue queues one packet for the writer. Callers may hold any lock —
+// enqueue queues one packet for the writer. Callers may hold any lock;
 // this never blocks. A full buffer means the bot has fallen botSinkBuf
 // packets behind; it gets kicked (connection closed after a best-effort
 // flush) rather than ever stalling the sender.

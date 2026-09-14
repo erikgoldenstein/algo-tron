@@ -1,5 +1,5 @@
 // DOM updates triggered by incoming websocket messages. Reads from
-// gameState and writes to specific DOM nodes — nothing here mutates game
+// gameState and writes to specific DOM nodes; nothing here mutates game
 // state.
 //
 // Depends on: helpers.js (esc, viewURL), schemes.js (playerColor), gameState.js,
@@ -164,7 +164,7 @@ function renderScoreboardDom({ renderModal = true } = {}) {
   const scoreboardEl = document.getElementById('scoreboard');
   const scores = currentScoreboard();
   // Pad every sigma to the widest one so the ± lines up down the ts column
-  // (no-break spaces — plain ones would collapse in HTML).
+  // (no-break spaces; plain ones would collapse in HTML).
   tsSigmaChars = Math.max(0, ...scores.map((p) => String(Math.round(p.tsSigma)).length));
   if (scores.length) {
     // Keep row nodes alive across rank/data changes. Replacing innerHTML here
@@ -345,7 +345,7 @@ function showForwardConfirm(url) {
 
 function formatFirstSeen(value) {
   const millis = Number(value);
-  if (!Number.isFinite(millis) || millis <= 0) return '—';
+  if (!Number.isFinite(millis) || millis <= 0) return '-';
   return new Date(millis).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
@@ -667,7 +667,7 @@ function renderScopeOptions(root, selectedScope) {
 }
 
 // One tmux-style tab per running board; the subscribed one carries the `*`.
-// Click a tab (or use h / l / 1…9, wired in modal.js) to switch — switching
+// Click a tab (or use h / l / 1…9, wired in modal.js) to switch; switching
 // just asks the server for that board's stream via watchBoard (ws.js).
 function updateTabs() {
   const tabsEl = document.getElementById('tabs');

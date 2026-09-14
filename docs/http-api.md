@@ -1,6 +1,6 @@
 # HTTP API
 
-Public read endpoints share the viewer HTTP listener. The [WebSocket protocol](viewer-protocol.md) owns live subscriptions and message schemas; [administration](administration.md) owns authenticated operations. HTTP read endpoints do not apply a separate Origin check.
+Public read endpoints share the viewer HTTP listener. The [WebSocket protocol](viewer-protocol.md) documents live subscriptions and message schemas; [administration](administration.md) covers authenticated operations. HTTP read endpoints do not apply a separate Origin check.
 
 ## Routes
 
@@ -76,6 +76,7 @@ UUIDs are never returned. `gap: true` marks the
 segment leading into a point when more than two hours passed since the prior
 recorded game observation; clients can render that segment as dotted. This is
 a missing-observation marker, not an exact historical TCP online/offline log.
+
 ### Work limits and errors
 
 History reads run on demand outside the game loop. SQLite queries use the HTTP request context, so abandoned requests can cancel their database work. Results are cached for 10 seconds, with at most 64 cache entries. The per-address limiter permits a burst of 12 requests and sustains one request every 10 seconds; a separate two-request concurrency limit also returns `429` when occupied.

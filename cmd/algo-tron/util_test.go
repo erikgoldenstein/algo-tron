@@ -218,7 +218,7 @@ func TestEnsureUUID(t *testing.T) {
 	if got == "" || p.UUID != got {
 		t.Fatalf("ensureUUID generated %q but player UUID = %q", got, p.UUID)
 	}
-	// A second call must be stable — never re-roll an existing UUID.
+	// A second call must be stable; never re-roll an existing UUID.
 	if again := ensureUUID(p); again != got {
 		t.Fatalf("ensureUUID re-rolled existing UUID: %q != %q", again, got)
 	}

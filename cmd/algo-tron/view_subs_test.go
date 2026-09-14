@@ -95,7 +95,7 @@ func TestViewSubsLifecycle(t *testing.T) {
 
 // TestViewerKickNoPanic: kicking a slow viewer (sendToSinkLocked closes
 // sink.done) used to double-close the channel when the viewWS read loop ran
-// its own cleanup afterwards — a panic recovered and logged by net/http.
+// its own cleanup afterwards; a panic recovered and logged by net/http.
 // The httptest server's ErrorLog captures exactly those recovered panics.
 func TestViewerKickNoPanic(t *testing.T) {
 	s := testServer(t)

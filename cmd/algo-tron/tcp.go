@@ -177,7 +177,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 		return
 	} else if old := p.sink.Load(); old != nil {
 		// Takeover: tell the old connection, then let its writer flush
-		// and close. Its reader's cleanup won't touch p — p.conn moves
+		// and close. Its reader's cleanup won't touch p; p.conn moves
 		// to the new connection below.
 		old.enqueue(formatPacket("error", "ERROR_ALREADY_CONNECTED"))
 		old.shutdown("replaced_by_new_connection")
@@ -196,7 +196,7 @@ func (s *Server) handleConn(conn net.Conn, proxyProtocol bool) {
 	// A reconnecting player whose seat is still alive resumes playing (and
 	// gets the board snapshot re-sent so it can reorient); everyone else
 	// enters the matchmaking queue. Per-connection rate-limit state starts
-	// fresh in lim below; reconnectPenalty intentionally survives — that's
+	// fresh in lim below; reconnectPenalty intentionally survives; that's
 	// what makes the penalty grow across reconnects.
 	if st := p.seat.Load(); st == nil {
 		s.enqueueLocked(p)

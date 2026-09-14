@@ -4,13 +4,13 @@ This page defines live viewer messages and rendering fields. On-demand queries b
 
 ## Connection and board selection
 
-The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode connects to `/ws?screen=1`, starts with the global leaderboard and the subscribed board's chat selected in the sidebar, and receives every connected human in that global leaderboard; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go **only to viewers subscribed to it**. The client sends `watch`, `subscribe`, or scoreboard-page requests as needed:
+The viewer SPA is served from `/` (normal mode) and `/screen` (screen mode), and live updates are pushed over a WebSocket at `/ws`. Screen mode connects to `/ws?screen=1`, starts with the global leaderboard and the subscribed board's chat selected in the sidebar, and receives every connected human in that global leaderboard; normal mode starts with both scoped to the subscribed board. Both scopes can still be changed manually. Several boards can run at once; every viewer receives the lightweight global messages (`boards`, `end`, `misc`), but the full snapshot and per-tick stream of a board go only to viewers subscribed to it. The client sends `watch`, `subscribe`, or scoreboard-page requests as needed:
 
 ```json
 { "watch": "<gameId>" }
 ```
 
-The server answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Unknown board ids are silently ignored — the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to a running board. If `/screen?lobby=name` names a known lobby, the client prefers that lobby for automatic board selection; if it is removed, selection falls back to another live board.
+The server answers a valid `watch` with a `game` snapshot of that board, followed by its tick stream. Unknown board ids are ignored because the board may have ended while the request was in flight; the client re-picks from the next `boards` message. On connect, viewers are auto-subscribed to a running board. If `/screen?lobby=name` names a known lobby, the client prefers that lobby for automatic board selection; if it is removed, selection falls back to another live board.
 
 Messages are JSON, one per WebSocket frame, with a 512-byte incoming frame limit. The upgrader accepts all origins (`CheckOrigin → true`). Read errors close the connection; invalid requests are ignored.
 
@@ -18,7 +18,7 @@ Messages are JSON, one per WebSocket frame, with a 512-byte incoming frame limit
 
 `init` is the connect snapshot; `boards` is the board list for the tab bar; `game` / `tick` / `end` are gameplay messages; `scoreboard` and `chat_snapshot` carry subscription data; `misc` is a lifecycle event tagged by `content`.
 
-### `init` — sent once, on connect
+### `init`: sent once, on connect
 
 ```json
 {
@@ -35,17 +35,17 @@ Messages are JSON, one per WebSocket frame, with a 512-byte incoming frame limit
 }
 ```
 
-`game` is the snapshot of the auto-subscribed board, **omitted** if no game is in progress. When present, every player's full `moves` trail is included so the viewer can render historical wall segments without replaying ticks.
+`game` is the snapshot of the auto-subscribed board, omitted if no game is in progress. When present, every player's full `moves` trail is included so the viewer can render historical wall segments without replaying ticks.
 
-### `boards` — board list changed
+### `boards`: board list changed
 
 ```json
 { "type": "boards", "boards": [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2"]}] }
 ```
 
-Broadcast to **all** viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby`, `label`, and `tick` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `tick`, `players`, `alive`, and `names` are snapshots from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
+Broadcast to all viewers whenever a board starts or ends. The client renders one tab per entry and re-subscribes (`watch`) when the board it was watching is no longer listed. `lobby`, `label`, and `tick` are additive; older viewers may ignore them. The default lobby uses `board-N`; named lobbies use `<lobby>-N`. `tick`, `players`, `alive`, and `names` are snapshots from when the message was built, not live counters. `names` is the full per-board display-name list (seat order), used for tab tooltips/labels; duplicate online versions include their version tag.
 
-### `game` — board snapshot (on subscribe)
+### `game`: board snapshot (on subscribe)
 
 ```json
 {
@@ -62,9 +62,9 @@ Broadcast to **all** viewers whenever a board starts or ends. The client renders
 
 Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior board state in the viewer.
 
-`boardScoreboard` and `boardChartData` scope the leaderboard and TrueSkill chart to **this board's players only** (top-`defaultScoreboardLimit`, `ts` sort), so a viewer watching one board sees its participants ranked among themselves. Same entry/point shapes as the global `scoreboard` / `chartData` in `init`. Internal filler bots are excluded. These are per-board and ride along with the snapshot — distinct from the global `scoreboard`/`chartData` carried by `init` and `end`.
+`boardScoreboard` and `boardChartData` scope the leaderboard and TrueSkill chart to this board's players only (top-`defaultScoreboardLimit`, `ts` sort), so a viewer watching one board sees its participants ranked among themselves. Same entry/point shapes as the global `scoreboard` / `chartData` in `init`. Internal filler bots are excluded. These fields are included in the board snapshot. `init` and `end` carry the global `scoreboard` and `chartData`.
 
-### `tick` — per-tick delta (subscribed board only)
+### `tick`: per-tick delta (subscribed board only)
 
 ```json
 {
@@ -77,11 +77,11 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
 ```
 
 - `gameId` names the board; the client drops ticks that don't match its current snapshot (a switch may be in flight).
-- `positions` is a list of `[id, x, y]` tuples, one per **alive** player. Ids are per-board (index into that game's seats).
+- `positions` is a list of `[id, x, y]` tuples, one per alive player. Ids are per-board (index into that game's seats).
 - `deaths` is omitted when no one died this tick.
 - `chats` lists currently-non-empty chats only. Anything not listed has expired (see [chat lifetime](bot-protocol.md#chat)).
 
-### `end` — a board finished
+### `end`: a board finished
 
 ```json
 {
@@ -96,7 +96,7 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
 
 Broadcast to all viewers. The `scoreboard` and `chartData` fields are included only for viewers subscribed to the matching global or lobby scoreboard; board-scoped viewers receive the lifecycle event without unrelated scoreboard data. A `boards` message without the ended id follows immediately; a viewer watching that board keeps its last frame until its re-`watch` lands.
 
-### `subscribe` — change viewer data scopes
+### `subscribe`: change viewer data scopes
 
 ```json
 {
@@ -119,7 +119,7 @@ when the watched board changes. A successful subscription change sends a fresh
 `scoreboard` snapshot when applicable and a `chat_snapshot` containing the
 bounded history for the selected chat scope.
 
-### `misc` — lifecycle event
+### `misc`: lifecycle event
 
 ```json
 { "type": "misc", "content": "shutdown" }
@@ -135,7 +135,7 @@ Request a page with:
 {"scoreboard":{"period":"online","sort":"ts","search":"","lobby":"","offset":0,"limit":25}}
 ```
 
-`period` is `online`, `all`, `daily`, `monthly`, or `halfyear` (last six months); `sort` is `ts`, `elo`, or `wr`. The response is `{type:"scoreboard", period, sort, search, lobby, offset, entries, hasMore, players, alive, chartData, computedAt}`. Subscription refreshes use the same message. `computedAt` is a Unix millisecond timestamp displayed under the modal table as “as of …”. Ranking and cache policy are defined in [ratings](ratings.md#historical-leaderboard-periods).
+`period` is `online`, `all`, `daily`, `monthly`, or `halfyear` (last six months); `sort` is `ts`, `elo`, or `wr`. The response is `{type:"scoreboard", period, sort, search, lobby, offset, entries, hasMore, players, alive, chartData, computedAt}`. Subscription refreshes use the same message. `computedAt` is a Unix millisecond timestamp displayed under the modal table as "as of …". Ranking and cache policy are defined in [ratings](ratings.md#historical-leaderboard-periods).
 
 `init` and `end` carry the sidebar's first page inline plus a `scoreboardHasMore` flag so the client knows whether the sidebar can paginate further; subsequent pages come through `scoreboard` messages. The `/screen` subscription is the exception: its global leaderboard includes every connected human with no paging cap, and each join or disconnect sends a fresh snapshot so passwordless rows disappear immediately.
 
@@ -151,7 +151,7 @@ Each scoreboard entry carries `tsMu` / `tsSigma` (TrueSkill mean and uncertainty
 
 ## Chart data
 
-`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username-version]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer uses that same identity for every player color. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points — the viewer treats a missing key as a gap.
+`chartData` is a 20-point TrueSkill series. Each point is `{name: i, [username-version]: {mu, sigma}, …}`. Versioned careers use the key `username-version` so their histories remain separate. The viewer uses that same identity for every player color. The viewer draws `mu` as the line and `mu ± sigma` as the subtle uncertainty halo. Players whose `ScoreHistory` predates TrueSkill snapshots are omitted from those points; the viewer treats a missing key as a gap.
 
 ## Backpressure
 

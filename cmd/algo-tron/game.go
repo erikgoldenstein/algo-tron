@@ -86,9 +86,9 @@ func (g *Game) snapshotFrameLocked() []byte {
 
 // resyncLocked re-sends the game header and board snapshot to one bot that
 // reconnected while its seat is still alive (only possible within one tick
-// of the disconnect — killDisconnectedLocked kills the seat otherwise), so
-// the bot can reorient. Trails cannot be replayed — the wire protocol has
-// no message for them — but a reconnect this fast usually still has its
+// of the disconnect; killDisconnectedLocked kills the seat otherwise), so
+// the bot can reorient. Trails cannot be replayed; the wire protocol has
+// no message for them; but a reconnect this fast usually still has its
 // own state. No "tick" line: the next regular tick prompts the move.
 func (g *Game) resyncLocked(st *Seat) {
 	st.player.send("game", g.width, g.height, st.id)

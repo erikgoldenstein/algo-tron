@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# deploy.sh — deploy algo-tron to the production VM, or provision the local
+# deploy.sh: deploy algo-tron to the production VM, or provision the local
 #             machine with --local. Routine deployments should normally go
 #             through CI; this script is useful for deliberate manual releases.
 #
@@ -29,7 +29,7 @@
 # renewal configuration and only reloads nginx when a certificate changed.
 #
 # By default a host firewall (firewalld on Rocky/RHEL, ufw on Debian/Ubuntu) is
-# installed and enabled, allowing only SSH and the public app ports — meant for
+# installed and enabled, allowing only SSH and the public app ports; meant for
 # a single directly-exposed host with nothing in front of it. Pass --no-firewall
 # if an external/cloud firewall already guards the box.
 #
@@ -159,7 +159,7 @@ dispatch_remote() {
 # passes -r, but opening it fails with ENXIO (no controlling terminal).
 have_tty() { ( : < /dev/tty ) 2>/dev/null; }
 
-# Read into a variable from the terminal — works even when the script itself is
+# Read into a variable from the terminal; works even when the script itself is
 # on stdin (curl | bash).  prompt <varname> <message> [silent]
 prompt() {
   local var="$1" msg="$2" silent="${3:-}" val
@@ -231,7 +231,7 @@ preflight() {
         log "working tree is dirty; deploying committed HEAD only (--allow-dirty)"
       else
         git -C "$REPO_DIR" status --short >&2
-        err "working tree is not clean — commit first, or pass --allow-dirty"
+        err "working tree is not clean; commit first, or pass --allow-dirty"
       fi
     fi
     local source_ref=HEAD
@@ -277,7 +277,7 @@ collect_input() {
   if [ -z "$CLOUDFLARE_TOKEN" ] && [ "$INTERACTIVE" = 1 ]; then
     prompt CLOUDFLARE_TOKEN "Cloudflare API token (Zone:DNS:Edit): " silent
   fi
-  [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token not found at $CF_INI — pass --cloudflare-token or use --interactive"
+  [ -n "$CLOUDFLARE_TOKEN" ] || err "cloudflare token not found at $CF_INI; pass --cloudflare-token or use --interactive"
 
   # Ports have defaults; only ask in explicitly interactive mode and when the
   # value was not already pinned by a flag.
@@ -332,7 +332,7 @@ fetch_source() {
   log "Downloading source from github.com/$REPO_SLUG@$REPO_REF"
   REPO_DIR="$(mktemp -d)"
   git clone --quiet --depth 1 --branch "$REPO_REF" "https://github.com/$REPO_SLUG.git" "$REPO_DIR"
-  [ -f "$REPO_DIR/go.mod" ] || err "downloaded source looks wrong (no go.mod) — check --repo/--ref"
+  [ -f "$REPO_DIR/go.mod" ] || err "downloaded source looks wrong (no go.mod); check --repo/--ref"
   BUILD_COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD)"
 }
 
@@ -351,7 +351,7 @@ install_go() {
   case "$(uname -m)" in
     x86_64|amd64)  arch=amd64 ;;
     aarch64|arm64) arch=arm64 ;;
-    *) err "unsupported CPU arch for auto Go install: $(uname -m) — install Go $ver manually" ;;
+    *) err "unsupported CPU arch for auto Go install: $(uname -m); install Go $ver manually" ;;
   esac
   log "Installing Go $ver ($arch)"
   curl -fsSL "https://go.dev/dl/go${ver}.linux-${arch}.tar.gz" -o /tmp/go.tgz
@@ -490,7 +490,7 @@ setup_geo() {
   log "Setting up GeoLite2 databases in $GEO_DIR"
   install -d -o "$APP_USER" -g "$APP_USER" "$GEO_DIR"
   runuser -u "$APP_USER" -- "$BIN" -setup-geo -geo-dir "$GEO_DIR" \
-    || log "geo database setup failed (non-fatal) — geo/IP lookups stay disabled"
+    || log "geo database setup failed (non-fatal); geo/IP lookups stay disabled"
 }
 
 # Generate (or reuse) the basic-auth credentials nginx uses to gate /metrics.
@@ -755,7 +755,7 @@ setup_firewall() {
   fi
 
   # Detect the SSH port(s) actually in use so enabling the firewall can't lock
-  # us out — covers non-standard ports. Falls back to 22.
+  # us out; covers non-standard ports. Falls back to 22.
   local ssh_ports app_ports ports p missing
   ssh_ports="$(sshd -T 2>/dev/null | awk '/^port /{print $2}')"
   [ -n "$ssh_ports" ] || ssh_ports=22
@@ -768,7 +768,7 @@ setup_firewall() {
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
       missing=0
       for p in $ports; do ufw status | grep -qw "$p/tcp" || missing=1; done
-      [ "$missing" = 0 ] && { log "Host firewall (ufw) already configured — leaving it untouched"; return 0; }
+      [ "$missing" = 0 ] && { log "Host firewall (ufw) already configured; leaving it untouched"; return 0; }
     fi
     log "Configuring host firewall (ufw)"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw >/dev/null
@@ -779,7 +779,7 @@ setup_firewall() {
     if systemctl is-active --quiet firewalld 2>/dev/null; then
       missing=0
       for p in $ports; do firewall-cmd --query-port="$p/tcp" >/dev/null 2>&1 || missing=1; done
-      [ "$missing" = 0 ] && { log "Host firewall (firewalld) already configured — leaving it untouched"; return 0; }
+      [ "$missing" = 0 ] && { log "Host firewall (firewalld) already configured; leaving it untouched"; return 0; }
     fi
     log "Configuring host firewall (firewalld)"
     dnf install -y -q firewalld >/dev/null

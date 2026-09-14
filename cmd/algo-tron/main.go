@@ -48,7 +48,7 @@ func run() error {
 	}
 
 	if *dataDir == defaultDataDir {
-		slog.Warn("data-dir is under the OS temp directory; player DB and secret may not survive a reboot — set -data-dir for production", "dir", *dataDir)
+		slog.Warn("data-dir is under the OS temp directory; player DB and secret may not survive a reboot; set -data-dir for production", "dir", *dataDir)
 	}
 	if err := os.MkdirAll(*dataDir, 0755); err != nil {
 		return fmt.Errorf("data dir: %w", err)
@@ -106,7 +106,7 @@ func run() error {
 	sigCtx, stopSig := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSig()
 
-	// Listeners shut down when drainCtx cancels — either after the
+	// Listeners shut down when drainCtx cancels, either after the
 	// signal-triggered viewer drain below, or because g.Wait sees a listener
 	// error first (errgroup cancels gctx in that case).
 	drainCtx, cancelDrain := context.WithCancel(context.Background())

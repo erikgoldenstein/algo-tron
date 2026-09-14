@@ -116,7 +116,7 @@ func (s *Server) viewWS(w http.ResponseWriter, r *http.Request) {
 					sink.game.viewSubs.Add(-1)
 				}
 				sink.game = g
-				// Increment BEFORE building the snapshot — see the
+				// Increment BEFORE building the snapshot; see the
 				// register path for why this order matters.
 				g.viewSubs.Add(1)
 				m := buildGameMsgLocked(g)
@@ -210,7 +210,7 @@ func (s *Server) viewWriter(c *websocket.Conn, sink *viewerSink) {
 }
 
 // sendToSinkLocked enqueues data for one viewer. If the sink's buffer is
-// full the viewer is too slow — we kick them and let them reconnect (their
+// full the viewer is too slow; we kick them and let them reconnect (their
 // next WS connect gets a fresh init).
 func (s *Server) sendToSinkLocked(c *websocket.Conn, sink *viewerSink, data []byte) {
 	select {

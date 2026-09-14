@@ -38,7 +38,7 @@ func (g *Game) run() {
 		} else {
 			metricTickDeadlineMisses.Inc()
 			metricTickSchedulerLag.Observe((-d).Seconds())
-			next = time.Now() // fell a full interval behind — re-anchor
+			next = time.Now() // fell a full interval behind; re-anchor
 		}
 		now := time.Now()
 		if !lastTick.IsZero() {
@@ -60,7 +60,7 @@ func (g *Game) run() {
 		g.mu.Unlock()
 
 		// Phase 2 only has work when someone died, the game is ending, or
-		// a viewer is watching — otherwise skip the global lock entirely.
+		// a viewer is watching; otherwise skip the global lock entirely.
 		// Reading viewSubs lock-free is safe: if it reads 0, any subscriber
 		// incremented after this read, so its snapshot (buildGameMsgLocked,
 		// under g.mu) runs after this tick's phase 1 and already contains
@@ -90,7 +90,7 @@ func (g *Game) run() {
 }
 
 // advanceLocked is tick phase 1: pure game mechanics plus the bot frame
-// fanout (enqueue only — sinks never block). The returned tickResult's
+// fanout (enqueue only; sinks never block). The returned tickResult's
 // slices alias g's scratch buffers and must be consumed before the next
 // tick.
 func (g *Game) advanceLocked() tickResult {

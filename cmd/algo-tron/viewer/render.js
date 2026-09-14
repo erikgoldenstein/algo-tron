@@ -2,7 +2,7 @@
 // chart; render_loop.js schedules redraws.
 //
 // The board is one canvas; the TrueSkill chart is another. Both are redrawn
-// each scheduled render from current gameState — no incremental damage
+// each scheduled render from current gameState; no incremental damage
 // tracking.
 //
 // Depends on: helpers.js (contrastText), schemes.js (currentScheme,
@@ -163,7 +163,7 @@ function renderHead(ctx, x, y, radius, playerColor) {
   ctx.fill();
 }
 
-// Name pill above the player head — player-colored fill, label color
+// Name pill above the player head; player-colored fill, label color
 // auto-picked for contrast so the name stays readable on any palette.
 function renderName(ctx, name, x, y, playerColor) {
   const s = SCHEMES[currentScheme];

@@ -8,7 +8,7 @@ Account ownership and version lifecycles are defined in [accounts](accounts.md).
 
 - Packets are pipe-separated UTF-8 fields terminated by `\n`.
 - Format: `<type>|<arg1>|<arg2>|...\n`.
-- The server reads lines with `bufio.Scanner` and a **1024-byte buffer**. A line that exceeds 1024 bytes (including the newline) causes the scanner to fail and the connection to close — there is **no** `ERROR_PACKET_OVERFLOW` packet; the bot just sees an EOF.
+- The server reads lines with `bufio.Scanner` and a 1024-byte buffer. A line that exceeds 1024 bytes (including the newline) causes the scanner to fail and the connection to close without an `ERROR_PACKET_OVERFLOW` packet. The bot sees an EOF.
 
 ## Connection lifecycle
 
@@ -19,7 +19,7 @@ Account ownership and version lifecycles are defined in [accounts](accounts.md).
     |                                            |
     |◄──── motd|<message>                        | at least once
     |                                            |
-    |  (≤ 5s join window — joinTimeout)          |
+    |  (≤ 5s join window: joinTimeout)          |
     | ──── join|<username>|<password>[|<version>] ────►|
     |                                            |
     |   (validation: see error codes)            |
@@ -44,7 +44,7 @@ Account ownership and version lifecycles are defined in [accounts](accounts.md).
     | (idle until the next game)                 |
 ```
 
-The final tick of a game **omits** the trailing `tick\n` — the `win`/`lose` packet ends the game frame.
+The final tick of a game omits the trailing `tick\n`; the `win`/`lose` packet ends the game frame.
 
 A `lose` packet releases you immediately; wait for another `game` without reconnecting. Match timing and lobby policies are defined in [matchmaking](matchmaking.md). IDs in `pos`, `die`, and `message`, and your ID in `game`, belong only to your current board. Alive bots receive chat messages only from that board.
 
@@ -52,7 +52,7 @@ A `lose` packet releases you immediately; wait for another `game` without reconn
 
 Keep the connection logic in a retry loop: TCP connections can drop, including during server deployment. Respect any [reconnect penalty](#rate-limits).
 
-if you reconnect while your seat is still alive (only possible within one tick of the disconnect — otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. Trails are not replayed — the protocol has no message for them.
+If you reconnect while your seat is still alive (only possible within one tick of the disconnect; otherwise the seat is killed), the server re-sends the `game` header plus the current `player`/`pos` snapshot so your bot can reorient. The protocol has no packet for replaying trails.
 
 ## Server → bot packets
 
@@ -63,7 +63,7 @@ if you reconnect while your seat is still alive (only possible within one tick o
 | `game`           | `width\|height\|your_id`      | Once per game, sent to each bot individually with its own ID.   |
 | `player`         | `id\|name`                    | Once per alive player at game start.                            |
 | `pos`            | `id\|x\|y`                    | Once per alive player at game start and per tick.               |
-| `tick`           | —                             | End of each tick frame (except the game's final tick).          |
+| `tick`           | none                             | End of each tick frame (except the game's final tick).          |
 | `die`            | `id[\|id...]`                 | At the start of any tick where players died.                    |
 | `message`        | `id\|text`                    | When a player on your board chats and the message passes validation and rate-limiting. |
 | `win` / `lose`   | `wins\|losses`                | `lose` at death; `win` at game end. Counts follow the [rating window](ratings.md#elo).              |
@@ -128,9 +128,9 @@ Only alive bots can post. Accepted messages expire after five seconds and immedi
 
 ## Rate limits
 
-Three per-connection budgets, enforced inside `handlePacket` as **token buckets**: each bucket refills at its budget per tick interval and holds up to `rateLimitBurstTicks` (2) ticks' worth of tokens. The burst capacity matters — a client that stalls for a tick (GC pause, slow inference, network jitter) and answers two ticks back-to-back must not lose a move. Over-budget packets are dropped; a contiguous run of them costs one strike against the connection.
+Three per-connection budgets, enforced inside `handlePacket` as token buckets: each bucket refills at its budget per tick interval and holds up to `rateLimitBurstTicks` (2) ticks' worth of tokens. The burst capacity allows a client that stalls for a tick to answer two ticks back-to-back without losing a move to the limiter. Over-budget packets are dropped; a contiguous run of them costs one strike against the connection.
 
-The tick interval used for refill accounting is the bot's **own board's** current interval (1s while unseated/queued).
+The tick interval used for refill accounting is the bot's own board's current interval (1s while unseated/queued).
 
 | Budget                  | Limit                       | What it covers                                                                |
 |-------------------------|-----------------------------|-------------------------------------------------------------------------------|
@@ -142,16 +142,16 @@ A packet must clear the global budget *and* its per-type budget. If either fails
 
 ### Strikes → warn → disconnect → reconnect penalty
 
-A **contiguous run** of dropped packets costs **one strike**, no matter how long — a single over-budget burst can't burn through all strikes before the client sees the warning. The run ends with the next allowed packet.
+A contiguous run of dropped packets costs one strike regardless of its length. The next allowed packet ends the run.
 
 | Strike count                 | Effect                                                                                          |
 |------------------------------|-------------------------------------------------------------------------------------------------|
 | below `rateLimitErrorStrikes` | Server sends `WARNING_RATE_LIMIT`. Connection stays open.                                      |
 | `rateLimitErrorStrikes` (3)  | Server sends `ERROR_RATE_LIMIT`, then closes the connection.                                    |
 
-Strikes are forgiven after `rateLimitStrikeExpiry` (1 minute) without a new one — strikes only matter when denial runs keep happening.
+Strikes are forgiven after `rateLimitStrikeExpiry` (1 minute) without a new one.
 
-When a connection is closed for hitting the strike cap, the account's **reconnect penalty** doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives across reconnects, but it is **not** permanent: it decays with good behavior. Before each doubling, the saved-up penalty is reduced by `(time since the last ban window ended) / reconnectPenaltyRedemption` (`reconnectPenaltyRedemption = 5`), and once `reconnectPenaltyRedemption ×` the previous ban length has elapsed clean the penalty is fully forgiven — the next ban starts again at `reconnectPenaltyBase`. So the penalty only grows while the bot keeps getting kicked; behave for long enough and it resets.
+When a connection is closed for hitting the strike cap, the account's reconnect penalty doubles (capped at `reconnectPenaltyMax = 60s`, starting from `reconnectPenaltyBase = 1s`). The next `join` for that account within the penalty window is rejected with `ERROR_RECONNECT_PENALTY|<seconds_remaining>` and the connection is closed. The penalty survives reconnects and decays during periods without bans. Before each doubling, the saved-up penalty is reduced by `(time since the last ban window ended) / reconnectPenaltyRedemption` (`reconnectPenaltyRedemption = 5`), and once `reconnectPenaltyRedemption ×` the previous ban length has elapsed clean the penalty is fully forgiven. The next ban starts again at `reconnectPenaltyBase`.
 
 Sequence example:
 
@@ -163,7 +163,7 @@ reconnect after 2s → spam → kick, penalty = 4s
 spam after 7 kicks → kick, penalty = 60s (capped)
 ```
 
-The penalty is per-account (keyed by username), in-memory only — it does not survive a server restart.
+The penalty is per-career, in-memory only; it does not survive a server restart.
 
 ## Connection limits
 
@@ -171,11 +171,11 @@ At most `maxConnections` (5) simultaneous TCP connections are allowed from one I
 
 ## Reserved usernames
 
-Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …), the filler-bot names `alice` / `bob`, and the reserved viewer command `online` (all case-insensitive for the latter names) are rejected with `ERROR_NO_PERMISSION` when the connection comes from a non-localhost IP. The `bot*` slots let local benchmark/test clients pick those names without anyone else hijacking them; `alice` and `bob` are owned by the two built-in filler bots, and `online` is reserved for the scoreplot's “all online users” option.
+Usernames matching `^bot\d*$` (`bot`, `bot1`, `bot42`, …), the filler-bot names `alice` / `bob`, and the reserved viewer command `online` (all case-insensitive for the latter names) are rejected with `ERROR_NO_PERMISSION` when the connection comes from a non-localhost IP. The `bot*` slots let local benchmark/test clients pick those names without anyone else hijacking them; `alice` and `bob` are owned by the two built-in filler bots, and `online` is reserved for the scoreplot's "all online users" option.
 
 ## PROXY protocol
 
-If started with `-proxy-protocol`, the server expects a single HAProxy PROXY protocol **v1** header line before `join`:
+If started with `-proxy-protocol`, the server expects a single HAProxy PROXY protocol v1 header line before `join`:
 
 ```
 PROXY TCP4 <client_ip> <proxy_ip> <client_port> <proxy_port>\n

@@ -21,7 +21,7 @@ type scoreboardQuery struct {
 }
 
 // leaderboardEligible decides whether a player has a durable account and can
-// appear on persisted/account leaderboards. Password-bearing accounts only —
+// appear on persisted/account leaderboards. Password-bearing accounts only;
 // filler bots have an empty PwHash and are excluded by the same check.
 func leaderboardEligible(p *Player) bool { return p.PwHash != "" }
 
@@ -44,7 +44,7 @@ func clampPageLimit(limit int) int {
 
 // updateScoreboardLocked rebuilds the top-N online scoreboard from s.players
 // (and the rolling chart) into s.viewState. Called from main.go at startup
-// and from endLocked when a game finishes — both holding s.mu. Also records
+// and from endLocked when a game finishes; both holding s.mu. Also records
 // whether more eligible players exist, so the broadcast can advertise an
 // accurate hasMore for the sidebar's "load more".
 func (s *Server) updateScoreboardLocked() {
@@ -128,7 +128,7 @@ func sortEntries(entries []ScoreboardEntry, sortBy string) {
 			return entries[i].Wins > entries[j].Wins
 		}
 		// Equal ratio and wins implies equal losses except at zero wins;
-		// there, more games played ranks higher — activity over emptiness.
+		// there, more games played ranks higher; activity over emptiness.
 		return entries[i].Losses > entries[j].Losses
 	})
 }

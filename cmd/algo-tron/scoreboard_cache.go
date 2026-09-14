@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// The period scoreboards (all/daily/monthly/halfyear) are expensive to build —
+// The period scoreboards (all/daily/monthly/halfyear) are expensive to build;
 // "all" scans every player, the rest run an aggregate query over
-// game_participants — and the same answer serves every viewer. So we cache one
+// game_participants; and the same answer serves every viewer. So we cache one
 // snapshot per period and share it, recomputed on a soft/hard TTL (boardTTLs).
 // The cached slice is the *full* unsorted board; sort/search/paging happen per
 // request in scoreboardCachedPage, so those knobs never trigger a recompute.
@@ -36,7 +36,7 @@ func (s *Server) invalidateScoreCachesLocked() {
 // boardSnapshot returns a period's full cached entries and the time they were
 // computed. Below the soft TTL it serves the cache untouched; between soft and
 // hard it serves the (slightly stale) cache and kicks off one background
-// refresh; at/after the hard TTL — or with no cache yet — it recomputes
+// refresh; at/after the hard TTL (or with no cache yet) it recomputes
 // synchronously so the caller never sees data older than hard.
 func (s *Server) boardSnapshot(period string) ([]ScoreboardEntry, time.Time) {
 	ttl := boardTTLs[period]

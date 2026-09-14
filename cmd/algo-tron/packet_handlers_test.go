@@ -110,7 +110,7 @@ func TestBoardBroadcastSkipsStaleSeats(t *testing.T) {
 func TestHandleChatDead(t *testing.T) {
 	s := testServer(t)
 	p, buf := testPlayer("alice")
-	// no seat — not in a game
+	// no seat; not in a game
 	s.players["alice"] = p
 
 	s.handleChat(p, []string{"chat", "hello"})

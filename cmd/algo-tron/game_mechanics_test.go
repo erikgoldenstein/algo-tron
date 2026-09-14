@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// — removeFromFields ——————————————————————————————————————————————————
+// removeFromFields
 
 // Regression test: calling removeFromFields twice in the same tick must not
 // erase a cell that a different player has since claimed.
@@ -16,7 +16,7 @@ func TestRemoveFromFieldsDoesNotClearOtherPlayer(t *testing.T) {
 	g := makeGame(s, []*Player{a, b})
 	// After makeGame: a's seat id 0 at (0,0), b's seat id 1 at (2,2)
 
-	// First call — simulates killDisconnectedLocked
+	// First call; simulates killDisconnectedLocked
 	g.removeFromFields(a.seat.Load())
 	if g.fields[0][0] != -1 {
 		t.Fatal("a's cell should be -1 after first removeFromFields")
@@ -25,7 +25,7 @@ func TestRemoveFromFieldsDoesNotClearOtherPlayer(t *testing.T) {
 	// Another player claims the now-empty cell
 	g.fields[0][0] = b.seat.Load().id
 
-	// Second call — simulates processDeadLocked; must not erase b's claim
+	// Second call; simulates processDeadLocked; must not erase b's claim
 	g.removeFromFields(a.seat.Load())
 	if g.fields[0][0] != b.seat.Load().id {
 		t.Errorf("b's claim at (0,0) was erased: fields[0][0]=%d, want %d", g.fields[0][0], b.seat.Load().id)
@@ -44,7 +44,7 @@ func TestRemoveFromFieldsClearsOwnCells(t *testing.T) {
 	}
 }
 
-// — movePlayersLocked —————————————————————————————————————————————————
+// movePlayersLocked
 
 func TestMovePlayersWrapping(t *testing.T) {
 	s := testServer(t)
@@ -86,7 +86,7 @@ func TestMovePlayersSkipsDead(t *testing.T) {
 	}
 }
 
-// — killDisconnectedLocked ————————————————————————————————————————————
+// killDisconnectedLocked
 
 func TestKillDisconnectedLocked(t *testing.T) {
 	s := testServer(t)
@@ -110,7 +110,7 @@ func TestKillDisconnectedLocked(t *testing.T) {
 	}
 }
 
-// — markDeadLocked ————————————————————————————————————————————————————
+// markDeadLocked
 
 func TestMarkDeadIsIdempotent(t *testing.T) {
 	s := testServer(t)
@@ -137,7 +137,7 @@ func TestMarkDeadRecordsReason(t *testing.T) {
 	}
 }
 
-// — killDisconnectedLocked ————————————————————————————————————————————
+// killDisconnectedLocked
 
 // A disconnected human (nil sink) is killed mid-game and tagged with the
 // disconnect death reason so the ledger/metrics can attribute it.
@@ -171,7 +171,7 @@ func TestKillDisconnectedSkipsInternalBots(t *testing.T) {
 	}
 }
 
-// — shouldEndLocked ————————————————————————————————————————————————————
+// shouldEndLocked
 
 func TestShouldEndLocked(t *testing.T) {
 	s := testServer(t)
@@ -203,7 +203,7 @@ func TestShouldEndLocked(t *testing.T) {
 	}
 }
 
-// — aliveLocked ———————————————————————————————————————————————————————
+// aliveLocked
 
 func TestAliveLocked(t *testing.T) {
 	s := testServer(t)

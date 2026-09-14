@@ -1,10 +1,10 @@
-"""bot2_bfs_depth8 — pick the move that opens the most space within 8 steps.
+"""bot2_bfs_depth8: pick the move that opens the most space within 8 steps.
 
 For each of the four candidate directions, simulate the move and run a
 breadth-first flood from the new head capped at depth 8. The direction that
 reaches the most empty cells wins. Wraps around the board edges (matching
 the real game's toroidal topology), but does not model future opponent moves
-— other players are treated as static obstacles at their current trails.
+and treats other players' trails as static obstacles.
 """
 
 from collections import deque

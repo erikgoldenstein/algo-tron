@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// — endGameLocked ————————————————————————————————————————————————————
+// endGameLocked
 
 // A full game end: ratings update, survivors win, everyone re-queues, the
 // game leaves s.games, and the death-time score entry gets the post-game elo
@@ -49,7 +49,7 @@ func TestEndGameReleasesAndPatches(t *testing.T) {
 	}
 }
 
-// — ledger construction ————————————————————————————————————————————————
+// ledger construction
 
 // endGameLocked must buffer one ledger row per human (never bots), with the
 // won flag and death reason set correctly, and must keep bots out of the
@@ -122,7 +122,7 @@ func TestEndGameExcludesPasswordlessLedgerRows(t *testing.T) {
 	}
 }
 
-// A game with only bots produces no ledger rows and no winners list — nothing
+// A game with only bots produces no ledger rows and no winners list; nothing
 // for bots to farm.
 func TestEndGameBotOnlyWritesNothing(t *testing.T) {
 	s := testServer(t)

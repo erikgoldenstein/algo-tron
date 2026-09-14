@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// — ELO ———————————————————————————————————————————————————————————————
+// ELO
 
 func TestUpdateEloTwoPlayers(t *testing.T) {
 	winner := &Player{Username: "winner", Elo: 1000}
@@ -76,7 +76,7 @@ func TestUpdateEloRanksLosersByDeathTick(t *testing.T) {
 	}
 }
 
-// — TrueSkill ——————————————————————————————————————————————————————
+// TrueSkill
 
 func TestUpdateTrueSkillWinnerGainsLoserLoses(t *testing.T) {
 	winner := &Player{Username: "w", TsMu: tsMu0, TsSigma: tsSigma0}
@@ -112,7 +112,7 @@ func TestUpdateTrueSkillRanksLosersByDeathTick(t *testing.T) {
 	}
 }
 
-// — bot exclusion (anti-farm) —————————————————————————————————————————
+// bot exclusion (anti-farm)
 
 // Internal filler bots must not affect rating math: padding a human game with
 // bots must produce exactly the same Elo and TrueSkill deltas as the same

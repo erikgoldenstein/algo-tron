@@ -12,7 +12,7 @@ const (
 	// bucket refills at packetsPerTick tokens per tick interval (the
 	// player's own board's interval, or 1s while unseated) and holds at
 	// most rateLimitBurstTicks ticks' worth of tokens, so a burst of up
-	// to two ticks' budget is absorbed without drops — a client that
+	// to two ticks' budget is absorbed without drops; a client that
 	// stalls for a tick (GC pause, slow inference) and answers two ticks
 	// back-to-back must not be punished. Every packet must pass the
 	// global totalPacketsPerTick bucket; "move" and "chat" then have

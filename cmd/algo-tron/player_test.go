@@ -215,9 +215,9 @@ func TestTrimScores(t *testing.T) {
 	old := time.Now().Add(-3 * time.Hour).UnixMilli()
 
 	p.ScoreHistory = []Score{
-		{Type: 1, Time: old},    // outside window — must be removed
-		{Type: 0, Time: recent}, // inside window — must be kept
-		{Type: 1, Time: recent}, // inside window — must be kept
+		{Type: 1, Time: old},    // outside window; must be removed
+		{Type: 0, Time: recent}, // inside window; must be kept
+		{Type: 1, Time: recent}, // inside window; must be kept
 	}
 	p.trimScores()
 
@@ -241,7 +241,7 @@ func TestSend(t *testing.T) {
 
 func TestSendNoSink(t *testing.T) {
 	p := &Player{Username: "alice"}
-	p.send("should", "not", "panic") // no sink — must be a no-op
+	p.send("should", "not", "panic") // no sink; must be a no-op
 }
 
 func TestWinLocked(t *testing.T) {
@@ -277,7 +277,7 @@ func TestLoseLocked(t *testing.T) {
 	}
 }
 
-// patchScoreRatingLocked must update the entry this seat recorded — not a
+// patchScoreRatingLocked must update the entry this seat recorded; not a
 // newer one the player picked up in another game afterwards.
 func TestPatchScoreEloMatchesOwnEntry(t *testing.T) {
 	p, _ := testPlayer("alice")

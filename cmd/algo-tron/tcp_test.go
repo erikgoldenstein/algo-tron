@@ -309,7 +309,7 @@ func TestReconnectWithAliveSeatGetsResync(t *testing.T) {
 	s.players["a"] = a
 	g := makeGame(s, []*Player{a, b})
 	s.games = []*Game{g}
-	// a is seated and alive but has no sink — as after a TCP drop that the
+	// a is seated and alive but has no sink; as after a TCP drop that the
 	// tick loop hasn't noticed yet.
 	a.sink.Store(nil)
 

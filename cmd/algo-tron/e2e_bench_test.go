@@ -31,7 +31,7 @@ import (
 // game_tps is a lower-bound estimate of game ticks/sec the server sustained
 // (it underestimates as bots die mid-bench, since signals/tick drop).
 //
-// Setup happens once per size, outside b.Run — the framework re-invokes the
+// Setup happens once per size, outside b.Run; the framework re-invokes the
 // inner lambda when it scales b.N, and we don't want to pay TCP-handshake
 // cost on every scaling iteration. Clients stay connected across game-overs;
 // when a game ends the matchmaker re-seats the bots within a few seconds,
@@ -240,7 +240,7 @@ func runE2EBot(b *testing.B, addr, username string, n int, tickCh chan<- struct{
 			}
 			select {
 			case tickCh <- struct{}{}:
-			default: // bench reader behind; drop — ticks are signals, not data
+			default: // bench reader behind; drop; ticks are signals, not data
 			}
 		}
 	}

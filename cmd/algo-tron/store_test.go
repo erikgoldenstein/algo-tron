@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// — load / store round-trip ———————————————————————————————————————————
+// load / store round-trip
 
 func testDB(t *testing.T) *Server {
 	t.Helper()
@@ -243,7 +243,7 @@ func TestLoadSetsDefaultElo(t *testing.T) {
 
 func TestLoadInitializesTrueSkill(t *testing.T) {
 	s := testDB(t)
-	// Rows from before TrueSkill tracking have ts_sigma = 0 — they must get
+	// Rows from before TrueSkill tracking have ts_sigma = 0; they must get
 	// the (mu0, sigma0) defaults so matchmaking can sort by TsMu right away.
 	_, err := s.db.Exec(`INSERT INTO players (username, pw_hash, elo, score_history) VALUES ('bob', 'hash', 1000, '[]')`)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestLoadPersistsGeneratedUUID(t *testing.T) {
 	}
 }
 
-// — dirty-player tracking ————————————————————————————————————————————
+// dirty-player tracking
 
 // storedUsernames returns the usernames currently present in the players
 // table, for asserting which rows a store actually wrote.
@@ -652,7 +652,7 @@ func TestStoreIsIdempotent(t *testing.T) {
 	}
 }
 
-// — game-ledger retention / flush ——————————————————————————————————————
+// game-ledger retention / flush
 
 // The retention cutoff must be strictly older than the longest live board
 // window (halfyear, see computePeriodEntries) or archiveOldGameParticipants
@@ -771,9 +771,9 @@ func countRows(t *testing.T, s *Server, table string) int {
 	return n
 }
 
-// — internal-bot exclusion from persistence ——————————————————————————
+// internal-bot exclusion from persistence
 
-// Filler bots are ephemeral and must never reach the players table — neither
+// Filler bots are ephemeral and must never reach the players table; neither
 // via the shutdown snapshot (store) nor the incremental dirty flush.
 func TestStoreExcludesInternalBots(t *testing.T) {
 	s := testDB(t)
@@ -812,7 +812,7 @@ func TestStoreDirtyExcludesInternalBots(t *testing.T) {
 	}
 }
 
-// — recordPlayerIP upsert ——————————————————————————————————————————————
+// recordPlayerIP upsert
 
 func playerIPRow(t *testing.T, s *Server, uuid string) (count int, first, last int64) {
 	t.Helper()
@@ -867,7 +867,7 @@ func TestRecordPlayerIPNoOps(t *testing.T) {
 	}
 }
 
-// — idle recovery starts a fresh career identity ——————————————————————
+// idle recovery starts a fresh career identity
 
 // Recovery must give the new account a fresh UUID and must not retain the old
 // account's live or archived data.

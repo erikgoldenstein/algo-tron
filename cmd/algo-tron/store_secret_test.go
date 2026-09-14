@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// — hashPassword ——————————————————————————————————————————————————————
+// hashPassword
 
 func TestHashPasswordDeterministic(t *testing.T) {
 	secret := make([]byte, 32)
@@ -40,7 +40,7 @@ func TestHashPasswordIsHex(t *testing.T) {
 	}
 }
 
-// — loadOrCreateSecret ————————————————————————————————————————————————
+// loadOrCreateSecret
 
 func TestLoadOrCreateSecretCreatesNew(t *testing.T) {
 	dir := t.TempDir()

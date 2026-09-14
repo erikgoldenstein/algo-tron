@@ -307,7 +307,7 @@ func TestScoreboardCacheSoftTTLRefreshesInBackground(t *testing.T) {
 	t.Fatal("background refresh did not update the cached board within the deadline")
 }
 
-// — eligibility / paging helpers —————————————————————————————————————
+// eligibility / paging helpers
 
 func TestLeaderboardEligible(t *testing.T) {
 	if !leaderboardEligible(&Player{PwHash: "h"}) {
@@ -358,7 +358,7 @@ func TestSortEntriesModes(t *testing.T) {
 	}
 }
 
-// — scoreboardPageLocked (live online board) ———————————————————————————
+// scoreboardPageLocked (live online board)
 
 func makeOnlinePlayers(t *testing.T, s *Server, names map[string]float64) {
 	t.Helper()
@@ -403,7 +403,7 @@ func TestScoreboardPagePagesWithHasMore(t *testing.T) {
 	}
 }
 
-// — updateScoreboardLocked filters & hasMore ———————————————————————————
+// updateScoreboardLocked filters & hasMore
 
 // The live sidebar shows all connected human players, including passwordless
 // sessions; offline players and internal bots are excluded.
@@ -495,7 +495,7 @@ func TestDisplayNameDoesNotRenderEmptyDefaultVersion(t *testing.T) {
 	}
 }
 
-// — computePeriodEntries —————————————————————————————————————————————
+// computePeriodEntries
 
 func TestComputePeriodExcludesBots(t *testing.T) {
 	s := testServer(t)

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// TCP bot wire protocol helpers — see
+// TCP bot wire protocol helpers; see
 // https://github.com/freehuntx/gpn-tron/blob/master/PROTOCOL.md
 //
 // formatPacket/writePacket are the cold-path helpers, used for
-// join/error/win/lose — never per-tick. fmt is fine here and reads more
+// join/error/win/lose; never per-tick. fmt is fine here and reads more
 // clearly. writePacket writes directly (pre-join, before a botSink
 // exists); formatPacket feeds Player.send, which enqueues on the sink.
 //

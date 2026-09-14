@@ -50,7 +50,7 @@ func (g *Game) updateEloLocked(winners []*Seat) {
 
 // placesLocked ranks every non-bot seat: winners share place 1, losers are
 // ordered by death tick (later death = better place), same-tick deaths share
-// a place. Bots are skipped — both as ranked seats and as comparison peers —
+// a place. Bots are skipped; both as ranked seats and as comparison peers;
 // so the human field is ranked as if the bots weren't there.
 func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
 	won := map[*Seat]bool{}
@@ -84,7 +84,7 @@ func (g *Game) placesLocked(winners []*Seat) map[*Seat]int {
 // pairwise approximation from the TrueSkill paper: each player's rating is
 // updated against every opponent based on the FFA ranking (winners share
 // place 1; losers are ranked by death tick). Same-place pairs (co-deaths,
-// joint wins) are skipped — we treat them as no-information matchups rather
+// joint wins) are skipped; we treat them as no-information matchups rather
 // than ε-draws. Caller holds Server.mu; the board is quiescent.
 func (g *Game) updateTrueSkillLocked(winners []*Seat) {
 	if len(g.seats) == 0 {

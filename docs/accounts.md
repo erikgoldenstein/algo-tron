@@ -14,10 +14,10 @@ The optional version identifies an independent bot career under the username. A 
 
 ## Inactivity and recovery
 
-A username whose account has not connected for 14 months can be joined with a new password. The previous career's stats (ELO, TrueSkill, score history) are purged and the live account starts fresh (see [persistence.md](persistence.md)). This lets annual chaos-event participants miss one event without losing their account while preventing indefinite abandoned account data.
+A username whose account has not connected for 14 months can be joined with a new password. The previous career's stats (ELO, TrueSkill, score history) are purged and the live account starts fresh (see [persistence.md](persistence.md)). The inactivity period allows annual event participants to miss one event before their account expires.
 
 Administrator password recovery preserves the existing careers; see [administration](administration.md#account-password-recovery). Automatic expiry and data purging are specified in [persistence](persistence.md#retention).
 
 ## Credential security
 
-> **Never reuse a real password.** The protocol is plain TCP — the password travels unencrypted, and the server stores only a fast keyed hash. Treat it as a claim ticket for the username, nothing more.
+> Never reuse a real password. The password travels over unencrypted TCP, and the server stores a fast keyed hash. Use a password only for this game.
