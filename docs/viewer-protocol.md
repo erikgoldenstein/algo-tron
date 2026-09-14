@@ -28,7 +28,7 @@ Messages are JSON, one per WebSocket frame, with a 512-byte incoming frame limit
   "scoreboard":  [{"username":"…","version":"v2","showVersion":true,"bio":{"contact":"mail@erik.gdn","src":"https://github.com/erikgoldenstein/tron-bot"},"firstSeen":1710000000000,"winRatio":0.8,"wins":4,"losses":1,"elo":1080,"tsMu":274,"tsSigma":61,"online":true,"oldOwner":0}],
   "scoreboardHasMore": false,
   "chartData":   [{"name": 0, "<username>": {"mu":274,"sigma":61}, "<username>-<version>": {"mu":274,"sigma":61}}],
-  "lastWinners": ["<winner username>"],
+  "lastWinners": [{"username":"<winner username>","version":"v2"}],
   "boards":      [{"id": "<hex>", "lobby": "workshop", "label": "workshop-1", "tick": 42, "players": 16, "alive": 9, "names": ["alice", "bob-v2"]}],
   "chat":        [{"type":"chat","gameId":"…","lobby":"workshop","boardIndex":1,"username":"alice","message":"hello","time":1710000000000}],
   "game":        { "id":"…", "width": 8, "height": 8, "players": [], "boardScoreboard": [], "boardChartData": [] }
@@ -62,7 +62,7 @@ Broadcast to all viewers whenever a board starts or ends. The client renders one
 
 Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior board state in the viewer.
 
-`boardScoreboard` and `boardChartData` scope the leaderboard and TrueSkill chart to this board's players only (top-`defaultScoreboardLimit`, `ts` sort), so a viewer watching one board sees its participants ranked among themselves. Same entry/point shapes as the global `scoreboard` / `chartData` in `init`. Internal filler bots are excluded. These fields are included in the board snapshot. `init` and `end` carry the global `scoreboard` and `chartData`.
+`boardScoreboard` and `boardChartData` scope the leaderboard and TrueSkill chart to this board's players only (top-`defaultScoreboardLimit`, `ts` sort), so a viewer watching one board sees its participants ranked among themselves. Same entry/point shapes as the global `scoreboard` / `chartData` when those fields are present. Internal filler bots are excluded. These fields are included in the board snapshot. `init` and `end` include scoreboard data only for a matching global or lobby subscription; board-scoped messages omit unrelated scoreboard data.
 
 ### `tick`: per-tick delta (subscribed board only)
 
@@ -90,11 +90,11 @@ Same shape as `init.game`. Sent as the response to a `watch`; replaces the prior
   "scoreboard":  [],
   "scoreboardHasMore": false,
   "chartData":   [],
-  "lastWinners": ["<winner username>"]
+  "lastWinners": [{"username":"<winner username>","version":"v2"}]
 }
 ```
 
-Broadcast to all viewers. The `scoreboard` and `chartData` fields are included only for viewers subscribed to the matching global or lobby scoreboard; board-scoped viewers receive the lifecycle event without unrelated scoreboard data. A `boards` message without the ended id follows immediately; a viewer watching that board keeps its last frame until its re-`watch` lands.
+Broadcast to all viewers. The `lastWinners` entries identify the exact username and version that won. The `scoreboard` and `chartData` fields are included only for viewers subscribed to the matching global or lobby scoreboard; board-scoped viewers receive the lifecycle event without unrelated scoreboard data. A `boards` message without the ended id follows immediately; a viewer watching that board keeps its last frame until its re-`watch` lands.
 
 ### `subscribe`: change viewer data scopes
 

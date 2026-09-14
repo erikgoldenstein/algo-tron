@@ -283,6 +283,12 @@ type ScoreboardEntry struct {
 	OldOwner int `json:"oldOwner,omitempty"`
 }
 
+// winnerMsg identifies the winning account career, not just its username.
+type winnerMsg struct {
+	Username string `json:"username"`
+	Version  string `json:"version,omitempty"`
+}
+
 // ViewState caches the slow-changing data the viewer needs (server/view info,
 // scoreboard, chart, last winners). Live game state is streamed as deltas
 // (see message types below) and not stored here.
@@ -292,5 +298,5 @@ type ViewState struct {
 	ChartData         []map[string]any  `json:"chartData"`
 	Scoreboard        []ScoreboardEntry `json:"scoreboard"`
 	ScoreboardHasMore bool              `json:"scoreboardHasMore"`
-	LastWinners       []string          `json:"lastWinners"`
+	LastWinners       []winnerMsg       `json:"lastWinners"`
 }

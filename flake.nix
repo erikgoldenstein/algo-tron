@@ -11,22 +11,52 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         commit = if self ? rev then self.rev else "unknown";
+        source = ./.;
         package = pkgs.buildGoModule {
           pname = "algo-tron";
           version = "0.1.0";
-          src = ./.;
+          src = source;
           vendorHash = "sha256-ZBKwR1Czt3mhHCMedniIZPrRf1BsVmqVvv6nskgPZ2A=";
           subPackages = [ "cmd/algo-tron" ];
           ldflags = [ "-s" "-w" "-X" "main.buildCommit=${commit}" ];
+        };
+        testE2E = pkgs.writeShellApplication {
+          name = "test-e2e";
+          runtimeInputs = [ pkgs.go pkgs.gcc pkgs.chromium ];
+          text = ''
+            cd ${source}
+            exec go test ./cmd/algo-tron -run '^TestE2E' -count=1 -v "$@"
+          '';
+        };
+        e2eCheck = pkgs.buildGoModule {
+          pname = "algo-tron-e2e";
+          version = "0.1.0";
+          src = source;
+          vendorHash = "sha256-ZBKwR1Czt3mhHCMedniIZPrRf1BsVmqVvv6nskgPZ2A=";
+          subPackages = [ "cmd/algo-tron" ];
+          nativeCheckInputs = [ pkgs.chromium ];
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            go test ./cmd/algo-tron -run '^TestE2E' -count=1 -v
+            runHook postCheck
+          '';
+          installPhase = "touch $out";
         };
       in
       {
         packages.default = package;
         packages.algo-tron = package;
 
+        checks.e2e = e2eCheck;
+
         apps.default = {
           type = "app";
           program = "${package}/bin/algo-tron";
+        };
+        apps."test-e2e" = {
+          type = "app";
+          program = "${testE2E}/bin/test-e2e";
         };
 
         devShells.default = pkgs.mkShell {

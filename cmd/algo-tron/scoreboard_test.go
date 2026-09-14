@@ -478,6 +478,23 @@ func TestScoreboardSeparatesVersionsAndOnlyTagsWhenMultipleAreOnline(t *testing.
 	}
 }
 
+func TestScoreboardTagsMultipleHistoricalVersions(t *testing.T) {
+	s := testServer(t)
+	entries := []ScoreboardEntry{
+		{Username: "mybot", Version: "v1"},
+		{Username: "mybot", Version: "v2"},
+		{Username: "other", Version: "v1"},
+	}
+
+	s.annotateVersionTagsLocked(entries)
+	if !entries[0].ShowVersion || !entries[1].ShowVersion {
+		t.Errorf("historical versions are not tagged: %+v", entries)
+	}
+	if entries[2].ShowVersion {
+		t.Errorf("single version was tagged: %+v", entries[2])
+	}
+}
+
 func TestDisplayNameDoesNotRenderEmptyDefaultVersion(t *testing.T) {
 	s := testServer(t)
 	_, c1 := mustPipe(t)

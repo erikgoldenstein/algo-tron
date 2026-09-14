@@ -94,10 +94,19 @@ func TestEndGameBuffersHumanLedgerRowsExcludingBots(t *testing.T) {
 	if lr := byName["l"]; lr.won || lr.deathReason != deathReasonCollision {
 		t.Errorf("loser row = %+v, want won=false reason=%q", lr, deathReasonCollision)
 	}
-	for _, name := range s.viewState.LastWinners {
-		if name == "bot1" {
+	for _, winner := range s.viewState.LastWinners {
+		if winner.Username == "bot1" {
 			t.Error("bot leaked into LastWinners")
 		}
+	}
+}
+
+func TestWinnerDisplayNameIncludesVersion(t *testing.T) {
+	if got := winnerDisplayName(&Player{Username: "mybot", Version: "v2"}); got != "mybot-v2" {
+		t.Errorf("winner display name = %q, want mybot-v2", got)
+	}
+	if got := winnerDisplayName(&Player{Username: "mybot", Version: ""}); got != "mybot" {
+		t.Errorf("default winner display name = %q, want mybot", got)
 	}
 }
 

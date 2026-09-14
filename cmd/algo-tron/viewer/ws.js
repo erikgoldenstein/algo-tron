@@ -49,7 +49,10 @@ function recoverFromBackground() {
   if (!backgroundSince) return;
   const elapsed = Date.now() - backgroundSince;
   backgroundSince = 0;
-  if (elapsed < backgroundReloadDelay) return;
+  if (elapsed < backgroundReloadDelay) {
+    globalThis.refreshOpenScoreboardModal?.();
+    return;
+  }
 
   resumeReconnect = true;
   resumeWatchID = gameState.game?.id || '';
@@ -199,6 +202,7 @@ function connect() {
       ? gameState.boards.find((board) => board.id === watchedID)?.lobby || ''
       : '';
     applyMessage(msg);
+    if (msg.type === 'init') globalThis.refreshOpenScoreboardModal?.();
     if (msg.type === 'init' && resumeWatchID) {
       const desiredBoard = resumeWatchID;
       resumeWatchID = '';

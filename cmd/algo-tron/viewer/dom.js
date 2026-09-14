@@ -289,6 +289,16 @@ function scoreNameMarkup(username, version, showVersion, maxChars) {
   return esc(username) + '<span class="version-tag">-' + esc(version) + '</span>';
 }
 
+function scoreWinnerMatches(p) {
+  return gameState.lastWinners.some((winner) => {
+    if (typeof winner === 'string') {
+      return winner === p.username || winner === scoreNameLabel(p);
+    }
+    return winner?.username === p.username
+      && (winner.version || '') === (p.version || '');
+  });
+}
+
 function scoreInfoTrigger(target) {
   return target?.closest('tr')?.querySelector('.score-info-button') || null;
 }
@@ -687,7 +697,9 @@ function updateTabs() {
 }
 
 function scoreRow(p, i, includeInfo = true, nameChars = scoreNameChars) {
-  const winner = gameState.lastWinners.includes(p.username) ? ' 🎉' : '';
+  const winner = scoreWinnerMatches(p)
+    ? '<span class="score-winner" aria-label="won">🎉</span>'
+    : '';
   const old = p.oldOwner ? '<span class="old">(old owner' + p.oldOwner + ')</span>' : '';
   const wr = (p.winRatio * 100).toFixed(0) + '%';
   const c = playerColor(p.username, p.version);
@@ -702,7 +714,7 @@ function scoreRow(p, i, includeInfo = true, nameChars = scoreNameChars) {
     : '';
   return '<tr data-score-key="' + esc(scoreRowKey(p)) + '"' + (followed ? ' class="followed"' : '') + '>'
     + '<td class="num">' + (i + 1) + '</td>'
-    + '<td class="name" style="color:' + c + '"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-name-chars="' + nameCharsData + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, nameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</td>'
+    + '<td class="name" style="color:' + c + '"><span class="score-name-content"><span class="namestr score-hover-target score-follow-target" data-follow-name="' + esc(label) + '" data-name="' + esc(label) + '" data-username="' + esc(p.username) + '" data-version="' + esc(p.version || '') + '" data-show-version="' + (p.showVersion && p.version ? 'true' : 'false') + '" data-name-chars="' + nameCharsData + '" data-first-seen="' + (p.firstSeen || 0) + '" data-contact="' + esc(contact) + '" data-src="' + esc(src) + '" data-old-owner="' + (p.oldOwner ? 'true' : 'false') + '">' + scoreNameMarkup(p.username, p.version || '', !!p.showVersion, nameChars) + '</span>' + (followedDead ? ' <span class="follow-status">(currently dead)</span>' : '') + old + winner + '</span></td>'
     + info
     + '<td class="sep">|</td>'
     + '<td class="ts">' + Math.round(p.tsMu) + ' ± ' + String(Math.round(p.tsSigma)).padStart(tsSigmaChars, '\u00a0') + '</td>'

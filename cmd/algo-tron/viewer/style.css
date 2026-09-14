@@ -254,6 +254,23 @@ h2 {
 .scoreboard thead th { font-weight: 400; padding-bottom: 2px; }
 .scoreboard thead { background: var(--bg); }
 .scoreboard td.name { color: var(--text); }
+.score-name-content {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  min-width: 0;
+}
+.score-name-content .namestr {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.score-name-content .follow-status,
+.score-name-content .old,
+.score-name-content .score-winner {
+  flex: 0 0 auto;
+}
+.score-name-content .score-winner { margin-left: 4px; }
 .scoreboard tr.followed { background: var(--bg-elevated); }
 .scoreboard tbody tr { transition: transform 180ms ease; }
 .score-follow-target { cursor: pointer; }
@@ -518,17 +535,22 @@ td.name .old { color: var(--text-muted); font-size: 0.8em; margin-left: 4px; }
 .app-select-list button:hover,
 .app-select-list button.selected { background: var(--border); }
 .modal-scoreboard-table {
-  width: max-content;
+  width: 100%;
+  table-layout: auto;
   /* Keep the compact mobile columns readable and let the modal's horizontal
      scroller do its job instead of shrinking the table to the viewport. */
   min-width: max(100%, 36em);
   font-size: 12px;
 }
+.modal-scoreboard-table th:not(.name),
+.modal-scoreboard-table td:not(.name) {
+  width: 1%;
+}
 .modal-scoreboard-table th.name,
 .modal-scoreboard-table td.name {
-  width: 16ch;
+  width: auto;
   min-width: 16ch;
-  max-width: 16ch;
+  max-width: none;
 }
 
 /* Board */

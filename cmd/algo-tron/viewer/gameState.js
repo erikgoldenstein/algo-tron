@@ -13,7 +13,7 @@
 //   {type:"boards", boards:[{id,tick,players,alive,names}...], lobbies:[...]}; board/lobby state
 //   {type:"game",   id, width, height, boardScoreboard, boardChartData, players:[{id,name,version?,bio?,pos,moves,alive,chat?}]}
 //   {type:"tick",   gameId, positions:[[id,x,y]...], deaths?:[id], chats?:{id:msg}}
-//   {type:"end",    gameId, scoreboard, chartData, lastWinners}
+//   {type:"end",    gameId, scoreboard, chartData, lastWinners:[{username,version}]}
 //   {type:"chat_snapshot", messages:[...]}; current chat subscription history.
 //   {type:"misc",   content:"shutdown"}; lifecycle event; "shutdown" → banner.
 //
@@ -96,12 +96,17 @@ function applyInit(msg) {
   gameState.buildCommit = typeof msg.buildCommit === 'string' && msg.buildCommit ? msg.buildCommit : 'unknown';
   gameState.serverInfo  = msg.serverInfo  || [];
   gameState.viewInfo    = msg.viewInfo    || [];
-  gameState.scoreboard  = msg.scoreboard  || [];
-  gameState.scorePages[scorePageKey('online', 'ts', '', '')] = { entries: gameState.scoreboard.slice(), hasMore: !!msg.scoreboardHasMore, period: 'online', sort: 'ts', search: '', lobby: '', computedAt: msg.computedAt || Date.now() };
+  // Board-scoped init messages omit the global scoreboard. Do not turn that
+  // omission into an empty online page, or an open scoreboard modal loses its
+  // cached results after a background reconnect.
+  if (Array.isArray(msg.scoreboard)) {
+    gameState.scoreboard = msg.scoreboard;
+    gameState.scorePages[scorePageKey('online', 'ts', '', '')] = { entries: gameState.scoreboard.slice(), hasMore: !!msg.scoreboardHasMore, period: 'online', sort: 'ts', search: '', lobby: '', computedAt: msg.computedAt || Date.now() };
+  }
   gameState.boardScoreboard = msg.game?.boardScoreboard || [];
   gameState.boardScoreboardVisible = 10;
   gameState.boardChartData  = msg.game?.boardChartData  || [];
-  gameState.chartData   = msg.chartData   || [];
+  if (Array.isArray(msg.chartData)) gameState.chartData = msg.chartData;
   gameState.lastWinners = msg.lastWinners || [];
   gameState.boards      = msg.boards      || [];
   gameState.lobbies = Array.isArray(msg.lobbies) ? msg.lobbies : null;

@@ -22,10 +22,12 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	g.updateEloLocked(alive)
 	g.updateTrueSkillLocked(alive)
 	names := []string{}
+	winnerMessages := []winnerMsg{}
 	for _, st := range alive {
 		st.winLocked()
 		if !st.player.InternalBot {
-			names = append(names, st.player.Username)
+			names = append(names, winnerDisplayName(st.player))
+			winnerMessages = append(winnerMessages, winnerMsg{Username: st.player.Username, Version: versionOf(st.player)})
 		}
 	}
 	// Persistence ledger: one row per human participant per game. Bots are
@@ -72,7 +74,7 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 			g.viewSubs.Add(-1)
 		}
 	}
-	s.viewState.LastWinners = append([]string(nil), names...)
+	s.viewState.LastWinners = append([]winnerMsg(nil), winnerMessages...)
 	// Only announce when a human won: bot-only games end constantly and would
 	// flood the chat with messages that scroll away almost instantly.
 	if len(names) > 0 {
@@ -87,6 +89,14 @@ func (s *Server) endGameLocked(g *Game, alive []*Seat) {
 	metricGames.Inc()
 	metricGameDuration.Observe(dur.Seconds())
 	slog.Info("game end", "id", g.id, "winners", names, "dur_ms", dur.Milliseconds())
+}
+
+func winnerDisplayName(p *Player) string {
+	version := versionOf(p)
+	if version == "" {
+		return p.Username
+	}
+	return p.Username + "-" + version
 }
 
 func (s *Server) boardIndexLocked(g *Game) int {

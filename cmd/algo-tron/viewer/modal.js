@@ -237,6 +237,12 @@ function closeScoreboardModal() {
   document.getElementById('scoreplot-user-options')?.setAttribute('hidden', '');
 }
 
+function refreshOpenScoreboardModal() {
+  const modal = document.getElementById('scoreboard-modal');
+  if (!modal || modal.hidden) return;
+  fetchScoreboardPage(scoreModalQuery(0));
+}
+
 function loadMoreSidebarScores() {
   if (gameState.scoreboardScope === 'board') {
     if (gameState.boardScoreboardVisible >= gameState.boardScoreboard.length) return;
@@ -290,6 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   if (location.hash === '#help') toggleHelp(true);
 });
+
+globalThis.refreshOpenScoreboardModal = refreshOpenScoreboardModal;
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'q' || e.key === 'Escape') {

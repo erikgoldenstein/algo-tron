@@ -220,10 +220,14 @@ func chartKey(entry ScoreboardEntry) string {
 }
 
 // annotateVersionTagsLocked marks entries whose username has more than one
-// version online. The version remains a separate JSON field; this flag lets
-// the UI display a tag only when it is needed to distinguish live bots.
+// version in the displayed scoreboard. The version remains a separate JSON
+// field; this flag lets the UI display a tag only when it is needed to
+// distinguish visible careers, including historical ones that are offline.
 func (s *Server) annotateVersionTagsLocked(entries []ScoreboardEntry) {
-	counts := s.onlineVersionCountsLocked()
+	counts := map[string]int{}
+	for _, entry := range entries {
+		counts[entry.Username]++
+	}
 	for i := range entries {
 		entries[i].ShowVersion = counts[entries[i].Username] > 1
 	}

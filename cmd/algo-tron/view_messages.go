@@ -28,7 +28,7 @@ type initMsg struct {
 	Scoreboard        []ScoreboardEntry `json:"scoreboard,omitempty"`
 	ScoreboardHasMore bool              `json:"scoreboardHasMore,omitempty"`
 	ChartData         []map[string]any  `json:"chartData,omitempty"`
-	LastWinners       []string          `json:"lastWinners"`
+	LastWinners       []winnerMsg       `json:"lastWinners"`
 	Boards            []boardMsg        `json:"boards"`
 	Lobbies           []string          `json:"lobbies"`
 	Chat              []chatMsg         `json:"chat"`
@@ -94,7 +94,7 @@ type endMsg struct {
 	Scoreboard        []ScoreboardEntry `json:"scoreboard,omitempty"`
 	ScoreboardHasMore bool              `json:"scoreboardHasMore,omitempty"`
 	ChartData         []map[string]any  `json:"chartData,omitempty"`
-	LastWinners       []string          `json:"lastWinners"`
+	LastWinners       []winnerMsg       `json:"lastWinners"`
 	Lobby             string            `json:"lobby,omitempty"`
 	ScoreboardScope   string            `json:"scoreboardScope"`
 }
